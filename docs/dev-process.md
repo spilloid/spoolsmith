@@ -31,6 +31,12 @@ starts empty of log rows and accrues real entries from here forward.
   regardless of diff size. **This is written in now, before any code exists that would trip it —
   per Seat 03 (Security)'s condition in the SpoolSmith board debate, specifically to avoid writing
   the rule under pressure from a diff someone already spent hours on.**
+
+  **Update, D-0040:** driver-store writes for the two D-0040-named families, via its documented
+  trust model, are now authorized — but the *routing tier for implementing and reviewing that
+  code* is unchanged: still the highest tier this repo uses, implementer and reviewer both, no
+  exception for the fact that the work itself is now allowed. Authorization and routing tier are
+  two different questions; D-0040 only answered the first one.
 - **Sol/ultra** — multi-file (5+) implementation or a broad review pass. As implementer, requires
   the operator's explicit in-session approval; never self-initiated.
 

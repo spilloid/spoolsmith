@@ -13,19 +13,25 @@ Governance: authorized by `corporate-strategy` board decision DR-0005
 authorization**. See `corporate-strategy/state/products/SpoolSmith.md` for current status,
 budget, and revisit triggers before assuming any scope beyond what's written here.
 
-## Current scope: milestone one only
+## Current scope: v0.1.0 — live detection + approved install for two named families
 
-A fixture-driven vertical slice, nothing more:
+Milestone one (fixture-only detection) is done. Per corporate-strategy D-0040
+(`decisions/DECISION_LOG.md`), OS mutation is now authorized, but **narrowly**:
 
-1. Normalize captured/synthetic printer fingerprint evidence into an observed-identifier set.
-2. Resolve a normalized model, then a printer family, from those identifiers.
-3. Resolve a driver package/strategy for that family.
-4. Emit a deterministic `inspect`/install-plan result: manufacturer/model, evidence, normalized
-   family, selected driver + source, confidence, and anything uncertain — inspectable, never
-   silent.
+1. Collect real fingerprint evidence live from the network (SNMP/HTTP/PJL/ports/OUI/hostname), or
+   from a fixture file for testing.
+2. Normalize evidence, resolve a printer family, then a driver package/strategy — unchanged,
+   already fail-closed, already reviewed.
+3. Emit a deterministic `inspect`/install-plan result — unchanged.
+4. **For exactly two named families (HP LaserJet Pro M4xx; Brother HL-L2xxx), and only via the
+   documented trust model in D-0040, install the driver and configure the TCP/IP printer port —
+   after showing the full plan and receiving one explicit confirmation.** Detection and resolution
+   run automatically; installation does not skip the confirmation step under any flag.
 
-**No OS mutation. No remote execution. No credential collection.** This milestone proves the
-abstraction chain against fixtures; it does not touch a real Windows driver store.
+**Still no remote execution beyond SpoolSmith's own local fingerprinting/install commands, no
+credential collection, and no network auto-fetch of driver packages** (D-0040's trust model is
+explicit that installers must already be staged locally or resolved through Windows' own
+`Add-PrinterDriver`/`pnputil` path — SpoolSmith does not itself download an installer from a URL).
 
 Catalog hierarchy, deliberately layered so a giant hand-maintained per-model database is never the
 shape of this system:
@@ -51,24 +57,39 @@ Definition of done for milestone one (DR-0005 §6, non-negotiable):
 
 ## What Not To Build Yet
 
-Written in from bootstrap, per DR-0005 §3 and Seat 03's (Security) condition in
-`corporate-strategy/board/meetings/2026-09-03-spoolsmith-new-product/01-debate.md` — mirroring
-netviz's own pattern in `netviz/CLAUDE.md`:
+Originally written in at bootstrap per DR-0005 §3 and Seat 03's (Security) condition; **narrowed,
+not deleted, by D-0040** (`corporate-strategy/decisions/DECISION_LOG.md`) once OS mutation was
+authorized for the two named families:
 
-- No OS mutation, driver-store write, elevation, or privileged process-exec of any kind, under
-  any flag (including a "test-only" or "dry-run" one that could grow a production caller) — not
-  without a **separate future board/operator motion**, regardless of how small the diff looks.
-- No fetching-and-executing a remote payload without a written driver-payload trust model (source,
-  signature/hash verification, elevation scope, rollback/uninstall path) existing *first*, and
-  that trust model itself requires board/operator sign-off before the install-milestone motion
-  that would need it.
-- No remote shell, no remote command execution beyond SpoolSmith's own local fingerprinting.
+- No OS mutation, driver-store write, elevation, or privileged process-exec for anything **outside
+  the two D-0040-named families or outside its documented trust model** — not without its own
+  separate future board/operator motion, regardless of how small the diff looks. This still
+  includes: any additional family, any install mechanism other than the documented one, and any
+  path that skips the required confirmation step.
+- No fetching-and-executing a remote payload — D-0040's trust model explicitly excludes SpoolSmith
+  downloading an installer from a network URL itself. Any change to add that is a new decision.
+- No remote shell, no remote command execution beyond SpoolSmith's own local fingerprinting and
+  its documented, visible install commands (PowerShell cmdlets / vendor's own signed installer).
 - No credential handling or credential storage of any kind.
-- No RMM-like workflows — SpoolSmith installs a driver a human already reviewed, nothing else.
-- No fuzzy match ever installs anything silently. Every install plan is reviewable before
-  approval; confidence and evidence are always inspectable.
+- No RMM-like workflows — SpoolSmith installs a driver a human already reviewed and approved,
+  nothing else, and never on a schedule or in response to anything but an explicit, one-time
+  confirmed command.
+- **No fuzzy match ever installs anything silently, and no install ever skips the one required
+  confirmation of a shown plan — this line survived D-0040 unchanged and is not up for
+  negotiation by a future diff.** Confidence and evidence are always inspectable.
 - No per-model hand-maintained catalog sprawl — if a change looks like "add model #500 to a giant
   table," the family/catalog abstraction has failed and that's a finding, not a feature.
+
+## Driver-payload trust model (D-0040 — required to exist before install code, not after)
+
+- Source: vendor-published installers only (HP UPD, Brother Full Driver Package). No mirrors.
+- No network auto-fetch — installer must be staged locally or resolved via Windows'
+  `Add-PrinterDriver`/`pnputil` against Windows Update/inbox drivers.
+- Verification: Windows' own Authenticode signature check on the vendor EXE/MSI; `DriverPackage.SHA256`
+  checked against the staged file as defense-in-depth when populated.
+- Elevation: SpoolSmith does not self-elevate; fails closed if not run as Administrator.
+- Approval: exactly one explicit confirmation of the full shown plan before any mutation, always.
+- Rollback: `uninstall` reverses exactly what `install` recorded.
 
 ## Architecture Rules
 
