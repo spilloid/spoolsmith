@@ -48,3 +48,28 @@ presented as if it came from this repo's own history.
 
 | Unit | Task type | Author | Reviewer | Defects found | Defects real | Caught by tests instead | Est. tokens | Verdict |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Milestone 1 fixture vertical slice | Multi-file implementation from written contract (`docs/milestone-1-spec.md`) | Codex (`codex exec -s workspace-write -c model_reasoning_effort=medium`) | Codex (`codex exec -s read-only -c model_reasoning_effort=high`), adjudicated by the orchestrator, who reproduced every finding directly before accepting it | 5 (3 High, 2 Medium) | 3 confirmed High by direct reproduction (fail-closed resolver defects — see below), 2 confirmed Medium (a test-rigor gap, and a documented-not-code architectural note not requiring a fix) | 0 — none of the 3 High findings were things the existing test suite caught; each was a gap *in* what the tests exercised | Not measured | **Initial implementation: fixed the wrong bar.** All 5 spec-listed acceptance commands passed (build/vet/test green), but the review found `catalog.Resolve` returns `Confidence: 1` / empty `Uncertain` for evidence that should fail closed — exactly the invariant this milestone exists to prove. Fixed same round (see next row); not shipped as originally implemented. |
+| Milestone 1 fail-closed fix | Bugfix from written fix contract (`docs/milestone-1-fix-01.md`) | Codex (`codex exec -s workspace-write -c model_reasoning_effort=medium`) | Orchestrator, by direct re-execution of all three original repros plus the full suite (not re-dispatched to Codex a second time) | 0 new findings against the fix itself | N/A | New tests added for all 3 original repros plus a same-family/different-model case; golden-file comparison added for the determinism test (previously compared two in-process calls, which the review correctly flagged as not proving the spec's "separate runs" claim) | Not measured | **Fixed, independently verified.** All three original repros (conflicting models in one field; unsupported manufacturer named alongside a supported one; ambiguous multi-manufacturer MAC vendor string) now return `Family: nil, Driver: nil, Confidence: 0`, non-empty `Uncertain` — reproduced directly by the orchestrator, not accepted on Codex's report alone. Full suite green: `go build`, `go vet`, `go test ./... -v -count=1`. |
+
+**Process note, disclosed rather than absorbed silently:** the first background dispatch of the
+initial implementation unit was reported "completed" by the harness while its underlying `codex
+exec` process was still actually running, unattended, against this same working tree — caught only
+because the orchestrator checked `ps` directly rather than trusting the completion report, per this
+company's own standing rule that a dispatcher's report is a claim, not proof. The stale process was
+killed before it could race-write against a concurrently re-dispatched second attempt. No corrupted
+files resulted, but this is exactly the failure class `corporate-strategy`'s root `CLAUDE.md`
+already warns about, now confirmed to occur in this environment too.
+
+**Environment note:** this sandbox had no Go toolchain at all before this unit — installed via
+`brew install go` (1.27.1) to make any build/test/dispatch possible, mirroring the precedent set
+in a prior corporate-strategy session that used `podman` to obtain a JDK for RetroSpool when no
+JDK existed either.
+
+The fixture-provenance acceptance condition is **still not satisfied**, and this is unchanged by
+the fix above (the fix addressed resolver correctness, not evidence provenance). Neither supported
+family has a captured real-device observation: nobody performing this implementation had access
+to the printers in the sandbox. All supplied observations are labeled `synthetic` and identify
+their public documentation sources and assumptions. Full "milestone one done" status remains
+blocked until the operator captures evidence from actual printer hardware (plausibly at his MSP
+job, per DR-0005 §10) and adds it as a truthfully labeled fixture; no synthetic fixture has been
+presented as a capture.

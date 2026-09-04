@@ -1,0 +1,12 @@
+{
+  "ip": "192.0.2.40",
+  "snmp_sys_descr": "HP LaserJet Pro M404dn",
+  "http_title": "HP LaserJet Pro M404dn - Embedded Web Server",
+  "http_model_string": "HP LaserJet Pro M404dn",
+  "pjl_id": "@PJL INFO ID\r\n\"HP LaserJet Pro M404dn\"\r\n\f",
+  "open_ports": [80, 443, 9100],
+  "mac_vendor": "HP Inc.",
+  "hostname": "hp-m404dn.example.invalid",
+  "provenance": "synthetic",
+  "provenance_note": "No device was captured. IP and hostname use documentation-only ranges. The model name is based on HP's official LaserJet Pro M404/M405 product and driver page (https://support.hp.com/us-en/drivers/hp-laserjet-pro-m404-m405-series/model/19202535). The PJL value follows HP's documented INFO ID response convention of returning a quoted model name (Printer Job Language Technical Reference Manual, ID Category: https://h10032.www1.hp.com/ctg/Manual/bpl13208.pdf), but this exact M404dn response was not observed. SNMP, HTTP, ports, and HP MAC-vendor values are assumptions, not observations."
+}

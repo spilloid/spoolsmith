@@ -1,0 +1,20 @@
+{
+  "evidence": {
+    "ip": "192.0.2.60",
+    "http_title": "Office Printer Administration",
+    "http_model_string": "Network Printer 4000",
+    "open_ports": [
+      80,
+      9100
+    ],
+    "mac_vendor": "Unknown Vendor",
+    "hostname": "office-printer.example.invalid",
+    "provenance": "synthetic",
+    "provenance_note": "Deliberately unresolvable test evidence. Every value is invented, IP and hostname use documentation-only ranges, and no real device or vendor source is claimed."
+  },
+  "normalized_model": "",
+  "confidence": 0,
+  "uncertain": [
+    "no fixture-backed printer model matched the observed identifiers"
+  ]
+}

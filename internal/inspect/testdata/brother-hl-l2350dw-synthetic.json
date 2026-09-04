@@ -1,0 +1,43 @@
+{
+  "manufacturer": "Brother",
+  "model": "Brother HL-L2350DW",
+  "evidence": {
+    "ip": "192.0.2.50",
+    "snmp_sys_descr": "Brother HL-L2350DW series",
+    "http_title": "Brother HL-L2350DW",
+    "http_model_string": "HL-L2350DW",
+    "pjl_id": "MFG:Brother;MDL:HL-L2350DW;CLS:PRINTER;",
+    "open_ports": [
+      80,
+      9100
+    ],
+    "mac_vendor": "Brother Industries, LTD.",
+    "hostname": "brother-hl-l2350dw.example.invalid",
+    "provenance": "synthetic",
+    "provenance_note": "No device was captured. IP and hostname use documentation-only ranges. Model identity and the narrow HL-L2325DW/HL-L2350DW/HL-L2370DW/HL-L2370DWXL grouping are based on Brother's official shared quick setup guide (https://support.brother.com/g/b/files/dlf/doc100770/cv_hll2350dw_use_qsg_b.pdf); the model-specific package is documented by Brother's HL-L2350DW download page (https://support.brother.com/g/b/downloadlist.aspx?c=us\u0026lang=en\u0026os=10013\u0026prod=hll2350dw_us_eu_as). SNMP, HTTP, PJL, ports, and MAC-vendor values are assumptions, not observations."
+  },
+  "normalized_model": "Brother HL-L2350DW",
+  "family": {
+    "ID": "brother-hl-l2xxx",
+    "Manufacturer": "Brother",
+    "Aliases": [
+      "Brother HL-L2325DW",
+      "Brother HL-L2350DW",
+      "Brother HL-L2370DW",
+      "Brother HL-L2370DWXL",
+      "HL-L2325DW",
+      "HL-L2350DW",
+      "HL-L2370DW",
+      "HL-L2370DWXL"
+    ]
+  },
+  "driver": {
+    "FamilyID": "brother-hl-l2xxx",
+    "Name": "Brother model-specific Full Driver \u0026 Software Package",
+    "Source": "Brother Full Driver \u0026 Software Package for the resolved HL-L2xxx model; this is model-specific, not a universal driver",
+    "Version": "",
+    "SHA256": "",
+    "Strategy": "vendor-model-specific-full-package"
+  },
+  "confidence": 1
+}

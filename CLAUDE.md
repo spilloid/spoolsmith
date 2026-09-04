@@ -95,8 +95,12 @@ NetViz integration wired up.
 
 ## Commands
 
-Not yet applicable — no build system exists yet. This section is filled in by the first
-implementation unit alongside `go.mod` and the module layout.
+```sh
+go build ./...
+go vet ./...
+go test ./... -v
+go run ./cmd/spoolsmith inspect fixtures/hp-laserjet-m404-synthetic.json
+```
 
 ## Coding Conventions
 
