@@ -1,0 +1,104 @@
+name: Release Builds
+
+on:
+  release:
+    types:
+      - published
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to upload assets to
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build release (${{ matrix.goos }}-${{ matrix.goarch }})
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - goos: windows
+            goarch: amd64
+    env:
+      GOOS: ${{ matrix.goos }}
+      GOARCH: ${{ matrix.goarch }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22.x"
+      - name: Resolve release metadata
+        id: meta
+        shell: pwsh
+        run: |
+          $tag = "${{ github.event.release.tag_name }}"
+          if ([string]::IsNullOrWhiteSpace($tag)) {
+            $tag = "${{ inputs.tag }}"
+          }
+          "tag=$tag" >> $env:GITHUB_OUTPUT
+          "asset=spoolsmith-$tag-${{ matrix.goos }}-${{ matrix.goarch }}.zip" >> $env:GITHUB_OUTPUT
+      - name: Build Go binary
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          go build -o dist/spoolsmith.exe ./cmd/spoolsmith
+      - name: Stage archive
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force spoolsmith | Out-Null
+          Copy-Item dist/spoolsmith.exe,README.md,LICENSE spoolsmith/ -Force
+          Compress-Archive -Path spoolsmith -DestinationPath "${{ steps.meta.outputs.asset }}" -Force
+          $hash = Get-FileHash "${{ steps.meta.outputs.asset }}" -Algorithm SHA256
+          "$($hash.Hash.ToLowerInvariant())  ${{ steps.meta.outputs.asset }}" | Out-File "${{ steps.meta.outputs.asset }}.sha256" -Encoding ascii
+      - name: Upload release asset
+        uses: actions/github-script@v7
+        env:
+          RELEASE_TAG: ${{ steps.meta.outputs.tag }}
+          ASSET_PATHS: |
+            ${{ steps.meta.outputs.asset }}
+            ${{ steps.meta.outputs.asset }}.sha256
+        with:
+          script: |
+            const fs = require("fs");
+            const path = require("path");
+            const { owner, repo } = context.repo;
+            const tag = process.env.RELEASE_TAG;
+            const assetPaths = process.env.ASSET_PATHS.split(/\r?\n/).map((item) => item.trim()).filter(Boolean);
+
+            let release = context.payload.release;
+            if (!release) {
+              const response = await github.rest.repos.getReleaseByTag({ owner, repo, tag });
+              release = response.data;
+            }
+
+            const assets = await github.paginate(github.rest.repos.listReleaseAssets, {
+              owner,
+              repo,
+              release_id: release.id,
+            });
+
+            for (const assetPath of assetPaths) {
+              const name = path.basename(assetPath);
+              const existing = assets.find((asset) => asset.name === name);
+              if (existing) {
+                await github.rest.repos.deleteReleaseAsset({ owner, repo, asset_id: existing.id });
+              }
+
+              const data = fs.readFileSync(assetPath);
+              await github.rest.repos.uploadReleaseAsset({
+                owner,
+                repo,
+                release_id: release.id,
+                name,
+                data,
+                headers: {
+                  "content-type": "application/octet-stream",
+                  "content-length": data.length,
+                },
+              });
+            }
