@@ -1,0 +1,19 @@
+# Force LF line endings for all text files, regardless of platform or local
+# git config (core.autocrlf). Without this, a Windows checkout can convert
+# LF to CRLF on checkout, breaking exact-byte golden-file comparisons like
+# internal/inspect/testdata/*.json against internal/inspect_test.go's
+# TestInspectDeterministicGoldenOutput -- which is exactly what happened on
+# this repo's own windows-latest CI runner (see docs/dev-process.md).
+* text=auto eol=lf
+
+*.go text eol=lf
+*.json text eol=lf
+*.md text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.mod text eol=lf
+*.sum text eol=lf
+
+# PowerShell scripts are native to Windows; CRLF is conventional there and
+# causes no test-comparison issues, so leave them out of the forced-LF rule.
+*.ps1 text eol=crlf
