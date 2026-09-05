@@ -3,12 +3,13 @@ package catalog
 // DriverPackage describes the selected package and non-executable strategy.
 // Volatile package metadata intentionally remains separate from family data.
 type DriverPackage struct {
-	FamilyID string
-	Name     string
-	Source   string
-	Version  string
-	SHA256   string
-	Strategy string
+	FamilyID          string
+	Name              string
+	WindowsDriverName string
+	Source            string
+	Version           string
+	SHA256            string
+	Strategy          string
 }
 
 var drivers = map[string]DriverPackage{

@@ -37,6 +37,7 @@
   "driver": {
     "FamilyID": "hp-laserjet-m4xx",
     "Name": "HP Universal Print Driver for Windows PCL 6",
+    "WindowsDriverName": "",
     "Source": "HP Universal Print Driver (PCL 6), listed by HP for the LaserJet Pro M404/M405 series",
     "Version": "",
     "SHA256": "",

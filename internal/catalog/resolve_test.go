@@ -19,6 +19,21 @@ func TestFamiliesHasExactlyTwoFamilies(t *testing.T) {
 	}
 }
 
+func TestWindowsDriverNamesRemainUnverified(t *testing.T) {
+	for _, family := range Families() {
+		driver, ok := DriverFor(family.ID)
+		if !ok {
+			t.Fatalf("DriverFor(%q) not found", family.ID)
+		}
+		if driver.WindowsDriverName != "" {
+			t.Fatalf("DriverFor(%q).WindowsDriverName = %q, want empty until verified on Windows hardware", family.ID, driver.WindowsDriverName)
+		}
+		if driver.Name == "" {
+			t.Fatalf("DriverFor(%q).Name is empty; display package label must remain separate", family.ID)
+		}
+	}
+}
+
 func TestResolveKnownFixtures(t *testing.T) {
 	tests := []struct {
 		fixture string

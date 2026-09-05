@@ -34,6 +34,7 @@
   "driver": {
     "FamilyID": "brother-hl-l2xxx",
     "Name": "Brother model-specific Full Driver \u0026 Software Package",
+    "WindowsDriverName": "",
     "Source": "Brother Full Driver \u0026 Software Package for the resolved HL-L2xxx model; this is model-specific, not a universal driver",
     "Version": "",
     "SHA256": "",
