@@ -80,7 +80,8 @@ Read this before pointing SpoolSmith at a printer you actually depend on:
 - **Install doesn't run yet, on purpose.** Windows registers OEM drivers under a specific internal
   name, and nobody has confirmed those exact names against real `Get-PrinterDriver` output on real
   hardware. Rather than guess a plausible-looking name, `install` refuses to build a plan until
-  that's verified. This will be resolved as real hardware gets tested.
+  that's verified. See [`docs/real-hardware-verification.md`](docs/real-hardware-verification.md)
+  for the exact runbook that closes this out.
 - **Windows only** for detection *and* install today. The codebase is structured so macOS/Linux
   support is a smaller lift later, not a rewrite — but it isn't built yet.
 - No signature verification beyond what Windows itself already does on the driver package.
