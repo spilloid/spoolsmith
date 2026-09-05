@@ -93,3 +93,20 @@ presented as a capture.
   `catalog.DriverPackage.WindowsDriverName` is empty for both HP and Brother by design — populate
   both (stage the real vendor package on a Windows machine, run `Get-PrinterDriver`, copy the exact
   registered name) before attempting a real install against either family.
+
+## Real CI, found and fixed the same day it started running
+
+`ci.yml`'s `push` trigger had actually been running since the CI/CD unit landed, and had been
+**failing on `windows-latest`** on both commits since — this went unnoticed through two full
+review-and-fix rounds because nobody checked `gh run list` until preparing to cut the v0.1.0
+release. Caught then, not before: `TestInspectDeterministicGoldenOutput` failed on Windows only.
+Root cause: `internal/inspect/testdata/*.json` were checked in with LF line endings (everything
+here was authored on Linux) with no explicit line-ending attribute, so the `windows-latest`
+runner's git checkout converted them to CRLF on checkout, breaking the exact-byte comparison that
+same test was deliberately strengthened to perform last round (see the milestone-1-fix-01 log row
+above — the fix for a different finding is what made this one visible). Fixed with a repo-root
+`.gitattributes` forcing `eol=lf` for text files (`.ps1` left CRLF-native, since nothing byte-
+compares those). No blob renormalization was needed — the stored content was already LF; only the
+attribute declaration was missing. Re-pushed and watched the real run (`gh run watch`) go green on
+both `windows-latest` and `ubuntu-latest` before treating this as closed — not assumed from the
+diff alone.
