@@ -110,3 +110,20 @@ compares those). No blob renormalization was needed — the stored content was a
 attribute declaration was missing. Re-pushed and watched the real run (`gh run watch`) go green on
 both `windows-latest` and `ubuntu-latest` before treating this as closed — not assumed from the
 diff alone.
+
+## v0.1.0 cut and verified for real (2026-09-05)
+
+Tagged and released `v0.1.0` — the first real, tagged release this repo has ever produced.
+Watched the actual `Release Builds` workflow run live (`gh run watch`) rather than assuming it
+worked because the trigger fired: `windows-amd64` build succeeded, the zip + sha256 uploaded
+cleanly. Then independently re-verified outside the workflow entirely — downloaded the actual
+release asset, confirmed the checksum matches, unzipped it, and confirmed the contained
+`spoolsmith.exe` is a genuine `PE32+ executable for MS Windows... x86-64` binary, not just an
+"uploaded" status in the API. Release notes state plainly that `install` is fully built but
+intentionally refuses to run for either family pending real-hardware driver-name verification —
+the same disclosure as everywhere else in this log, not softened for a public release.
+
+Also rebuilt `docs/` as a real static product page (`index.html` + `.nojekyll`) matching the
+established Spillers Technology portfolio convention (checked netviz's and the storefront's own
+`docs/index.html` directly rather than guessing at the house style), replacing an earlier
+Jekyll-themed draft that didn't match how every sibling repo actually does this.
