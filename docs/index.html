@@ -1,0 +1,379 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="SpoolSmith finds network printers, works out the right OEM driver, shows you the exact install plan, and only touches Windows after you say yes. No fuzzy installs, no RMM behavior, no fetching drivers off the internet."
+    />
+    <meta property="og:title" content="SpoolSmith | Find the printer. Review the plan. Install on purpose." />
+    <meta
+      property="og:description"
+      content="Automatic printer detection, a small family-based driver catalog, and an install that only happens after you review the exact plan and say yes."
+    />
+    <meta property="og:url" content="https://spilloid.github.io/spoolsmith/" />
+    <title>SpoolSmith | Find the printer. Review the plan. Install on purpose.</title>
+    <style>
+      :root {
+        color: #201a15;
+        background: #f6f2ec;
+        font-family: "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+        font-synthesis: none;
+        text-rendering: optimizeLegibility;
+      }
+      * { box-sizing: border-box; }
+      html { scroll-behavior: smooth; }
+      html, body { overflow-x: clip; }
+      body { min-width: 320px; margin: 0; background: #f6f2ec; }
+      a { color: inherit; }
+      code, pre { font-family: "Cascadia Code", "SF Mono", Consolas, monospace; }
+
+      .topbar {
+        position: fixed;
+        z-index: 10;
+        top: 0; left: 0; right: 0;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 24px;
+        min-height: 60px;
+        padding: 12px clamp(18px, 5vw, 64px);
+        background: rgba(246, 242, 236, 0.86);
+        border-bottom: 1px solid rgba(32, 26, 21, 0.1);
+        backdrop-filter: blur(16px);
+      }
+      .brand { display: inline-flex; align-items: center; gap: 10px; font-weight: 700; text-decoration: none; }
+      .mark {
+        width: 26px; height: 26px; border-radius: 7px;
+        background: linear-gradient(135deg, #c2703d, #8a4a24);
+        box-shadow: inset 0 0 0 1px rgba(255,255,255,0.35);
+        display: inline-flex; align-items: center; justify-content: center;
+        color: #fff; font-size: 13px; font-weight: 800;
+      }
+      nav { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 16px; font-size: 14px; }
+      nav a { color: #4a3f36; text-decoration: none; }
+      nav a:hover { color: #c2703d; }
+
+      main { padding-top: 60px; }
+
+      .hero {
+        position: relative;
+        display: grid;
+        grid-template-columns: 1.1fr 1fr;
+        gap: 48px;
+        align-items: center;
+        padding: 96px clamp(18px, 5vw, 64px) 72px;
+        max-width: 1280px;
+        margin: 0 auto;
+      }
+      @media (max-width: 860px) { .hero { grid-template-columns: 1fr; padding-top: 64px; } }
+
+      .kicker {
+        display: inline-flex; align-items: center; gap: 8px;
+        font-size: 13px; font-weight: 700; letter-spacing: 0.02em;
+        color: #8a4a24; margin: 0 0 14px;
+      }
+      .liveDot {
+        width: 8px; height: 8px; border-radius: 50%;
+        background: #2f8f5b; box-shadow: 0 0 0 3px rgba(47,143,91,0.18);
+      }
+      h1 { font-size: clamp(34px, 5vw, 52px); line-height: 1.05; margin: 0 0 18px; }
+      h1 em { color: #c2703d; font-style: normal; }
+      .heroLead { font-size: 18px; line-height: 1.55; color: #4a3f36; max-width: 520px; margin: 0 0 26px; }
+      .ctaRow { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 22px; }
+      .btn {
+        display: inline-flex; align-items: center; gap: 6px;
+        padding: 12px 20px; border-radius: 10px; font-weight: 700; font-size: 14.5px;
+        text-decoration: none; transition: transform .15s ease;
+      }
+      .btn:hover { transform: translateY(-1px); }
+      .btnPrimary { background: #201a15; color: #f6f2ec; }
+      .btnGhost { background: transparent; color: #201a15; box-shadow: inset 0 0 0 1.5px rgba(32,26,21,0.25); }
+      .heroNotes { list-style: none; display: flex; flex-wrap: wrap; gap: 10px 18px; padding: 0; margin: 0; font-size: 13.5px; color: #6b5d51; }
+      .heroNotes li::before { content: "✓ "; color: #2f8f5b; font-weight: 800; }
+
+      .console {
+        background: #201a15; color: #f6f2ec; border-radius: 18px;
+        padding: 22px 24px; box-shadow: 0 24px 60px -20px rgba(32,26,21,0.5);
+        font-size: 13.5px;
+      }
+      .consoleHead { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; font-size: 12px; color: #c9bdb2; }
+      .consoleHead b { color: #f6f2ec; font-weight: 700; }
+      .consoleStatus { display: inline-flex; align-items: center; gap: 6px; }
+      .consoleStatus i { width: 7px; height: 7px; border-radius: 50%; background: #e0a458; display: inline-block; animation: pulse 1.6s ease infinite; }
+      @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .3; } }
+      .consoleLine { display: flex; justify-content: space-between; padding: 9px 0; border-top: 1px solid rgba(246,242,236,0.08); font-family: "Cascadia Code","SF Mono",Consolas,monospace; }
+      .consoleLine:first-of-type { border-top: none; }
+      .consoleLine span:first-child { color: #c9bdb2; }
+      .consoleLine b { color: #f6f2ec; }
+      .consoleLine .ok { color: #6fcf97; }
+      .consoleLine .warn { color: #e0a458; }
+      .consoleAsk { margin-top: 14px; padding: 12px 14px; border-radius: 10px; background: rgba(194,112,61,0.16); border: 1px solid rgba(194,112,61,0.4); font-family: "Cascadia Code","SF Mono",Consolas,monospace; }
+      .consoleAsk b { color: #e0a458; }
+
+      .band { padding: 72px clamp(18px, 5vw, 64px); max-width: 1280px; margin: 0 auto; }
+      .lightBand { background: #efe7db; }
+      h2 { font-size: clamp(26px, 3vw, 34px); margin: 0 0 10px; }
+      .eyebrow { font-size: 13px; font-weight: 700; letter-spacing: 0.03em; color: #8a4a24; margin: 0 0 8px; }
+      .lede { color: #4a3f36; max-width: 700px; font-size: 16px; line-height: 1.6; margin: 0 0 40px; }
+
+      .featureGrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 22px; }
+      .feature { background: #fff; border-radius: 16px; padding: 24px; box-shadow: 0 8px 30px -18px rgba(32,26,21,0.25); }
+      .feature h3 { margin: 0 0 8px; font-size: 17px; }
+      .feature p { margin: 0; color: #4a3f36; font-size: 14.5px; line-height: 1.55; }
+
+      .split { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; align-items: start; }
+      @media (max-width: 860px) { .split { grid-template-columns: 1fr; } }
+      .checks { list-style: none; padding: 0; margin: 16px 0 0; display: grid; gap: 10px; }
+      .checks li { padding-left: 26px; position: relative; font-size: 14.5px; color: #4a3f36; }
+      .checks li::before { content: "—"; position: absolute; left: 0; color: #c2703d; font-weight: 800; }
+      .boundaries { background: #201a15; color: #f6f2ec; border-radius: 18px; padding: 28px 30px; }
+      .boundaries h3 { margin: 0 0 6px; font-size: 18px; }
+      .boundaries .checks li { color: #d7cec5; }
+      .boundaries .checks li::before { color: #e0a458; }
+
+      pre { background: #201a15; color: #f6f2ec; padding: 20px 22px; border-radius: 14px; overflow-x: auto; font-size: 13.5px; line-height: 1.7; margin: 0; }
+      pre .cmt { color: #8a7e73; }
+
+      .pipeline { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; font-family: "Cascadia Code","SF Mono",Consolas,monospace; font-size: 13.5px; margin-top: 18px; }
+      .pipeline span, .pipeline strong { background: #fff; border-radius: 999px; padding: 8px 16px; box-shadow: 0 6px 20px -14px rgba(32,26,21,0.3); }
+      .pipeline strong { background: #201a15; color: #f6f2ec; }
+      .pipeline .arrow { color: #c2703d; font-weight: 800; }
+
+      .limitBox { background: #fff; border-radius: 16px; padding: 26px 28px; box-shadow: 0 8px 30px -18px rgba(32,26,21,0.25); }
+      .limitBox h3 { margin-top: 0; }
+      .limitBox ul { padding-left: 20px; margin: 0; color: #4a3f36; font-size: 14.5px; line-height: 1.7; }
+
+      .roadmap ol { list-style: none; padding: 0; margin: 0; display: grid; gap: 18px; }
+      .roadmap li { display: grid; grid-template-columns: 140px 1fr; gap: 18px; align-items: baseline; padding: 16px 20px; border-radius: 12px; }
+      .roadmap li.current { background: #fff; box-shadow: 0 8px 30px -18px rgba(32,26,21,0.3); }
+      .roadmap b { color: #8a4a24; }
+      .roadmap span { color: #4a3f36; font-size: 14.5px; }
+
+      .foss { align-items: center; }
+      .foss h2 { margin-bottom: 14px; }
+
+      footer {
+        display: flex; flex-wrap: wrap; justify-content: space-between; gap: 10px;
+        padding: 28px clamp(18px, 5vw, 64px) 40px; font-size: 13px; color: #6b5d51;
+        border-top: 1px solid rgba(32,26,21,0.1);
+      }
+      footer a { text-decoration: underline; }
+    </style>
+  </head>
+  <body>
+    <header class="topbar" aria-label="Primary">
+      <a class="brand" href="#top" aria-label="SpoolSmith home">
+        <span class="mark" aria-hidden="true">S</span>
+        <span>SpoolSmith</span>
+      </a>
+      <nav>
+        <a href="#download">Download</a>
+        <a href="#how">How it works</a>
+        <a href="#boundaries">Boundaries</a>
+        <a href="#cli">CLI</a>
+        <a href="#roadmap">Roadmap</a>
+        <a href="https://github.com/spilloid/spoolsmith">GitHub</a>
+      </nav>
+    </header>
+
+    <main id="top">
+      <section class="hero" aria-labelledby="hero-title">
+        <div class="heroCopy">
+          <p class="kicker"><span class="liveDot" aria-hidden="true"></span> v0.1.0 · live detection, reviewed install</p>
+          <h1 id="hero-title">Find the printer.<br />Review the plan.<br /><em>Install on purpose.</em></h1>
+          <p class="heroLead">
+            SpoolSmith spots a network printer, works out the right OEM driver from a small,
+            honest catalog, and shows you the exact plan — before anything touches Windows.
+            Detection is automatic. Installing is always your call.
+          </p>
+          <div class="ctaRow">
+            <a class="btn btnPrimary" href="#download">Download for Windows</a>
+            <a class="btn btnGhost" href="https://github.com/spilloid/spoolsmith">View on GitHub</a>
+          </div>
+          <ul class="heroNotes" aria-label="Product principles">
+            <li>No fuzzy installs</li>
+            <li>No fetching drivers off the internet</li>
+            <li>No RMM behavior, ever</li>
+          </ul>
+        </div>
+
+        <div class="console" aria-hidden="true">
+          <div class="consoleHead">
+            <b>spoolsmith inspect 192.168.1.64</b>
+            <span class="consoleStatus"><i></i> resolving</span>
+          </div>
+          <div class="consoleLine"><span>manufacturer</span><b>HP</b></div>
+          <div class="consoleLine"><span>model</span><b>LaserJet Pro M404dn</b></div>
+          <div class="consoleLine"><span>family</span><b>hp-laserjet-m4xx</b></div>
+          <div class="consoleLine"><span>driver source</span><b>HP Universal Print Driver</b></div>
+          <div class="consoleLine"><span>confidence</span><b class="ok">1.0 — fully resolved</b></div>
+          <div class="consoleLine"><span>uncertain</span><b class="ok">none</b></div>
+          <div class="consoleAsk">Proceed with install? [y/N] <b>_</b></div>
+        </div>
+      </section>
+
+      <section id="how" class="band" aria-labelledby="how-title">
+        <p class="eyebrow">How it works</p>
+        <h2 id="how-title">One command finds it. One decision installs it.</h2>
+        <p class="lede">
+          SpoolSmith fingerprints a printer over the network, resolves it against a small
+          family-based catalog, and hands you a plan you can actually read — not a wizard full of
+          dropdowns, and never a silent install.
+        </p>
+        <div class="featureGrid">
+          <article class="feature">
+            <h3>Automatic detection</h3>
+            <p>SNMP, HTTP, and PJL fingerprinting run on their own — no manual fields to fill in for every device you check.</p>
+          </article>
+          <article class="feature">
+            <h3>A plan, not a guess</h3>
+            <p>Before anything happens, SpoolSmith shows the exact driver, the exact port, and the exact commands it's about to run. You approve it, or you don't.</p>
+          </article>
+          <article class="feature">
+            <h3>Fails closed on ambiguity</h3>
+            <p>If the evidence doesn't clearly point to one supported printer, SpoolSmith says so and stops. It never installs its best guess.</p>
+          </article>
+          <article class="feature">
+            <h3>A catalog, not a database</h3>
+            <p>Printer identity resolves through families — one HP entry covers a whole product line — instead of a table that grows one row per model forever.</p>
+          </article>
+          <article class="feature">
+            <h3>Scriptable by design</h3>
+            <p>Every command's output is clean JSON on <code>stdout</code>. Prompts and summaries live on <code>stderr</code>, so nothing gets tangled in a pipeline.</p>
+          </article>
+          <article class="feature">
+            <h3>Reversible</h3>
+            <p><code>uninstall</code> takes back exactly what <code>install</code> set up — same printer, same port, same discipline.</p>
+          </article>
+        </div>
+      </section>
+
+      <section id="boundaries" class="band split" aria-labelledby="boundaries-title">
+        <div>
+          <h2 id="boundaries-title">Not a wizard. Not an RMM.</h2>
+          <p class="lede" style="margin-bottom: 16px;">
+            SpoolSmith does one job — get the right driver onto the right printer, on your say-so
+            — and is built to structurally not become anything more than that.
+          </p>
+          <ul class="checks">
+            <li>No credential handling of any kind</li>
+            <li>No remote shell, no arbitrary command execution</li>
+            <li>No scheduled or unattended installs</li>
+            <li>No downloading a driver installer from the internet on its own</li>
+          </ul>
+        </div>
+        <div class="boundaries">
+          <h3>The one rule that doesn't move</h3>
+          <p style="margin: 0; color: #d7cec5; font-size: 14.5px; line-height: 1.6;">
+            No install — none, under any flag, including the ones meant for scripting — happens
+            without SpoolSmith showing you the full plan and getting one explicit yes first.
+          </p>
+          <ul class="checks" style="margin-top: 18px;">
+            <li>Uses only Windows' own printer-management commands</li>
+            <li>Verifies elevation and driver presence before showing a plan</li>
+            <li>Relies on Windows' own signature checks — no custom trust logic</li>
+          </ul>
+        </div>
+      </section>
+
+      <section id="download" class="band lightBand" aria-labelledby="download-title" style="background:#efe7db; border-radius: 24px; max-width: 1280px;">
+        <p class="eyebrow">Download</p>
+        <h2 id="download-title">Get SpoolSmith</h2>
+        <p class="lede">
+          A single <code>spoolsmith.exe</code> — no installer, no dependencies, no background
+          service.
+        </p>
+        <div class="ctaRow">
+          <a class="btn btnPrimary" href="https://github.com/spilloid/spoolsmith/releases/latest">Download the latest Windows build</a>
+          <a class="btn btnGhost" href="https://github.com/spilloid/spoolsmith#install">Build from source</a>
+        </div>
+      </section>
+
+      <section id="cli" class="band split" aria-labelledby="cli-title">
+        <div>
+          <h2 id="cli-title">Prefer the terminal?</h2>
+          <p class="lede" style="margin-bottom: 0;">
+            Everything SpoolSmith does is one command away — detection, catalog lookups, install,
+            and a dry run that touches nothing.
+          </p>
+        </div>
+        <pre><code><span class="cmt"># Point it at a printer</span>
+spoolsmith inspect 192.168.1.64
+
+<span class="cmt"># See the plan, touch nothing</span>
+spoolsmith install 192.168.1.64 --dry-run
+
+<span class="cmt"># Review, confirm, install</span>
+spoolsmith install 192.168.1.64
+
+<span class="cmt"># Undo exactly what install set up</span>
+spoolsmith uninstall "HP LaserJet Pro M404dn"</code></pre>
+      </section>
+
+      <section class="band" aria-labelledby="arch-title">
+        <p class="eyebrow">Under the hood</p>
+        <h2 id="arch-title">One idea, followed all the way through</h2>
+        <p class="lede">
+          Every printer resolves the same way — from raw evidence down to a specific, swappable
+          driver package — so adding support for a new model is a catalog entry, not a rewrite.
+        </p>
+        <div class="pipeline" aria-label="Resolution pipeline">
+          <span>Observed identifiers</span>
+          <span class="arrow">→</span>
+          <span>Normalized model</span>
+          <span class="arrow">→</span>
+          <span>Printer family</span>
+          <span class="arrow">→</span>
+          <strong>Driver package</strong>
+        </div>
+      </section>
+
+      <section class="band" aria-labelledby="limits-title">
+        <p class="eyebrow">Honest status</p>
+        <h2 id="limits-title">What v0.1.0 actually does today</h2>
+        <div class="limitBox">
+          <h3>Worth knowing before you rely on it</h3>
+          <ul>
+            <li><b>Two printer families today</b> — HP LaserJet Pro M4xx and Brother HL-L2xxx. Anything else fails closed at detection.</li>
+            <li><b>Install is built but intentionally inert</b> — the exact internal name Windows registers each OEM driver under hasn't been confirmed on real hardware yet, so <code>install</code> refuses to build a plan until that's verified. That's the actual next milestone, not a missing feature.</li>
+            <li><b>Windows only</b>, for detection and install both, today. The code already separates platform-specific behavior behind a narrow interface — extending it is a real future item, not a rewrite.</li>
+          </ul>
+        </div>
+      </section>
+
+      <section id="roadmap" class="band roadmap" aria-labelledby="roadmap-title">
+        <p class="eyebrow">Roadmap</p>
+        <h2 id="roadmap-title">Where this goes next</h2>
+        <ol>
+          <li><b>Live now</b><span>Live SNMP/HTTP/PJL detection, family-based catalog resolution, deterministic inspect output for HP and Brother.</span></li>
+          <li class="current"><b>v0.1.0 — now</b><span>Reviewed Windows install and uninstall, fully built — waiting on real-hardware driver-name verification before it goes live.</span></li>
+          <li><b>Next</b><span>Confirm real Windows driver names for both families against actual hardware; first genuinely working end-to-end install.</span></li>
+          <li><b>Later</b><span>More printer families, added as catalog entries, not rewrites.</span></li>
+          <li><b>Someday</b><span>macOS and Linux detection and install support.</span></li>
+        </ol>
+      </section>
+
+      <section class="band foss split" aria-labelledby="foss-title">
+        <div>
+          <h2 id="foss-title">Open, the boring-honest way</h2>
+          <p class="lede" style="margin-bottom: 18px;">
+            MIT licensed, written in Go, zero third-party dependencies. The full engineering
+            record — every adversarial review, every real defect found, what got fixed — is
+            public in the repo, not cleaned up for marketing.
+          </p>
+          <div class="ctaRow">
+            <a class="btn btnPrimary" href="https://github.com/spilloid/spoolsmith">Star on GitHub</a>
+            <a class="btn btnGhost" href="https://github.com/spilloid/spoolsmith/blob/main/docs/dev-process.md">Read the dev log</a>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <span>MIT licensed · <a href="https://github.com/spilloid/spoolsmith">github.com/spilloid/spoolsmith</a> · a Spillers Technology project</span>
+      <span>Only install drivers on printers you own or are authorized to manage.</span>
+    </footer>
+  </body>
+</html>
