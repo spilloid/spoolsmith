@@ -10,6 +10,15 @@ import (
 	"github.com/spilloid/spoolsmith/internal/catalog"
 )
 
+// pagePadding and row are shared layout presets so every tab gets the same
+// breathing room instead of controls sitting flush against the window edge
+// and each other (the walk/declarative zero-value VBox/HBox has none).
+func pagePadding() VBox { return VBox{Margins: Margins{Left: 12, Top: 12, Right: 12, Bottom: 12}, Spacing: 10} }
+func row() HBox         { return HBox{Spacing: 8} }
+func formGrid(columns int) Grid {
+	return Grid{Columns: columns, Spacing: 8, MarginsZero: true}
+}
+
 func main() {
 	guiApp, err := walk.InitApp()
 	if err != nil {
@@ -52,16 +61,35 @@ func main() {
 		log.Fatal(err)
 	}
 	a.modeInstall.SetChecked(true)
+	applyStyle(a)
 	guiApp.Run()
+}
+
+// applyStyle replaces the toolkit's default 8pt "MS Shell Dlg 2" (the classic
+// dated Win32 look) with Segoe UI everywhere, then gives the read-only JSON/
+// plan/log output panes a monospace font for legibility. SetFont on the
+// MainWindow cascades to every descendant automatically; the per-pane
+// overrides below run after that cascade so they aren't clobbered by it.
+func applyStyle(a *app) {
+	if uiFont, err := walk.NewFont("Segoe UI", 9, 0); err == nil {
+		a.mw.SetFont(uiFont)
+	}
+	monoFont, err := walk.NewFont("Consolas", 9, 0)
+	if err != nil {
+		return
+	}
+	for _, out := range []*walk.TextEdit{a.discoverOut, a.inspectOut, a.catalogOut, a.profileOut, a.planOut, a.logOut} {
+		out.SetFont(monoFont)
+	}
 }
 
 func discoverPage(a *app) TabPage {
 	return TabPage{
 		Title:  "Discover",
-		Layout: VBox{},
+		Layout: pagePadding(),
 		Children: []Widget{
 			Composite{
-				Layout: HBox{},
+				Layout: row(),
 				Children: []Widget{
 					Label{Text: "IPv4 CIDR (/24 through /32):"},
 					LineEdit{AssignTo: &a.discoverCIDR, CueBanner: "192.168.1.0/24"},
@@ -76,10 +104,10 @@ func discoverPage(a *app) TabPage {
 func inspectPage(a *app) TabPage {
 	return TabPage{
 		Title:  "Inspect",
-		Layout: VBox{},
+		Layout: pagePadding(),
 		Children: []Widget{
 			Composite{
-				Layout: HBox{},
+				Layout: row(),
 				Children: []Widget{
 					Label{Text: "Target (IP or fixture file):"},
 					LineEdit{AssignTo: &a.inspectTarget},
@@ -94,10 +122,10 @@ func inspectPage(a *app) TabPage {
 func catalogPage(a *app) TabPage {
 	return TabPage{
 		Title:  "Catalog",
-		Layout: VBox{},
+		Layout: pagePadding(),
 		Children: []Widget{
 			Composite{
-				Layout: HBox{},
+				Layout: row(),
 				Children: []Widget{
 					PushButton{AssignTo: &a.familiesBtn, Text: "List families", OnClicked: a.onFamilies},
 					Label{Text: "Probe IP:"},
@@ -113,10 +141,10 @@ func catalogPage(a *app) TabPage {
 func profilesPage(a *app) TabPage {
 	return TabPage{
 		Title:  "Profiles",
-		Layout: VBox{},
+		Layout: pagePadding(),
 		Children: []Widget{
 			Composite{
-				Layout: HBox{},
+				Layout: row(),
 				Children: []Widget{
 					Label{Text: "Profiles directory:"},
 					LineEdit{AssignTo: &a.profileDir, Text: "profiles"},
@@ -132,7 +160,7 @@ func profilesPage(a *app) TabPage {
 			},
 			GroupBox{
 				Title:  "Capture new profile",
-				Layout: Grid{Columns: 4},
+				Layout: formGrid(4),
 				Children: []Widget{
 					Label{Text: "Target IP:"}, LineEdit{AssignTo: &a.captureTarget},
 					Label{Text: "Queue name:"}, LineEdit{AssignTo: &a.captureName},
@@ -143,7 +171,7 @@ func profilesPage(a *app) TabPage {
 			},
 			GroupBox{
 				Title:  "Edit selected profile",
-				Layout: Grid{Columns: 4},
+				Layout: formGrid(4),
 				Children: []Widget{
 					PushButton{AssignTo: &a.loadEditBtn, Text: "Load selected", OnClicked: a.onLoadEdit, ColumnSpan: 4},
 					Label{Text: "Queue name:"}, LineEdit{AssignTo: &a.editName},
@@ -159,30 +187,30 @@ func profilesPage(a *app) TabPage {
 func mutatePage(a *app) TabPage {
 	return TabPage{
 		Title:  "Install / Uninstall",
-		Layout: VBox{},
+		Layout: pagePadding(),
 		Children: []Widget{
 			Composite{
-				Layout: HBox{},
+				Layout: row(),
 				Children: []Widget{
 					RadioButton{AssignTo: &a.modeInstall, Text: "Install / configure"},
 					RadioButton{AssignTo: &a.modeUninstall, Text: "Uninstall / remove"},
 				},
 			},
 			Composite{
-				Layout: HBox{},
+				Layout: row(),
 				Children: []Widget{
 					CheckBox{AssignTo: &a.useProfileCheck, Text: "Use profile file (instead of a target/name)"},
 				},
 			},
 			Composite{
-				Layout: HBox{},
+				Layout: row(),
 				Children: []Widget{
 					Label{Text: "Target IP / printer name / profile path:"},
 					LineEdit{AssignTo: &a.targetField},
 				},
 			},
 			Composite{
-				Layout: HBox{},
+				Layout: row(),
 				Children: []Widget{
 					Label{Text: "Force family (install only):"},
 					ComboBox{AssignTo: &a.forceFamilyCombo, Model: a.familyLabels, CurrentIndex: 0},
@@ -191,7 +219,7 @@ func mutatePage(a *app) TabPage {
 				},
 			},
 			Composite{
-				Layout: HBox{},
+				Layout: row(),
 				Children: []Widget{
 					PushButton{AssignTo: &a.previewBtn, Text: "Preview plan", OnClicked: a.onPreview},
 					PushButton{AssignTo: &a.executeBtn, Text: "Execute (mutate this machine)", Enabled: false, OnClicked: a.onExecute},
@@ -205,10 +233,10 @@ func mutatePage(a *app) TabPage {
 func logPage(a *app) TabPage {
 	return TabPage{
 		Title:  "Action log",
-		Layout: VBox{},
+		Layout: pagePadding(),
 		Children: []Widget{
 			Composite{
-				Layout: HBox{},
+				Layout: row(),
 				Children: []Widget{
 					PushButton{AssignTo: &a.refreshLog, Text: "Refresh", OnClicked: a.onRefreshLog},
 					PushButton{AssignTo: &a.openLogPath, Text: "Show log file path", OnClicked: a.onOpenLogPath},
