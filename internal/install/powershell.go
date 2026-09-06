@@ -49,8 +49,8 @@ func lookupPrinterCommand(printerName string) (string, error) {
 	if strings.TrimSpace(printerName) == "" {
 		return "", fmt.Errorf("install: printer name is empty")
 	}
-	command := "$printer = Get-Printer -Name " + powerShellString(printerName) + " -ErrorAction Stop; " +
-		"$port = Get-PrinterPort -Name $printer.PortName -ErrorAction Stop; " +
-		"[PSCustomObject]@{PrinterName=$printer.Name;PortName=$port.Name;DriverName=$printer.DriverName} | ConvertTo-Json -Compress"
+	command := "$printers = @(Get-Printer -ErrorAction Stop | Where-Object { $_.Name -eq " + powerShellString(printerName) + " }); " +
+		"if ($printers.Count -eq 0) { 'null' } elseif ($printers.Count -ne 1) { throw 'Multiple matching printers' } else { $printer = $printers[0]; " +
+		"[PSCustomObject]@{PrinterName=$printer.Name;PortName=$printer.PortName;DriverName=$printer.DriverName} | ConvertTo-Json -Compress }"
 	return powerShellCommand(command), nil
 }

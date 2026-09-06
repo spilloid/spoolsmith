@@ -2,6 +2,15 @@
 
 ## Project Mission
 
+**Operator update, 2026-09-06:** The operator asked Astra to prioritize daily use:
+known-IP mapping, discovery, and reusable per-printer JSON. See
+`docs/daily-use-spec.md`. Explicit operator profiles now extend queue mapping beyond
+the two built-in catalog families, using an already-registered Windows driver and
+fresh evidence checks. The historical two-family restrictions below still describe
+automatic catalog selection and driver-package work; they do not prohibit this
+operator-authorized profile mapping. The reviewed Brother local-archive recipe now
+supports staging after the same plan confirmation. Downloads remain future work.
+
 SpoolSmith identifies network printers, resolves the correct OEM driver through a small,
 family-oriented catalog, presents a reviewable install plan, and installs/configures the printer
 locally only after explicit user approval. It is a standalone product with its own CLI, its own

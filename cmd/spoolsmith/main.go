@@ -16,10 +16,12 @@ import (
 )
 
 type application struct {
-	workflow      install.Workflow
-	environment   install.Environment
-	collect       func(context.Context, string) (probe.Result, error)
-	inputTerminal bool
+	workflow       install.Workflow
+	environment    install.Environment
+	collect        func(context.Context, string) (probe.Result, error)
+	discover       func(context.Context, string) (probe.Discovery, error)
+	inputTerminal  bool
+	outputTerminal bool
 }
 
 type errorResponse struct {
@@ -30,10 +32,12 @@ type errorResponse struct {
 
 func main() {
 	app := application{
-		workflow:      install.NewWorkflow(),
-		environment:   install.NewEnvironment(),
-		collect:       probe.Collect,
-		inputTerminal: isTerminal(os.Stdin),
+		workflow:       install.NewWorkflow(),
+		environment:    install.NewEnvironment(),
+		collect:        probe.Collect,
+		discover:       probe.Discover,
+		inputTerminal:  isTerminal(os.Stdin),
+		outputTerminal: isTerminal(os.Stdout),
 	}
 	os.Exit(run(context.Background(), os.Args[1:], os.Stdin, os.Stdout, os.Stderr, app))
 }
@@ -44,6 +48,13 @@ func run(ctx context.Context, args []string, input io.Reader, stdout, stderr io.
 	}
 
 	switch args[0] {
+	case "--help", "-h", "help":
+		printUsage(stdout)
+		return 0
+	case "discover":
+		return runDiscover(ctx, args[1:], stdout, stderr, app)
+	case "profile":
+		return runProfile(ctx, args[1:], stdout, stderr, app)
 	case "inspect":
 		if len(args) != 2 {
 			return usageError(stdout, stderr, "inspect", errors.New("inspect requires exactly one target"))
@@ -55,28 +66,44 @@ func run(ctx context.Context, args []string, input io.Reader, stdout, stderr io.
 		return encodeSuccess(stdout, stderr, "inspect", result)
 	case "catalog":
 		return runCatalog(ctx, args[1:], stdout, stderr, app)
-	case "install":
+	case "install", "add", "configure":
 		options, err := parseInstallArgs(args[1:])
 		if err != nil {
-			return usageError(stdout, stderr, "install", err)
+			return usageError(stdout, stderr, args[0], err)
 		}
+		if args[0] == "configure" {
+			if options.Profile == nil {
+				return usageError(stdout, stderr, args[0], errors.New("configure requires --profile <file>"))
+			}
+			options.UpdateExisting = true
+		}
+		options.Compact = app.outputTerminal && !options.JSON
 		outcome, code := app.workflow.RunInstall(ctx, app.environment, input, stderr, app.inputTerminal, options)
+		outcome.Operation = args[0]
 		if outcome.Error != "" {
-			fmt.Fprintf(stderr, "spoolsmith install: %s\n", outcome.Error)
+			fmt.Fprintf(stderr, "spoolsmith %s: %s\n", args[0], outcome.Error)
+		}
+		if app.outputTerminal && !options.JSON {
+			return int(code)
 		}
 		if err := encodeJSON(stdout, outcome); err != nil {
 			fmt.Fprintf(stderr, "spoolsmith install: encode result: %v\n", err)
 			return int(install.ExitGeneralError)
 		}
 		return int(code)
-	case "uninstall":
+	case "uninstall", "remove":
 		options, err := parseUninstallArgs(args[1:])
 		if err != nil {
-			return usageError(stdout, stderr, "uninstall", err)
+			return usageError(stdout, stderr, args[0], err)
 		}
+		options.Compact = app.outputTerminal && !options.JSON
 		outcome, code := app.workflow.RunUninstall(ctx, app.environment, input, stderr, app.inputTerminal, options)
+		outcome.Operation = args[0]
 		if outcome.Error != "" {
-			fmt.Fprintf(stderr, "spoolsmith uninstall: %s\n", outcome.Error)
+			fmt.Fprintf(stderr, "spoolsmith %s: %s\n", args[0], outcome.Error)
+		}
+		if app.outputTerminal && !options.JSON {
+			return int(code)
 		}
 		if err := encodeJSON(stdout, outcome); err != nil {
 			fmt.Fprintf(stderr, "spoolsmith uninstall: encode result: %v\n", err)
@@ -128,6 +155,20 @@ func parseInstallArgs(args []string) (install.InstallOptions, error) {
 			case "--dry-run":
 				options.DryRun = true
 			}
+		case "--profile":
+			if seen[arg] || index+1 >= len(args) || strings.HasPrefix(args[index+1], "-") {
+				return options, errors.New("--profile requires one file")
+			}
+			seen[arg] = true
+			index++
+			p, err := install.LoadProfile(args[index])
+			if err != nil {
+				return options, err
+			}
+			if err := p.ResolvePackagePath(args[index]); err != nil {
+				return options, err
+			}
+			options.Profile = &p
 		case "--force-family":
 			if seen[arg] || index+1 >= len(args) {
 				return options, errors.New("--force-family requires one non-empty family ID")
@@ -159,6 +200,12 @@ func parseInstallArgs(args []string) (install.InstallOptions, error) {
 			options.Target = arg
 		}
 	}
+	if options.Profile != nil {
+		if options.Target != "" || options.ForceFamily != "" {
+			return options, errors.New("--profile cannot be combined with a target or --force-family")
+		}
+		return options, nil
+	}
 	if options.Target == "" {
 		return options, errors.New("install requires exactly one target")
 	}
@@ -168,7 +215,22 @@ func parseInstallArgs(args []string) (install.InstallOptions, error) {
 func parseUninstallArgs(args []string) (install.UninstallOptions, error) {
 	var options install.UninstallOptions
 	seen := make(map[string]bool)
-	for _, arg := range args {
+	for index := 0; index < len(args); index++ {
+		arg := args[index]
+		if arg == "--profile" {
+			if seen[arg] || options.PrinterName != "" || index+1 >= len(args) || strings.HasPrefix(args[index+1], "-") {
+				return options, errors.New("--profile requires one file and cannot be combined with a printer name")
+			}
+			seen[arg] = true
+			index++
+			p, err := install.LoadProfile(args[index])
+			if err != nil {
+				return options, err
+			}
+			options.PrinterName = p.PrinterName
+			options.Profile = &p
+			continue
+		}
 		if strings.HasPrefix(arg, "-") {
 			if seen[arg] {
 				return options, fmt.Errorf("duplicate flag %s", arg)
@@ -237,7 +299,15 @@ func encodeJSON(writer io.Writer, value any) error {
 }
 
 func printUsage(writer io.Writer) {
-	fmt.Fprintln(writer, "usage: spoolsmith inspect <target>")
+	fmt.Fprintln(writer, "SpoolSmith: discover, save, and map network printers")
+	fmt.Fprintln(writer, "usage: spoolsmith discover <IPv4-CIDR> (/24 through /32)")
+	fmt.Fprintln(writer, "       spoolsmith profile capture <target> <file> --name <queue> --driver <installed-driver-name>")
+	fmt.Fprintln(writer, "       spoolsmith profile edit <file> [--name <queue>] [--driver <name>] [--target <ip>]")
+	fmt.Fprintln(writer, "       spoolsmith profile edit <file> [--package <recipe-id> --archive <local-file> | --clear-package]")
+	fmt.Fprintln(writer, "       spoolsmith add --profile <file> [--dry-run] [--json]")
+	fmt.Fprintln(writer, "       spoolsmith configure --profile <file> [--dry-run] [--json]")
+	fmt.Fprintln(writer, "       spoolsmith remove --profile <file> [--dry-run] [--json]")
+	fmt.Fprintln(writer, "       spoolsmith inspect <target>")
 	fmt.Fprintln(writer, "       spoolsmith catalog probe <ip>")
 	fmt.Fprintln(writer, "       spoolsmith catalog families")
 	fmt.Fprintln(writer, "       spoolsmith install <ip> [--force-family <id>] [--yes|--non-interactive|--json] [--dry-run|--what-if]")

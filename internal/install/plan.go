@@ -29,6 +29,8 @@ type Plan struct {
 	Driver         catalog.DriverPackage `json:"driver,omitempty"`
 	Commands       []string              `json:"commands"`
 	ForcedOverride bool                  `json:"forced_override"`
+	UpdateExisting bool                  `json:"update_existing"`
+	DriverPackage  *PackageSelection     `json:"driver_package,omitempty"`
 }
 
 // Result records the plan and every command attempted.
@@ -63,6 +65,7 @@ var (
 	ErrNotElevated      = errors.New("install: administrator privileges are required")
 	ErrDriverNotPresent = errors.New("install: driver not found — install it via Windows Update or run the vendor package manually first, then retry")
 	ErrNotConfirmed     = errors.New("install: operation was not confirmed")
+	ErrPrinterNotFound  = errors.New("install: printer is already absent")
 )
 
 const unverifiedWindowsDriverName = "Windows driver name not yet verified for this family — run `Get-PrinterDriver` after staging the real vendor package on a Windows machine and populate `WindowsDriverName`"
@@ -116,10 +119,7 @@ func BuildPlan(ip string, resolution catalog.ResolutionResult) (Plan, error) {
 		Family:      *resolution.Family,
 		Driver:      *resolution.Driver,
 	}
-	plan.Commands = []string{
-		powerShellCommand(fmt.Sprintf("Add-PrinterPort -Name %s -PrinterHostAddress %s -ErrorAction Stop", powerShellString(plan.PortName), powerShellString(plan.IPAddress))),
-		powerShellCommand(fmt.Sprintf("Add-Printer -Name %s -DriverName %s -PortName %s -ErrorAction Stop", powerShellString(plan.PrinterName), powerShellString(plan.DriverName), powerShellString(plan.PortName))),
-	}
+	plan.Commands = installCommands(plan)
 	return plan, nil
 }
 
@@ -150,8 +150,13 @@ func Preflight(ctx context.Context, env Environment, plan Plan) (PreflightResult
 		return result, fmt.Errorf("install: driver presence check failed: %w; guidance: %v", err, ErrDriverNotPresent)
 	}
 	result.DriverPresent = present
-	if !present {
+	if !present && plan.DriverPackage == nil {
 		return result, ErrDriverNotPresent
+	}
+	if plan.DriverPackage != nil {
+		if _, err := plan.DriverPackage.record(plan.DriverName); err != nil {
+			return result, err
+		}
 	}
 	return result, nil
 }
@@ -216,14 +221,8 @@ func BuildUninstallPlan(printerName, portName, driverName string, purgeDriver bo
 		PrinterName: printerName,
 		PortName:    portName,
 		DriverName:  driverName,
-		Commands: []string{
-			powerShellCommand(fmt.Sprintf("Remove-Printer -Name %s -ErrorAction Stop", powerShellString(printerName))),
-			powerShellCommand(fmt.Sprintf("Remove-PrinterPort -Name %s -ErrorAction Stop", powerShellString(portName))),
-		},
 	}
-	if purgeDriver {
-		plan.Commands = append(plan.Commands, powerShellCommand(fmt.Sprintf("Remove-PrinterDriver -Name %s -ErrorAction Stop", powerShellString(driverName))))
-	}
+	plan.Commands = uninstallCommands(plan, purgeDriver)
 	return plan, nil
 }
 

@@ -27,6 +27,9 @@ go.work.sum
 # env file
 .env
 
+# Local customer/printer inventory
+profiles/
+
 # Editor/IDE
 # .idea/
 # .vscode/
