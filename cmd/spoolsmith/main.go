@@ -8,7 +8,9 @@ import (
 	"io"
 	"os"
 	"strings"
+	"time"
 
+	"github.com/spilloid/spoolsmith/internal/actionlog"
 	"github.com/spilloid/spoolsmith/internal/catalog"
 	"github.com/spilloid/spoolsmith/internal/inspect"
 	"github.com/spilloid/spoolsmith/internal/install"
@@ -39,7 +41,36 @@ func main() {
 		inputTerminal:  isTerminal(os.Stdin),
 		outputTerminal: isTerminal(os.Stdout),
 	}
-	os.Exit(run(context.Background(), os.Args[1:], os.Stdin, os.Stdout, os.Stderr, app))
+	args := os.Args[1:]
+	started := time.Now()
+	code := run(context.Background(), args, os.Stdin, os.Stdout, os.Stderr, app)
+	logRun(args, code, time.Since(started))
+	os.Exit(code)
+}
+
+// logRun records one best-effort observability entry per CLI invocation. It
+// wraps run() rather than instrumenting individual command branches, so the
+// already-reviewed command logic and its tests are untouched. Logging never
+// affects the command's own exit code.
+func logRun(args []string, code int, duration time.Duration) {
+	op := "help"
+	var opArgs []string
+	if len(args) > 0 {
+		op = args[0]
+		opArgs = args[1:]
+	}
+	status := "success"
+	if code != 0 {
+		status = "error"
+	}
+	_ = actionlog.Default().Record(actionlog.Entry{
+		Source:   "cli",
+		Op:       op,
+		Args:     opArgs,
+		Status:   status,
+		ExitCode: &code,
+		Duration: duration.Round(time.Millisecond).String(),
+	})
 }
 
 func run(ctx context.Context, args []string, input io.Reader, stdout, stderr io.Writer, app application) int {

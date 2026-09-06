@@ -31,7 +31,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.22.x"
+          go-version: "1.24.x"
       - name: Resolve release metadata
         id: meta
         shell: pwsh
@@ -42,16 +42,18 @@ jobs:
           }
           "tag=$tag" >> $env:GITHUB_OUTPUT
           "asset=spoolsmith-$tag-${{ matrix.goos }}-${{ matrix.goarch }}.zip" >> $env:GITHUB_OUTPUT
-      - name: Build Go binary
+      - name: Build Go binaries
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force dist | Out-Null
           go build -o dist/spoolsmith.exe ./cmd/spoolsmith
+          go build -o dist/spoolsmith-gui.exe ./cmd/spoolsmith-gui
       - name: Stage archive
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force spoolsmith | Out-Null
-          Copy-Item dist/spoolsmith.exe,README.md,LICENSE spoolsmith/ -Force
+          Copy-Item dist/spoolsmith.exe,dist/spoolsmith-gui.exe,README.md,LICENSE spoolsmith/ -Force
+          Copy-Item cmd/spoolsmith-gui/spoolsmith-gui.exe.manifest spoolsmith/ -Force
           Compress-Archive -Path spoolsmith -DestinationPath "${{ steps.meta.outputs.asset }}" -Force
           $hash = Get-FileHash "${{ steps.meta.outputs.asset }}" -Algorithm SHA256
           "$($hash.Hash.ToLowerInvariant())  ${{ steps.meta.outputs.asset }}" | Out-File "${{ steps.meta.outputs.asset }}.sha256" -Encoding ascii

@@ -1,5 +1,72 @@
 # Dev Process Log
 
+## 2026-09-06: native GUI (feature parity) + action-log observability, Claude picks up after Codex ran out
+
+Codex hit its usage limit mid-GUI-split (see the release checkpoint below); the
+operator asked Claude to continue past `v0.2.0` toward a native GUI reaching CLI
+feature parity, plus per-action logging to a local temp file for observability.
+Recorded as `corporate-strategy` D-0042 (direct operator direction, no board
+review — a new front-end over already-authorized D-0039/D-0040/D-0041
+capabilities, not an OS-mutation scope change). Spec: `docs/milestone-3-spec-gui.md`.
+
+**`internal/actionlog`:** a small, independently-tested JSON-lines logger
+(`os.TempDir()/spoolsmith/actions.log`, 5 MB single-rotation, nil-safe, degrades to
+a one-time stderr warning and a no-op logger rather than ever blocking a command).
+Wired into the CLI at exactly one point — `main()` wrapping `run()`'s result — so
+none of the already-reviewed command logic or its tests needed touching. Verified
+end-to-end with real CLI invocations, not just unit tests: ran `catalog families`
+and `inspect` against the built exe and confirmed both lines landed in the real
+temp-directory log file.
+
+**`cmd/spoolsmith-gui`:** imports `internal/{probe,catalog,inspect,install}`
+directly and calls the same `install.Workflow.RunInstall`/`RunUninstall` the CLI
+calls — no shelled-out CLI invocation, no second mutation path. The confirmation
+gate reuses the CLI's own already-tested branches rather than reimplementing
+terminal I/O: **Preview** always forces `DryRun: true` (byte-identical plan/preflight
+text to `--dry-run`, never reaches a mutating call); **Execute** is only
+clickable after a successful Preview, itself requires a native Yes/No `MsgBox`
+naming the operation, and only then re-runs the identical call with
+`Yes: true, NonInteractive: true` (the CLI's own `--yes --non-interactive`
+contract). Feature parity covers `discover`, `inspect`, `catalog
+families`/`probe`, `profile capture`/`edit`, `install`/`add`/`configure`
+(`--force-family`, `--profile`), and `uninstall`/`remove` (`--purge-driver`,
+`--profile`).
+
+**Real defect found and fixed before this could be called done, not asserted from
+reading the code:** built the GUI against `lxn/walk` (the library Codex had already
+started evaluating) and it crashed on first launch on this actual Windows 11
+machine — `TTM_ADDTOOL failed`, a `TOOLINFO`-struct/comctl32-version mismatch — the
+moment any tooltip-capable widget (i.e., basically anything) is created. Confirmed
+this wasn't a manifest problem (added the standard comctl32-v6 side-car manifest
+used by `lxn/walk`'s own examples; crash persisted). `lxn/walk` has had no commits
+since 2021 (confirmed via the module proxy's own `@latest` resolution — not
+assumed from a stale-looking repo). Switched to `github.com/tailscale/walk`, a
+maintained fork Tailscale runs their own Windows GUI on that fixes exactly this;
+the swap was a mechanical import-path change (same package shapes, `MainWindow`/
+`declarative` API compatible) plus raising this module's `go` directive and both
+CI legs' pinned Go version from 1.22 to 1.24 to match the fork's own `go.mod`.
+Re-verified by actually launching the rebuilt exe (not just a clean `go build`):
+it now starts, stays resident, and a real screenshot (`Start-Process` +
+`CopyFromScreen`) shows the Discover tab's label/input/button/output layout
+rendering correctly.
+
+Also extended `.github/workflows/release.yml` to build and package
+`spoolsmith-gui.exe` (and its side-car manifest) alongside `spoolsmith.exe` in the
+release zip, since a released "GUI with CLI parity" that only ships the CLI binary
+would not actually be shipped.
+
+**What this round did not verify:** clicking through Discover/Inspect/Catalog/
+Profiles/Install/Uninstall interactively (only the widget tree render was
+confirmed by screenshot; the underlying calls are the CLI's own tested code
+paths, not re-tested through simulated GUI clicks). No real install/uninstall
+mutation was exercised through the GUI on this machine — that stays consistent
+with this repo's own caution about not exercising real driver-store writes
+outside a deliberate, disclosed session. `TestLocalBrotherArchiveVerificationWithStagingDoubles`
+in `internal/install` fails on this machine on unmodified `main` too (confirmed by
+stashing this session's changes and re-running it) — a real, pre-existing,
+environment-specific defect (this machine's real `tar.exe`/PowerShell behavior vs.
+the test's fake environment), not something this session introduced or fixed.
+
 ## 2026-09-06: release checkpoint before native GUI
 
 The operator requested a PR, merge, and release before continuing the GUI split.
