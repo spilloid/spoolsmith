@@ -127,3 +127,77 @@ Also rebuilt `docs/` as a real static product page (`index.html` + `.nojekyll`) 
 established Spillers Technology portfolio convention (checked netviz's and the storefront's own
 `docs/index.html` directly rather than guessing at the house style), replacing an earlier
 Jekyll-themed draft that didn't match how every sibling repo actually does this.
+
+## Real-hardware verification, Step 1: first captured evidence (2026-09-06)
+
+First session run on an actual Windows device (`docs/real-hardware-verification.md`'s handoff
+scenario). Environment had neither `git` nor `go` on `PATH`; installed both via `winget`
+(`Git.Git`, `GoLang.Go`) with the operator's explicit prior authorization, then verified
+`go build`/`go vet`/`go test ./... -count=1` still passed clean before touching anything else.
+
+The operator had a real Brother printer on his LAN but not the exact IP; located it by ping-
+sweeping the local `/24`, port-scanning the live hosts for printer-typical ports, and ruling out
+the router (`192.168.68.1` resolved to `OPNsense.internal` via PTR) before asking the operator to
+confirm the remaining candidate. That candidate (`.243`) turned out to be wrong when checked
+against the real device — reported back rather than guessed past, and the operator supplied the
+correct IP (`.108`) directly.
+
+**Real captured evidence obtained** (`spoolsmith.exe catalog probe`/`inspect` against `.108`):
+`snmp_sys_descr="Brother NC-8300w, Firmware Ver.S  ,MID 84U-F06"`,
+`http_title="Brother HL-L2315D series"`, `pjl_id="Brother HL-L2315D series:84U-F06:Ver.1.21"`,
+`open_ports=[80,443,631,9100]`, `hostname="brw30c9ab962e73"`. `inspect` correctly failed closed on
+first contact (`confidence: 0`) — the real device is an **HL-L2315D**, which was not in the
+`brother-hl-l2xxx` family's alias list (only HL-L2325DW/2350DW/2370DW/2370DWXL were present). This
+is exactly the class of finding `real-hardware-verification.md` Step 1 asked to surface rather than
+force a match on: **the catalog's alias list was incomplete relative to the real product line**,
+not a resolver defect. Fixed by adding `"Brother HL-L2315D"`/`"HL-L2315D"` to
+`internal/catalog/family.go`'s existing alias list — same pattern as every existing entry, no new
+matching logic. Re-verified: `inspect` now resolves the real device to
+`family=brother-hl-l2xxx, model="Brother HL-L2315D", confidence=1`.
+
+**Assumed-vs-actual evidence gaps this closes disclosure on, per DR-0005 §6:** the synthetic
+Brother fixture assumed `snmp_sys_descr` would contain the printer model name
+(`"Brother HL-L2350DW series"`); the real device's SNMP `sysDescr` instead names its network
+interface module (`"Brother NC-8300w"`), not the printer — model identity was only recoverable
+from HTTP title and PJL ID. The real PJL `INFO ID` response is also a flat colon-separated string
+(`"Brother HL-L2315D series:84U-F06:Ver.1.21"`), not the structured `MFG:...;MDL:...;CLS:...;`
+format the synthetic fixture assumed (a format `resolve.go`'s `pjlManufacturer()` regex still
+expects — it simply finds no match on this device's real format rather than conflicting, so
+resolution still worked, but the assumption was wrong and is disclosed here rather than left
+implicit).
+
+**Reliability observation, not treated as a defect:** the first-ever probe against the real device
+returned much thinner evidence (`open_ports=[443]` only, SNMP success but HTTP/PJL timeouts) than
+every subsequent run against the same device seconds later (`open_ports=[80,443,631,9100]`, all
+probes succeeding). Re-ran twice more and got the fuller result both times — consistent with cold
+first-contact latency (ARP resolution / device network-stack wake) rather than a probe bug, but
+flagged here rather than silently discarded since `internal/probe/ports.go`'s 1s-per-port dial
+timeout is exactly the kind of margin that would be sensitive to this. Not fixed; noted as a
+possible future finding if it recurs.
+
+**Real gap found, not yet fixed:** `internal/probe/oui.go` hard-fails vendor-by-MAC lookup on any
+non-Linux `GOOS` (`probeOUI`, line 26) — confirmed directly on this real Windows run
+(`"oui": {"success": false, "detail": "ARP cache lookup is only implemented on Linux"}`). Does not
+block resolution (OUI is one of several independent, non-load-bearing probes per this repo's own
+architecture rule), but it's a real, now-confirmed-on-real-hardware platform gap, left open pending
+the operator's direction rather than fixed speculatively in the same round as an unrelated fixture
+fix.
+
+Fixture saved as `fixtures/brother-hl-l2315d-captured.json` (`"provenance": "captured"`), added to
+`TestResolveKnownFixtures` (`internal/catalog/resolve_test.go`) and
+`TestInspectDeterministicGoldenOutput` (`internal/inspect/inspect_test.go`), golden output
+regenerated for all four fixtures (the pre-existing `brother-hl-l2350dw-synthetic.json` golden file
+also changed, since the family's `Aliases` list — embedded verbatim in `inspect`'s JSON output — now
+includes the two new alias entries). Full suite re-run clean: `go build ./...`, `go vet ./...`,
+`go test ./... -count=1`.
+
+**This closes DR-0005 §6's "at least one captured, not only synthetic, real-device observation for
+at least one claimed family" condition for the Brother family.** HP LaserJet Pro M4xx still has no
+captured fixture — that printer wasn't reachable this session. Milestone one's captured-evidence
+condition is not fully closed until HP has one too, per the same definition of done.
+
+**Not yet attempted this session:** Step 2 onward of `real-hardware-verification.md` (finding the
+real `WindowsDriverName`, staging a vendor driver package, and a real install/uninstall cycle).
+Requires Administrator rights this session's shell does not currently have (the Administrators
+group token showed "deny only" — UAC has not elevated it) and a decision on how to obtain the real
+HP printer's evidence. Both raised to the operator rather than assumed past.

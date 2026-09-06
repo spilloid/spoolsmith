@@ -14,6 +14,7 @@ func TestInspectDeterministicGoldenOutput(t *testing.T) {
 	fixtures := []string{
 		"hp-laserjet-m404-synthetic.json",
 		"brother-hl-l2350dw-synthetic.json",
+		"brother-hl-l2315d-captured.json",
 		"ambiguous-unknown-vendor.json",
 	}
 	for _, name := range fixtures {

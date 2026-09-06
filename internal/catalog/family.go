@@ -29,10 +29,12 @@ var families = []Family{
 		ID:           "brother-hl-l2xxx",
 		Manufacturer: "Brother",
 		Aliases: []string{
+			"Brother HL-L2315D",
 			"Brother HL-L2325DW",
 			"Brother HL-L2350DW",
 			"Brother HL-L2370DW",
 			"Brother HL-L2370DWXL",
+			"HL-L2315D",
 			"HL-L2325DW",
 			"HL-L2350DW",
 			"HL-L2370DW",

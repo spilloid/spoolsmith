@@ -42,6 +42,7 @@ func TestResolveKnownFixtures(t *testing.T) {
 	}{
 		{"hp-laserjet-m404-synthetic.json", "hp-laserjet-m4xx", "HP LaserJet Pro M404dn"},
 		{"brother-hl-l2350dw-synthetic.json", "brother-hl-l2xxx", "Brother HL-L2350DW"},
+		{"brother-hl-l2315d-captured.json", "brother-hl-l2xxx", "Brother HL-L2315D"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.fixture, func(t *testing.T) {
