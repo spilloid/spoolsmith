@@ -1,5 +1,172 @@
 # Dev Process Log
 
+## 2026-09-06: release checkpoint before native GUI
+
+The operator requested a PR, merge, and release before continuing the GUI split.
+Only GUI dependencies had been added; saved those manifests in ignored local scratch
+and removed them from this checkpoint. v0.2.0 remains a dependency-free Windows CLI.
+Prepared release notes covering verified hardware output and the limits of package
+automation. Native GUI work will start from the released baseline and reuse the
+CLI's core validation, planning, confirmation, and execution paths.
+
+## 2026-09-06: physical print confirmed, local package recipe, product site refresh
+
+The operator reported sending a test print to Brother Home and watching it work.
+Recorded that physical-output confirmation in the package record, ignored local
+profile, README, hardware runbook, and current product state.
+
+Added an optional profile package reference (`id`, local `archive`) and edit/clear
+commands. The reviewed Brother source record is embedded independently of device
+identity. One shown plan/confirmation now covers local package staging and mapping.
+Existing drivers bypass archive access. A missing driver requires Windows x64,
+pinned SHA-256, valid Brother signature, safe archive entries, valid Microsoft driver
+catalog, successful INF staging and verified driver registration. The archive is
+held read-only during checks/extraction. No vendor EXE execution or network fetching
+was added. Extraction directories remain in Windows temp for diagnostics; partial
+staging is not rolled back. Dry-run previews without validating/extracting payloads.
+
+The real local archive test exercises Windows hashing, signatures, and tar, while
+replacing pnputil/Add-PrinterDriver with in-memory doubles. It caught a certificate
+subject quoting mismatch; corrected this to compare the parsed X509 simple name.
+Verification now passes, including reapply without a second staging call. Other
+tests cover invalid package/driver combinations, relative paths, edit/clear conflicts,
+dry-run/confirmation precedence, staging failure stopping queue commands, existing
+driver no-op, and hash mismatch. Full `go test ./...`, `go vet ./...`, and binary
+build passed. This is not a clean-machine live install claim for the new automation.
+
+The operator requested a stronger product pass on the GitHub Pages site. Replaced
+the architecture/governance-led landing page with daily-use benefits, a printer SVG,
+find/save/reuse workflow, repeat-add example, and three interactive starting points.
+Copy explicitly identifies the Windows CLI, current source workflow, prerequisites,
+and limited package coverage. Removed obsolete claims that install is inert and
+avoided promising that older published releases contain the new profile features.
+
+Local headless Chrome checks passed at widths 1440, 1024, 768, 390, and 320 with no
+horizontal overflow. Internal anchors, click/keyboard tabs, clipboard success and
+denial fallback passed with no browser exceptions. Inspected desktop/mobile PNGs.
+Site uses local CSS/JS and an inline SVG; no runtime dependencies or external fonts.
+Screenshots and the browser harness remain ignored under `profiles/.site-check/`.
+Changes are local; no release, push, or Pages deployment was performed.
+
+Attached the recipe to the ignored Brother Home profile through `profile edit`
+(with backup). Its live dry-run passed, including matching evidence and registered
+driver presence. No additional printer-state writes or physical test pages were
+needed. A Claude Opus read-only review was attempted, then retried with network
+access after stalling; neither returned review output. Both owned processes were
+stopped. No completed independent review is claimed for this follow-up.
+
+## 2026-09-06: supplied Brother package closes real mapping blocker
+
+The operator supplied Brother's direct download URL for
+`Y14A_C1-hostm-1110.EXE`. Downloaded it from `download.brother.com`; Windows
+Authenticode reported a valid Brother Industries signature. The SHA-256 of the
+observed file is `6814e22081074524ab08b687afb5965b3577aee1a40d97fc39012bf758b8a0ae`.
+Windows `tar` listed and extracted the archive without executing its EXE.
+`32_64/BROHL13A.INF` declares version 1.11.0.0 dated 2016-10-18 and explicitly
+lists `Brother HL-L2315D series` for NTx86 and NTamd64. Its catalog signature is
+valid, signed by Microsoft Windows Hardware Compatibility Publisher.
+
+After the reviewed driver-store action was approved, `pnputil /add-driver` staged
+the package as `oem15.inf`, and `Add-PrinterDriver` registered the exact model name
+on Windows x64. This name is model-specific and was not assigned to the entire
+Brother family. The ignored home profile was updated through `profile edit`,
+preserving its previous version. Its live dry-run then passed every preflight.
+
+After approval of the displayed queue/endpoint/driver plan, actual SpoolSmith
+`add --profile ... --yes --json` created the Brother Home queue and RAW TCP 9100
+port. Repeating the exact operation returned `Unchanged port` and `Unchanged
+printer`. Independent `Get-Printer`/`Get-PrinterPort` reads confirmed the driver,
+port association, target, protocol 1, and port number 9100. This closes real Windows
+add/reapply verification for this printer. Removal remains covered by the real
+PowerShell doubles harness, not a live removal in this session. No physical test
+page has been sent or observed.
+
+`catalog/packages/brother-y14a-c1.json` records the source, hash, signed INF and
+verified model entry separately from device identity/profile data. It is a source
+record, not yet consumed as an automatic package-install recipe by the CLI. The
+supplied stable URL is not treated as proof that future payload bytes are identical.
+Downloaded vendor payloads and local inventory remain under ignored `profiles/`.
+
+## 2026-09-06: operator-directed daily-use workflow (Astra implements, Claude reviews)
+
+The operator asked Astra to push practical workplace use: known-IP mapping,
+discovery, and reusable JSON per printer, then explicitly emphasized idempotency,
+strong UX, and easy add/remove/config. D-0041 records this operator direction;
+`docs/daily-use-spec.md` is the implementation contract. This is a disclosed
+assignment change from the original routing priors below, authorized in-session
+by the operator. No board vote or portfolio-status change is claimed.
+
+Implemented bounded IPv4 CIDR discovery, versioned declarative profiles, live
+HTTP/PJL continuity checks, and mapping with an operator-selected installed driver.
+The mapping plan retains driver-presence/elevation checks and confirmation. Profiles
+extend manual mapping beyond the two built-in automatic catalog families without
+claiming automatic driver compatibility. Capture never overwrites inventory;
+profile edits preserve backups. Local `profiles/` inventory is ignored by Git.
+
+Claude Opus's first independent read-only review confirmed the core safety path
+and identified real gaps: repeat install failed on existing ports, the new scope
+was not reflected in governing documents, LPD candidates were never probed, and
+a global Ctrl-C handler would trap input at confirmation. Those findings were
+adjudicated against code and fixed: guarded queue/port reconciliation, D-0041 and
+scope notes, port 515 probing plus known-catalog identity candidates, and a
+discovery-local signal handler. Identity diagnostics now name fields and quote
+saved/current values. The review's no-CLI-tests observation was stale by arrival;
+CLI tests had landed while the review was running. Bad profile syntax still uses
+exit 2 plus usage as a CLI-input error; this is retained deliberately.
+
+Following the operator's UX clarification, `add`, `configure`, `remove`, and
+`profile edit` provide explicit workflows. Matching mappings execute no mutating
+cmdlets; queue changes require configure; conflicting ports are never overwritten.
+Removal retains shared resources and external ports, and already-absent queues
+succeed without prompting. Terminal plans are concise; redirected/`--json` output
+preserves full commands and metadata. A failure between operations is still not a
+transaction: retrying add can reuse an orphan port; no automatic rollback is claimed.
+
+Verification so far: `go test ./...`, `go vet ./...`, and Windows executable build
+passed after the UX/idempotency changes. The regression suite executes actual
+PowerShell with in-memory cmdlet doubles for repeat add/remove, explicit configure,
+endpoint/queue conflicts before mutations, and shared-port retention. No real
+spooler mutation occurs in those tests. The first conflict-test assertion was itself
+wrong: PowerShell echoed the whole submitted script in an error record, so searching
+that record for a sentinel found its definition rather than an executed mutation.
+The harness now renders the actual exception message and the corrected tests pass.
+Race-detector execution has not been claimed; this PC has no `gcc` on PATH.
+
+Real hardware: a sandboxed /32 scan returned no candidate; repeating outside the
+network sandbox found the existing Brother HL-L2315D with HTTP/PJL/SNMP evidence.
+The empty sandbox result was not reported as an absent printer. Read-only Windows
+driver inventory found Microsoft class drivers only, no Brother/HP OEM driver.
+An ignored home-printer draft profile contains the real captured evidence and an
+explicit replacement placeholder for the unstaged OEM driver name. Actual profile
+queue mapping/unmapping and driver-package acquisition/staging remain unverified
+and unimplemented respectively. No printed test page or release is claimed.
+
+The second Claude Opus review confirmed that the guarded reconciliation, quoting,
+confirmation and PowerShell execution tests hold. Confirmed findings fixed in the
+same round: compact plans now retain manual-selection/source/uncertainty disclosures;
+profile removal cross-checks the installed port and driver; configure requires a
+profile; backups moved to `.backups/*.bak` outside JSON globs; alias outcomes/errors
+use the invoked command name. A live dry-run exposed intermittent missing HTTP
+evidence, so one missing model probe is now tolerated when another saved model probe
+agrees; conflicts still fail immediately and unavailable identity retries only once.
+SNMP-only captures are supported explicitly, without allowing SNMP to substitute
+for saved HTTP/PJL sources. New tests cover these changes.
+
+The review's proposed targeted `Get-Printer -Name`/ObjectNotFound suppression was
+not adopted without a reproducible provider failure: exact filtering of a successful
+enumeration retains wildcard safety and keeps infrastructure errors distinct from
+absence. This has an availability tradeoff: unrelated print-provider failures can
+block mapping. It is documented rather than rounded away. Windows OUI probing,
+full multicast discovery, and transactional recovery remain follow-ups.
+
+Final read-only hardware dry-run matched the Brother capture, constructed the full
+profile plan, and exercised actual Windows preflight: elevated=true,
+driver_checked=true, driver_present=false. It stopped for the deliberately unset
+OEM driver, with confirmed=false and no executed commands. Build, vet, and regression
+verification passed after the review fixes; successful physical mapping is still
+not claimed. The two Claude review outputs are claims checked against the code/tests,
+not substitutes for this evidence.
+
 Records every round where implementation or review work is routed to Codex CLI (`codex exec`,
 tiers Luna/Terra/Sol), so the routing policy below stays derived from measurements on *this* repo
 rather than imported wholesale from another project. The tiering itself and the

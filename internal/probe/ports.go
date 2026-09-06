@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-var testedPorts = []int{80, 443, 9100, 631}
+var testedPorts = []int{80, 443, 515, 9100, 631}
 
 func probePorts(ctx context.Context, host string) []int {
 	var wg sync.WaitGroup

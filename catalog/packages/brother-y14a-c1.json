@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "id": "brother-y14a-c1-hostm-1110",
+  "vendor": "Brother",
+  "source_url": "https://download.brother.com/welcome/dlf100988/Y14A_C1-hostm-1110.EXE",
+  "sha256": "6814e22081074524ab08b687afb5965b3577aee1a40d97fc39012bf758b8a0ae",
+  "observed_at": "2026-09-06",
+  "driver_version": "1.11.0.0",
+  "driver_date": "2016-10-18",
+  "archive_format": "self-extracting archive readable by Windows tar",
+  "inf_path": "32_64/BROHL13A.INF",
+  "catalog_path": "32_64/BROHL13A.CAT",
+  "architectures": ["amd64", "x86"],
+  "verified_model_entries": [
+    {
+      "model": "Brother HL-L2315D",
+      "windows_driver_name": "Brother HL-L2315D series",
+      "hardware_id": "USBPRINT\\BROTHERHL-L2315D_SER232A"
+    }
+  ],
+  "verification": {
+    "download_signature": "Valid: Brother Industries, Ltd.",
+    "catalog_signature": "Valid: Microsoft Windows Hardware Compatibility Publisher",
+    "model_entry": "Present in DriverName.NTamd64 and DriverName.NTx86",
+    "windows_registration": "Verified on Windows x64 as Brother HL-L2315D series; staged INF oem15.inf",
+    "queue_mapping": "Verified live; first add created queue/port, second add left both unchanged",
+    "physical_print_test": "Operator sent a test print to Brother Home and observed successful physical output on 2026-09-06"
+  },
+  "notes": "Reviewed source record embedded by the local-archive staging recipe. Model-specific: do not assign this driver name to the entire HL-L2xxx family. Source URL supplied by operator; stable URL does not imply immutable content. Driver payload remains vendor-licensed and is not committed."
+}

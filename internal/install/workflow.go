@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"strconv"
 	"strings"
 
@@ -29,6 +30,9 @@ const (
 // InstallOptions contains the policy-relevant inputs for one install attempt.
 type InstallOptions struct {
 	Target         string
+	Profile        *Profile
+	UpdateExisting bool
+	Compact        bool
 	ForceFamily    string
 	Yes            bool
 	JSON           bool
@@ -38,6 +42,8 @@ type InstallOptions struct {
 
 // UninstallOptions contains the policy-relevant inputs for one uninstall attempt.
 type UninstallOptions struct {
+	Compact        bool
+	Profile        *Profile
 	PrinterName    string
 	PurgeDriver    bool
 	Yes            bool
@@ -87,6 +93,15 @@ func (w Workflow) RunInstall(ctx context.Context, env Environment, input io.Read
 	if err := w.validate(); err != nil {
 		return failOutcome(outcome, err, ExitGeneralError)
 	}
+	if options.Profile != nil {
+		if options.ForceFamily != "" || options.Target != "" {
+			return failOutcome(outcome, errors.New("install: --profile cannot be combined with a target or --force-family"), ExitUsageError)
+		}
+		if err := options.Profile.Validate(); err != nil {
+			return failOutcome(outcome, err, ExitUsageError)
+		}
+		options.Target = options.Profile.Target
+	}
 
 	var forcedFamily *catalog.Family
 	var forcedDriver *catalog.DriverPackage
@@ -106,7 +121,20 @@ func (w Workflow) RunInstall(ctx context.Context, env Environment, input io.Read
 	reader := bufferedReader(input)
 	resolution := catalog.ResolutionResult{}
 	forced := forcedFamily != nil
-	if forced {
+	if options.Profile != nil {
+		resolution, err = options.Profile.resolution(probeResult.Evidence)
+		if errors.Is(err, errIdentityUnavailable) {
+			fmt.Fprintln(interactive, "Identity probes were unavailable; retrying once for a sleeping printer.")
+			probeResult, err = w.Collect(ctx, options.Target)
+			if err == nil {
+				resolution, err = options.Profile.resolution(probeResult.Evidence)
+			}
+		}
+		if err != nil {
+			return failOutcome(outcome, err, ExitUnresolved)
+		}
+		forced = true
+	} else if forced {
 		resolution = forcedResolution(*forcedFamily, *forcedDriver, probeResult.Evidence.IP)
 	} else {
 		resolution = w.Resolve(probeResult.Evidence)
@@ -139,22 +167,49 @@ func (w Workflow) RunInstall(ctx context.Context, env Environment, input io.Read
 	} else {
 		outcome.Resolution = "automatic"
 	}
+	if options.Profile != nil {
+		outcome.Resolution = "operator-profile"
+		outcome.Uncertain = append([]string(nil), resolution.Uncertain...)
+		fmt.Fprintln(interactive, "Profile: driver compatibility was selected by the operator; live model evidence matches the capture.")
+	}
+	for _, reason := range resolution.Uncertain {
+		fmt.Fprintf(interactive, "  Note: %s\n", reason)
+	}
 	plan, err := BuildPlan(probeResult.Evidence.IP, resolution)
 	if err != nil {
 		return failOutcome(outcome, err, ExitGeneralError)
 	}
 	plan.ForcedOverride = forced
+	plan.UpdateExisting = options.UpdateExisting
+	plan.Commands = installCommands(plan)
+	if options.Profile != nil && options.Profile.DriverPackage != nil {
+		selection := *options.Profile.DriverPackage
+		plan.DriverPackage = &selection
+		record, recordErr := selection.record(plan.DriverName)
+		if recordErr != nil {
+			return failOutcome(outcome, recordErr, ExitUsageError)
+		}
+		plan.Driver.Source = record.SourceURL
+		plan.Driver.SHA256 = record.SHA256
+		plan.Driver.Version = record.Version
+		plan.Driver.Strategy = "verified-local-archive-if-missing"
+		command, packageErr := packageCommand(selection, plan.DriverName)
+		if packageErr != nil {
+			return failOutcome(outcome, packageErr, ExitUsageError)
+		}
+		plan.Commands = append([]string{command}, plan.Commands...)
+	}
 	outcome.Plan = &plan
+	writeInstallPlan(interactive, plan, options.Compact)
 
 	preflight, err := Preflight(ctx, env, plan)
 	outcome.Preflight = &preflight
 	if err != nil {
 		return failOutcome(outcome, err, ExitPreflight)
 	}
-	writeInstallPlan(interactive, plan)
-
 	if options.DryRun {
 		outcome.Status = "dry-run"
+		fmt.Fprintln(interactive, "Preview complete. No changes made.")
 		return outcome, ExitSuccess
 	}
 
@@ -187,6 +242,12 @@ func (w Workflow) RunInstall(ctx context.Context, env Environment, input io.Read
 		return failOutcome(outcome, err, ExitGeneralError)
 	}
 	outcome.Status = "success"
+	fmt.Fprintf(interactive, "Printer configured: %s (%s). Reapplying the same profile is safe.\n", plan.PrinterName, plan.IPAddress)
+	for _, ran := range result.Ran {
+		if strings.TrimSpace(ran.Output) != "" {
+			fmt.Fprintln(interactive, strings.TrimSpace(ran.Output))
+		}
+	}
 	return outcome, ExitSuccess
 }
 
@@ -195,6 +256,14 @@ func (w Workflow) RunInstall(ctx context.Context, env Environment, input io.Read
 func (w Workflow) RunUninstall(ctx context.Context, env Environment, input io.Reader, interactive io.Writer, inputIsTerminal bool, options UninstallOptions) (Outcome, ExitCode) {
 	outcome := Outcome{Operation: "uninstall", Status: "error", DryRun: options.DryRun}
 	reader := bufferedReader(input)
+	if options.Profile != nil {
+		if err := options.Profile.Validate(); err != nil {
+			return failOutcome(outcome, err, ExitUsageError)
+		}
+		if options.PrinterName != options.Profile.PrinterName {
+			return failOutcome(outcome, errors.New("remove: profile queue name does not match request"), ExitUsageError)
+		}
+	}
 
 	preflight, err := PreflightUninstall(ctx, env)
 	outcome.Preflight = &preflight
@@ -202,18 +271,27 @@ func (w Workflow) RunUninstall(ctx context.Context, env Environment, input io.Re
 		return failOutcome(outcome, err, ExitPreflight)
 	}
 	configuration, err := LookupPrinter(ctx, env, options.PrinterName)
+	if errors.Is(err, ErrPrinterNotFound) {
+		outcome.Status = "already-absent"
+		fmt.Fprintf(interactive, "Printer already absent: %s. No changes needed.\n", options.PrinterName)
+		return outcome, ExitSuccess
+	}
 	if err != nil {
 		return failOutcome(outcome, err, ExitGeneralError)
+	}
+	if options.Profile != nil && (!strings.EqualFold(configuration.PortName, "SpoolSmith-"+net.ParseIP(options.Profile.Target).String()) || !strings.EqualFold(configuration.DriverName, options.Profile.DriverName)) {
+		return failOutcome(outcome, fmt.Errorf("remove: installed queue differs from profile (port %q, driver %q); review removal explicitly by queue name", configuration.PortName, configuration.DriverName), ExitUnresolved)
 	}
 	plan, err := BuildUninstallPlan(configuration.PrinterName, configuration.PortName, configuration.DriverName, options.PurgeDriver)
 	if err != nil {
 		return failOutcome(outcome, err, ExitGeneralError)
 	}
 	outcome.Plan = &plan
-	writeUninstallPlan(interactive, plan, options.PurgeDriver)
+	writeUninstallPlan(interactive, plan, options.PurgeDriver, options.Compact)
 
 	if options.DryRun {
 		outcome.Status = "dry-run"
+		fmt.Fprintln(interactive, "Preview complete. No changes made.")
 		return outcome, ExitSuccess
 	}
 
@@ -246,6 +324,12 @@ func (w Workflow) RunUninstall(ctx context.Context, env Environment, input io.Re
 		return failOutcome(outcome, err, ExitGeneralError)
 	}
 	outcome.Status = "success"
+	fmt.Fprintf(interactive, "Printer removed: %s.\n", configuration.PrinterName)
+	for _, ran := range result.Ran {
+		if strings.TrimSpace(ran.Output) != "" {
+			fmt.Fprintln(interactive, strings.TrimSpace(ran.Output))
+		}
+	}
 	return outcome, ExitSuccess
 }
 
@@ -336,11 +420,31 @@ func readAnswer(input io.Reader) (string, error) {
 	return strings.TrimSpace(answer), nil
 }
 
-func writeInstallPlan(writer io.Writer, plan Plan) {
+func writeInstallPlan(writer io.Writer, plan Plan, compact bool) {
 	fmt.Fprintln(writer, "Install plan")
+	if plan.DriverPackage != nil {
+		record, _ := plan.DriverPackage.record(plan.DriverName)
+		fmt.Fprintf(writer, "  Driver package: %s\n  Local archive: %s\n  Expected SHA-256: %s\n  Vendor source: %s\n", plan.DriverPackage.ID, plan.DriverPackage.Archive, record.SHA256, record.SourceURL)
+		fmt.Fprintln(writer, "  Reuse registered driver; if missing, verify signatures/hash, extract, stage INF and register. Staging files are retained in the Windows temp directory.")
+	}
+	if plan.ForcedOverride {
+		fmt.Fprintln(writer, "  Warning: manually selected mapping; not an automatic high-confidence driver match.")
+	}
+	fmt.Fprintf(writer, "  Driver source: %s\n", shownValue(plan.Driver.Source))
+	if compact {
+		fmt.Fprintf(writer, "  Queue:  %s\n  Target: %s (RAW TCP 9100)\n  Port:   %s\n  Driver: %s\n", plan.PrinterName, plan.IPAddress, plan.PortName, plan.DriverName)
+		if plan.UpdateExisting {
+			fmt.Fprintln(writer, "  Create or update this queue; reuse a matching port. Existing port conflicts stop the operation.")
+		} else {
+			fmt.Fprintln(writer, "  Create missing queue/port; matching settings are unchanged. Conflicts stop the operation.")
+		}
+		fmt.Fprintln(writer, "  Full commands and metadata: repeat with --dry-run --json.")
+		return
+	}
 	fmt.Fprintf(writer, "  IP address: %s\n", plan.IPAddress)
 	fmt.Fprintf(writer, "  Printer name: %s\n", plan.PrinterName)
 	fmt.Fprintf(writer, "  Port name: %s\n", plan.PortName)
+	fmt.Fprintf(writer, "  Update existing queue: %t (conflicting ports are never overwritten)\n", plan.UpdateExisting)
 	fmt.Fprintf(writer, "  Family: %s (%s)\n", plan.Family.ID, plan.Family.Manufacturer)
 	if plan.ForcedOverride {
 		fmt.Fprintln(writer, "  ⚠ Family manually selected — not an automatic high-confidence match")
@@ -357,8 +461,14 @@ func writeInstallPlan(writer io.Writer, plan Plan) {
 	}
 }
 
-func writeUninstallPlan(writer io.Writer, plan Plan, purgeDriver bool) {
+func writeUninstallPlan(writer io.Writer, plan Plan, purgeDriver bool, compact bool) {
 	fmt.Fprintln(writer, "Uninstall plan")
+	if compact {
+		fmt.Fprintf(writer, "  Queue: %s\n  Port: %s\n  Driver: %s\n", plan.PrinterName, plan.PortName, plan.DriverName)
+		fmt.Fprintln(writer, "  Remove this queue; remove its unused SpoolSmith port. Shared/external ports are retained.")
+		fmt.Fprintf(writer, "  Remove driver if unused: %t\n  Full commands: repeat with --dry-run --json.\n", purgeDriver)
+		return
+	}
 	fmt.Fprintf(writer, "  Printer name: %s\n", plan.PrinterName)
 	fmt.Fprintf(writer, "  Port name: %s\n", plan.PortName)
 	fmt.Fprintf(writer, "  Driver name: %s\n", shownValue(plan.DriverName))

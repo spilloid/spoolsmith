@@ -50,6 +50,9 @@ func (windowsEnvironment) LookupPrinter(ctx context.Context, printerName string)
 		return PrinterConfiguration{}, err
 	}
 	var configuration PrinterConfiguration
+	if strings.TrimSpace(output) == "null" {
+		return configuration, ErrPrinterNotFound
+	}
 	if err := json.Unmarshal([]byte(strings.TrimSpace(output)), &configuration); err != nil {
 		return PrinterConfiguration{}, fmt.Errorf("install: decode printer configuration: %w", err)
 	}

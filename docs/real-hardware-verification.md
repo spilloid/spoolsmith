@@ -1,4 +1,10 @@
-# Real-hardware verification runbook — the actual remaining work to a working v0.1.0
+# Real-hardware verification runbook
+
+**Update, 2026-09-06:** Brother HL-L2315D discovery, signed driver registration,
+SpoolSmith queue creation and repeat-add no-op behavior are verified. The operator
+sent a test print to Brother Home and observed it print successfully. HP verification
+and live removal are still pending. The original preparation runbook below predates
+the working profile path; see `daily-use-spec.md` and `dev-process.md` for current use.
 
 This is the one thing standing between "detection works, install is inert by design" and a
 genuinely functioning end-to-end install for the two authorized families (HP LaserJet Pro M4xx,

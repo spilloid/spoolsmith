@@ -267,6 +267,15 @@ func TestUninstallExitCodeContract(t *testing.T) {
 	}
 }
 
+func TestRemoveAlreadyAbsentDoesNotPromptOrMutate(t *testing.T) {
+	env := workflowEnvironment(true, true)
+	env.lookupErr = ErrPrinterNotFound
+	outcome, code := testWorkflow(true).RunUninstall(context.Background(), env, panicReader{}, io.Discard, true, UninstallOptions{PrinterName: "Gone"})
+	if code != ExitSuccess || outcome.Status != "already-absent" || len(env.ran) != 0 {
+		t.Fatalf("%#v code=%d ran=%d", outcome, code, len(env.ran))
+	}
+}
+
 func TestPartialFailureResultsReachInteractiveOutput(t *testing.T) {
 	env := environmentFailingCommand(1)
 	env.runOutputs = map[int]string{1: "Add-Printer diagnostic"}
