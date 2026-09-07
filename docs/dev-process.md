@@ -1,5 +1,26 @@
 # Dev Process Log
 
+## 2026-09-07: v0.3.0 cut
+
+PR #2 merged to `main` as `4d4140b` with both CI runs green. Tagged `v0.3.0` on
+that commit and published the release with
+`spoolsmith-v0.3.0-windows-amd64.zip` and its `.sha256`, matching the layout
+v0.2.0 used: a `spoolsmith/` folder holding LICENSE, README, and the binaries.
+This is the first package to contain the desktop app, so `spoolsmith-gui.exe`
+and its manifest sit beside `spoolsmith.exe`.
+
+Both binaries were built from the merged commit with `-trimpath -s -w`, and the
+GUI with `-H windowsgui` so it opens without a console. Verified before
+publishing: the CLI prints its usage and answers `drivers`, and the GUI opens a
+window titled SpoolSmith. Verified after publishing: the asset downloaded from
+GitHub hashes to the same SHA-256 that was built and recorded.
+
+One packaging detail worth keeping. `Compress-Archive` on Windows PowerShell 5.1
+writes entry names with backslashes, which is not what the ZIP format specifies
+and which some extractors reject; v0.2.0's archive used forward slashes. The
+archive is now written entry by entry so the names match. It was extracted and
+both binaries were run from the extracted copy before release.
+
 ## 2026-09-07: the FlaUI suite does not gate CI
 
 The first hosted run of the desktop tests failed on `windows-latest` while the

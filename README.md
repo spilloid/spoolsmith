@@ -4,7 +4,7 @@ SpoolSmith discovers network printers, saves reusable printer profiles, and maps
 queues using locally installed drivers after you review the plan. A small family catalog
 also provides automatic identification and driver guidance.
 
-**0.3.0 in source adds the native Windows desktop app; v0.2.0 is the published CLI release.** Live discovery and reusable JSON profiles
+**v0.3.0 is the published release: the native Windows desktop app and the command-line tool.** Live discovery and reusable JSON profiles
 are implemented. Profile installation maps a queue using an already-installed Windows
 driver, or stages the reviewed local Brother package if that driver is missing.
 Automatic package downloads and broader package coverage are still pending.
