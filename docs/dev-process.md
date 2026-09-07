@@ -1,5 +1,34 @@
 # Dev Process Log
 
+## 2026-09-07: the FlaUI suite does not gate CI
+
+The first hosted run of the desktop tests failed on `windows-latest` while the
+push run of the same commit passed: `TruncationTests` reported captions outside
+the window at minimum size. The cause was real and fixable — walk schedules
+layout after a native resize rather than doing it inline, so the window reports
+its new size while its children still sit where the old one put them, which is
+indistinguishable from a clipped caption. A fixed 150ms pause was a guess at how
+long that takes; the test now waits for control positions to stop moving, which
+waits for the layout to settle rather than for it to be correct.
+
+That was not the whole story. Five local runs afterwards produced two failures
+of two further kinds: a launched app that exits before the tests can attach to
+it, and a control that still reports itself offscreen after its tab is selected.
+Neither is understood. One earlier hypothesis was wrong and is recorded as such:
+sizing the window from `BoundingRectangle` during startup was itself a fault —
+this process is not per-monitor DPI aware while the app is, so on a scaled
+display those numbers are not the window's real pixel size, and passing them
+back shrank the window and clipped its bottom row of buttons. Placement now
+moves without resizing unless the window genuinely does not fit, in which case
+it falls back to the app's own minimum scaled by `GetDpiForWindow`.
+
+The PR had said that if this suite proved flaky rather than useful the step
+should come out rather than be tolerated red. It did, so it has: CI is back to
+the Go build, vet and test it ran before, and the desktop suite is documented as
+a local step in the README with its known flakes named. The tests keep their
+value — they found four real defects in this milestone — but a gate that fails
+two runs in five teaches operators to ignore it.
+
 ## 2026-09-07: product site rebuilt around the desktop app, screenshots from FlaUI
 
 The operator called the GUI good enough to be 0.3.0 and asked for the site to

@@ -66,15 +66,14 @@ public sealed class TruncationTests : IDisposable
         {
             _fixture.MainWindow.FindFirstDescendant(cf => cf.ByName("Advanced options"))!.AsCheckBox().Click();
         }
-        // Walk schedules layout after a native resize/tab event.
-        Thread.Sleep(150);
+        var condition = TextBearingTypes
+            .Select(t => (FlaUI.Core.Conditions.ConditionBase)_fixture.MainWindow.ConditionFactory.ByControlType(t))
+            .Aggregate((a, b) => a.Or(b));
+        WaitForStableLayout(condition);
         var state = (minimumSize ? "minimum" : "default") + (advanced ? "-advanced" : "");
         _fixture.MainWindow.CaptureToFile(System.IO.Path.Combine(_fixture.RepoRoot,
             "dist", "gui-" + tabTitle.Replace(" & ", "-").Replace(" ", "-") + "-" + state + ".png"));
 
-        var condition = TextBearingTypes
-            .Select(t => (FlaUI.Core.Conditions.ConditionBase)_fixture.MainWindow.ConditionFactory.ByControlType(t))
-            .Aggregate((a, b) => a.Or(b));
         var offenders = new List<string>();
         var windowBounds = _fixture.MainWindow.BoundingRectangle;
         foreach (var element in _fixture.MainWindow.FindAllDescendants(condition))
@@ -126,6 +125,47 @@ public sealed class TruncationTests : IDisposable
         }
 
         Assert.True(offenders.Count == 0, $"Clipped caption(s) on {tabTitle} ({state}):\n" + string.Join("\n", offenders));
+    }
+
+    /// <summary>
+    /// Walk schedules layout after a native resize or tab change rather than
+    /// doing it inline, so for a moment the window reports its new size while
+    /// its children still sit where the old one put them — which is
+    /// indistinguishable from a genuinely clipped caption. A fixed pause is a
+    /// guess at how long that takes and was observed failing on a loaded CI
+    /// runner, so wait for the positions to stop moving instead. This waits for
+    /// the layout to settle, not for it to be correct: whatever it settles on
+    /// is what gets asserted.
+    /// </summary>
+    private void WaitForStableLayout(FlaUI.Core.Conditions.ConditionBase condition, int timeoutMs = 8_000)
+    {
+        var deadline = DateTime.UtcNow.AddMilliseconds(timeoutMs);
+        var previous = LayoutSignature(condition);
+        while (DateTime.UtcNow < deadline)
+        {
+            Thread.Sleep(150);
+            var current = LayoutSignature(condition);
+            if (current.Length > 0 && current == previous) return;
+            previous = current;
+        }
+    }
+
+    private string LayoutSignature(FlaUI.Core.Conditions.ConditionBase condition)
+    {
+        var parts = _fixture.MainWindow.FindAllDescendants(condition).Select(element =>
+        {
+            try
+            {
+                return element.Properties.Name.ValueOrDefault + element.BoundingRectangle;
+            }
+            catch
+            {
+                // A control torn down mid-sample just makes this sample differ
+                // from the next one, which is exactly the retry we want.
+                return string.Empty;
+            }
+        });
+        return string.Join("|", parts) + "@" + _fixture.MainWindow.BoundingRectangle;
     }
 
     private static Font NativeFont(AutomationElement element)

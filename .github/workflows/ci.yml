@@ -23,17 +23,3 @@ jobs:
         run: go vet ./...
       - name: Test
         run: go test ./... -v
-      - name: Build GUI exe for FlaUI tests
-        if: matrix.os == 'windows-latest'
-        shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Force dist | Out-Null
-          go build -o dist/spoolsmith-gui.exe ./cmd/spoolsmith-gui
-          Copy-Item cmd/spoolsmith-gui/spoolsmith-gui.exe.manifest dist/ -Force
-      - uses: actions/setup-dotnet@v4
-        if: matrix.os == 'windows-latest'
-        with:
-          dotnet-version: "8.0.x"
-      - name: GUI tests (FlaUI)
-        if: matrix.os == 'windows-latest'
-        run: dotnet test test/gui/SpoolSmithGui.Tests

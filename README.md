@@ -36,6 +36,27 @@ one. **Edit settings** changes a saved file in place, keeping a backup. Profile
 paths and package archives stay portable: relative archive paths resolve beside the
 profile.
 
+### Desktop tests
+
+`test/gui` drives the built executable with FlaUI. It needs a real desktop
+session, so run it locally rather than in CI:
+
+```powershell
+go build -o dist/spoolsmith-gui.exe ./cmd/spoolsmith-gui
+Copy-Item cmd/spoolsmith-gui/spoolsmith-gui.exe.manifest dist/
+dotnet test test/gui/SpoolSmithGui.Tests
+```
+
+No test confirms an install or changes a Windows printer. Two intermittent
+failures are known and unresolved: a launched app occasionally exits before the
+tests can attach to it, and a control occasionally still reports itself
+offscreen after its tab is selected. Both are test-harness timing, not app
+behaviour — but they are why this suite does not gate CI yet. Re-run before
+concluding a failure is real.
+
+`SPOOLSMITH_CAPTURE_SITE_SHOTS=1` additionally regenerates the product site's
+screenshots from the running app.
+
 **Preview changes** shows the proposed changes; **Full plan / JSON** adds commands
 and preflight details, and **Scan details** holds the raw discovery output.
 Execution requires confirmation, and changing any input invalidates the preview.

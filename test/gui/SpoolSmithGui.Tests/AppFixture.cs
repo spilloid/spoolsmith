@@ -84,9 +84,30 @@ public sealed class AppFixture : IDisposable
             var workArea = System.Windows.Forms.Screen.PrimaryScreen?.WorkingArea
                 ?? new System.Drawing.Rectangle(0, 0, 1024, 768);
             var bounds = MainWindow.BoundingRectangle;
-            var width = Math.Min((int)bounds.Width, workArea.Width);
-            var height = Math.Min((int)bounds.Height, workArea.Height);
-            SetWindowPos(hwnd, IntPtr.Zero, workArea.X, workArea.Y, width, height, SWP_NOZORDER | SWP_NOACTIVATE);
+            var fits = bounds.Width > 0 && bounds.Height > 0
+                && bounds.Width <= workArea.Width && bounds.Height <= workArea.Height;
+            if (fits)
+            {
+                // Move only. Sizing from BoundingRectangle is not safe here: it
+                // can be read before the window has settled, and this process is
+                // not per-monitor DPI aware while the app is, so on a scaled
+                // display those numbers are not the window's real pixel size.
+                // Passing them back shrank the window and clipped its bottom
+                // row of buttons, which surfaced as a button that could not be
+                // found at all.
+                SetWindowPos(hwnd, IntPtr.Zero, workArea.X, workArea.Y, 0, 0,
+                    SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+                return;
+            }
+            // Too tall or wide for this desktop — a 1024x768 CI runner, say.
+            // Fall back to the app's own minimum, scaled the way TruncationTests
+            // already does it, rather than to a size derived from a rectangle
+            // that may be in different units.
+            var scale = GetDpiForWindow(hwnd) / 96.0;
+            SetWindowPos(hwnd, IntPtr.Zero, workArea.X, workArea.Y,
+                Math.Min((int)Math.Round(820 * scale), workArea.Width),
+                Math.Min((int)Math.Round(620 * scale), workArea.Height),
+                SWP_NOZORDER | SWP_NOACTIVATE);
         }
         catch
         {
@@ -95,8 +116,12 @@ public sealed class AppFixture : IDisposable
         }
     }
 
+    private const uint SWP_NOSIZE = 0x0001;
     private const uint SWP_NOZORDER = 0x0004;
     private const uint SWP_NOACTIVATE = 0x0010;
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern uint GetDpiForWindow(IntPtr hwnd);
 
     [System.Runtime.InteropServices.DllImport("user32.dll", SetLastError = true)]
     [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
