@@ -33,3 +33,10 @@ profiles/
 # Editor/IDE
 # .idea/
 # .vscode/
+
+# .NET build output (test/gui's FlaUI project)
+test/gui/**/bin/
+test/gui/**/obj/
+
+# Local compiled application bundles
+/dist/
