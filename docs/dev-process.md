@@ -1,5 +1,139 @@
 # Dev Process Log
 
+## 2026-09-07: product site rebuilt around the desktop app, screenshots from FlaUI
+
+The operator called the GUI good enough to be 0.3.0 and asked for the site to
+match. The site described a command-line tool throughout, so the app is now the
+lead: a new section above the workflow, an app-first quick-start tab, and status
+entries that separate what is in source from the packaged v0.2.0 CLI.
+
+Screenshots are captured from the real app by `SiteScreenshots`, a FlaUI class
+gated behind `SPOOLSMITH_CAPTURE_SITE_SHOTS=1` so ordinary runs and CI never
+launch a network scan or rewrite committed images. They are deliberately
+sanitized: saved printers are seeded under `C:\Users\Public` with generic names so
+no Windows username or personal profile name appears in a visible path, and the
+published discovery capture rescans a narrow range around this PC's own printer
+rather than the whole subnet — a full sweep listed the operator's firewall by
+hostname, which does not belong on a public page. What remains is a private
+RFC1918 address and a printer model.
+
+Capturing the shots exposed three more defects, all fixed:
+
+- The plan pane rendered as one run-on paragraph. Native Windows edit controls
+  break lines only on CRLF, and the shared workflow and JSON encoders both write
+  LF, so the app's most important output was unreadable. Converted at the point
+  the text reaches a control, which also fixes the inspect, catalog, action-log
+  and details panes.
+- Arriving at the setup screen from discovery left the profile save path empty.
+  It was only filled by the target field's change handler, so a programmatic
+  navigation skipped it; `openPrinterSetup` now suggests it directly.
+- The review screenshot first came out mid-preview, then reporting that
+  administrator rights were needed. The capture now asks the app what access it
+  has — it says so in its own status line — and previews only when a plan can
+  actually be produced.
+
+Two test-side additions: `AppFixture` takes an `autoScan` flag so only the
+capture opts into scanning the real network, and a regression test asserts both
+optional panels stay hidden until asked for.
+
+Validation: `go build`, `go vet`, `go test ./...`, the FlaUI suite (27 tests) green
+on five of the last six runs, and the rendered site checked headlessly at full
+page height. One intermittent GUI-suite failure appeared once and could not be
+reproduced or identified across five further runs; it is not understood yet.
+`TestLocalBrotherArchiveVerificationWithStagingDoubles` still fails locally and at
+HEAD, unrelated to this work. The documented desktop build command was run as
+written. No printer was installed, configured, removed or printed to.
+
+## 2026-09-07: finish the GUI usability pass, Claude picks up after Codex ran out
+
+Codex hit its usage limit again mid-pass. `printers_windows.go` landed while this
+session was already reconstructing it from the tests and the removed handlers; the
+delivered file was the more complete of the two, so the reconstruction was dropped
+and Codex's kept. The tree did not build until it arrived.
+
+Four real defects surfaced, three of them visible to any operator:
+
+- Captions containing `&` were being eaten as Win32 accelerator prefixes. The
+  "Review & apply" tab actually rendered as "Review  apply", as did the "Save &
+  review" button and its explanatory label. Walk's labels use `SS_LEFT` without
+  `SS_NOPREFIX`, so static text is affected too. Renamed to plain words.
+- Selecting an operation in code left two mode radios checked at once. Native
+  radio exclusivity only applies to a user's click inside the group; walk's
+  `SetChecked` sets the single control it is called on. Handing a saved printer to
+  the review screen therefore left the previous mode checked beside the new one.
+  Added `setReviewMode`, which clears the others, and a test asserting exactly one.
+- Both optional panels — the saved-settings editor and the advanced options — were
+  visible on first open. `SetVisible(false)` during startup is a no-op while the
+  control's tab page is hidden, because the control already reports itself
+  invisible through that hidden ancestor. Walk shows the new page before
+  publishing `CurrentIndexChanged`, so visibility is now reapplied from there.
+- Closing the window was blocked during a read-only preview. Split
+  `mutationExecuting` from `mutationBusy` so only a real install, configure or
+  removal holds the window open.
+
+Driver choice now offers a starting point instead of requiring an exact name typed
+from memory: an unambiguous match between the model the printer reported and the
+installed driver names is filled in, labelled as a suggestion. It requires a
+model-number-like word to match, declines on ties, never overwrites a choice
+already made, and preflight still verifies the driver is registered. Unit tests
+cover the cases where it must decline.
+
+Test-side fixes, all confirmed by observation rather than assumed: button lookups
+now poll, because walk lays a tab page out after the notification it reacts to and
+a runtime caption reaches UI Automation later still; the fixture pins the window
+position, because Windows cascades each launch and a full run eventually pushed the
+bottom action row off the display, which UI Automation correctly reported as
+offscreen; and it waits for a non-empty title, which removed an intermittent
+attach race. A hidden control leaves the automation tree entirely, so tests that
+assert on advanced controls now open the advanced panel first.
+
+Validation: `go build`, `go vet`, `go test ./...`, and the FlaUI desktop suite
+(26 tests) green four consecutive runs. Live checks on real hardware: network
+detection selected `192.168.68.0/24` from the connected adapter, and a GUI scan of
+that subnet listed the Brother HL-L2315D at `192.168.68.108`. `internal/install`'s
+`TestLocalBrotherArchiveVerificationWithStagingDoubles` fails locally; it fails at
+HEAD too once the vendor archive is present, and skips in CI, so it is unrelated to
+this pass and still open. No install, configure, removal or test print was
+performed.
+
+## 2026-09-07: GUI daily workflow and confirmation fixes
+
+Follow-up: the operator launched the stale `dist/spoolsmith-gui.exe`, while the
+fixed candidate had been named `spoolsmith-gui-next.exe`. Rebuilt the normal
+executable and copied its manifest. Added a desktop Scan regression (loopback by
+default, explicit environment overrides for live verification). A live GUI scan of
+`192.168.68.0/24` completed in about 45 seconds and populated candidate rows. The
+initial CLI subnet scan missed the Brother, but a direct probe of `.108` returned
+its full Brother HL-L2315D identity; subnet discovery can miss transient responses.
+
+Continued the operator's GUI request on top of Claude's implementation, retaining
+the in-progress FlaUI and CI changes. Claude provided two read-only reviews.
+
+Real desktop testing exposed a toolkit integration defect: declarative tab pages
+were populated before form attachment and kept native control IDs of zero.
+Walk routed button notifications to the first sibling, making Inspect inert and
+potentially dispatching other buttons to the wrong action. Reattaching the completed
+tab tree through Walk's public API assigns its IDs. The previously failing Inspect
+fixture test now reaches the actual shared inspector. Segoe UI is set during form
+creation so tab measurements use the intended font; the unused native toolbar is
+hidden because it obscured the tab strip. Screenshots supplement caption-width tests.
+
+The GUI now offers discovery selection and cancellation, direct saved-profile
+install/configure/remove handoffs, and registered-driver lookup (also available as
+the CLI `drivers` command). Configure uses the shared UpdateExisting workflow.
+Profile editing retains the loaded destination, detects external file changes, and
+supports package fields. Relative archives resolve beside their profile.
+
+Mutation controls are locked during work; input changes discard pending previews.
+Full plan / JSON exposes commands, preflight, and unresolved evidence. Confirmation
+defaults to No and includes the preview. Shared ExpectedPlan checks reject an
+execution plan that differs from the reviewed plan. Added no-mutation regression
+tests for changed install/removal plans and a native configure guard test.
+
+Validation: Windows `go test ./...`, `go vet ./...`, native GUI build, and FlaUI
+desktop tests. No actual printer install, configure, removal, or test print was
+performed in this pass. These changes are a local GUI candidate, not v0.2.0 assets.
+
 ## 2026-09-06: native GUI (feature parity) + action-log observability, Claude picks up after Codex ran out
 
 Codex hit its usage limit mid-GUI-split (see the release checkpoint below); the
