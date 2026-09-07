@@ -28,19 +28,21 @@ not an OS-mutation scope expansion.
   built for this (`workflow.go`: "Function fields are public to let a future GUI ...
   supply the same seams").
 - Confirmation gate: **Preview** always forces `DryRun: true` — the identical call
-  the CLI's own `--dry-run` makes, so the plan/preflight text shown is byte-for-byte
-  what the CLI would print, and nothing can mutate during a preview (dry-run
+  the CLI's own `--dry-run` makes. The GUI presents a compact plan and exposes full
+  commands/preflight through **Full plan / JSON**. Nothing mutates during preview (dry-run
   short-circuits before `RunInstall`/`RunUninstall` ever reach their confirmation
   branch). **Execute** only becomes clickable after a successful Preview, and itself
-  requires a native Yes/No `walk.MsgBox` naming the operation before doing anything;
+  requires a native Yes/No `walk.MsgBox` showing the reviewed plan, defaulting to No;
   only then does it re-run the identical call with `Yes: true, NonInteractive: true`
   (the CLI's own `--yes --non-interactive` contract) — no interactive stdin/pipe
   plumbing needed, and every branch this exercises (`DryRun`, `Yes`+`NonInteractive`)
   is already covered by `internal/install`'s existing tests. Preview-then-click-
   Execute-then-confirm-the-dialog is the GUI's one required explicit confirmation of
-  a fully shown plan, matching D-0040's gate.
+  a fully shown plan, matching D-0040's gate. Changing an input invalidates the
+  preview. The shared workflow compares the execution plan with `ExpectedPlan`
+  and rejects differences before any mutating command.
 - Feature parity checklist against `main.go`/`daily.go`: `discover`, `inspect`,
-  `catalog families`/`catalog probe`, `profile capture`/`profile edit`,
+  `catalog families`/`catalog probe`, registered `drivers`, `profile capture`/`profile edit`,
   `install`/`add`/`configure` (including `--force-family`, `--profile`), and
   `uninstall`/`remove` (including `--purge-driver`, `--profile`). JSON/pipeline mode
   has no GUI analogue (the GUI itself is the interactive surface).

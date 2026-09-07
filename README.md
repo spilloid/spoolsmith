@@ -4,10 +4,65 @@ SpoolSmith discovers network printers, saves reusable printer profiles, and maps
 queues using locally installed drivers after you review the plan. A small family catalog
 also provides automatic identification and driver guidance.
 
-**v0.2.0: Windows command-line app. A native GUI is planned next.** Live discovery and reusable JSON profiles
+**0.3.0 in source adds the native Windows desktop app; v0.2.0 is the published CLI release.** Live discovery and reusable JSON profiles
 are implemented. Profile installation maps a queue using an already-installed Windows
 driver, or stages the reviewed local Brother package if that driver is missing.
 Automatic package downloads and broader package coverage are still pending.
+
+## Native Windows GUI
+
+Build the desktop app and keep its manifest beside it:
+
+```powershell
+go build -ldflags="-H windowsgui" -o dist/spoolsmith-gui.exe ./cmd/spoolsmith-gui
+Copy-Item cmd/spoolsmith-gui/spoolsmith-gui.exe.manifest dist/
+```
+
+The app opens on **Find a printer** and scans the network this PC is already on,
+detected from its connected Wi-Fi or primary Ethernet adapter. Override the subnet
+in **Network or IP** and choose **Scan**, or skip discovery entirely by entering a
+known address under **Already know the printer's IP address?**.
+
+Selecting a discovered printer and choosing **Set up selected printer** goes
+straight to a preview when that address already has a saved setup — launch, scan,
+review is the whole path. **Set up with different settings** ignores the saved
+setup and opens **Add printer**, where you name the printer and pick its Windows
+driver; the exact installed names come from **Refresh drivers**, and the model the
+printer reported selects an unambiguous match for you to confirm. **Save and
+review** captures the printer's evidence, writes the setup, and opens the preview.
+
+**Saved printers** lists what this PC has stored, and set up, update or remove each
+one. **Edit settings** changes a saved file in place, keeping a backup. Profile
+paths and package archives stay portable: relative archive paths resolve beside the
+profile.
+
+### Desktop tests
+
+`test/gui` drives the built executable with FlaUI. It needs a real desktop
+session, so run it locally rather than in CI:
+
+```powershell
+go build -o dist/spoolsmith-gui.exe ./cmd/spoolsmith-gui
+Copy-Item cmd/spoolsmith-gui/spoolsmith-gui.exe.manifest dist/
+dotnet test test/gui/SpoolSmithGui.Tests
+```
+
+No test confirms an install or changes a Windows printer. Two intermittent
+failures are known and unresolved: a launched app occasionally exits before the
+tests can attach to it, and a control occasionally still reports itself
+offscreen after its tab is selected. Both are test-harness timing, not app
+behaviour — but they are why this suite does not gate CI yet. Re-run before
+concluding a failure is real.
+
+`SPOOLSMITH_CAPTURE_SITE_SHOTS=1` additionally regenerates the product site's
+screenshots from the running app.
+
+**Preview changes** shows the proposed changes; **Full plan / JSON** adds commands
+and preflight details, and **Scan details** holds the raw discovery output.
+Execution requires confirmation, and changing any input invalidates the preview.
+The shared workflow also rejects a changed plan during execution. Run as
+administrator when applying queue changes. The CLI provides the same operations;
+`spoolsmith drivers` lists registered driver names.
 
 ## Daily printer mapping
 

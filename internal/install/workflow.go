@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"reflect"
 	"strconv"
 	"strings"
 
@@ -29,6 +30,9 @@ const (
 
 // InstallOptions contains the policy-relevant inputs for one install attempt.
 type InstallOptions struct {
+	// ExpectedPlan binds execution to a previously reviewed preview. A changed
+	// plan requires another preview; callers cannot authorize an unseen plan.
+	ExpectedPlan   *Plan
 	Target         string
 	Profile        *Profile
 	UpdateExisting bool
@@ -42,6 +46,7 @@ type InstallOptions struct {
 
 // UninstallOptions contains the policy-relevant inputs for one uninstall attempt.
 type UninstallOptions struct {
+	ExpectedPlan   *Plan
 	Compact        bool
 	Profile        *Profile
 	PrinterName    string
@@ -201,6 +206,9 @@ func (w Workflow) RunInstall(ctx context.Context, env Environment, input io.Read
 	}
 	outcome.Plan = &plan
 	writeInstallPlan(interactive, plan, options.Compact)
+	if options.ExpectedPlan != nil && !reflect.DeepEqual(*options.ExpectedPlan, plan) {
+		return failOutcome(outcome, errors.New("install: plan changed since preview; review a new preview before proceeding"), ExitNotConfirmed)
+	}
 
 	preflight, err := Preflight(ctx, env, plan)
 	outcome.Preflight = &preflight
@@ -288,6 +296,9 @@ func (w Workflow) RunUninstall(ctx context.Context, env Environment, input io.Re
 	}
 	outcome.Plan = &plan
 	writeUninstallPlan(interactive, plan, options.PurgeDriver, options.Compact)
+	if options.ExpectedPlan != nil && !reflect.DeepEqual(*options.ExpectedPlan, plan) {
+		return failOutcome(outcome, errors.New("remove: plan changed since preview; review a new preview before proceeding"), ExitNotConfirmed)
+	}
 
 	if options.DryRun {
 		outcome.Status = "dry-run"

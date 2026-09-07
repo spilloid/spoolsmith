@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
+	"syscall"
 )
 
 type windowsEnvironment struct{}
@@ -60,6 +61,20 @@ func (windowsEnvironment) LookupPrinter(ctx context.Context, printerName string)
 }
 
 func runPowerShell(ctx context.Context, command string) (string, error) {
-	output, err := exec.CommandContext(ctx, "powershell.exe", "-NoProfile", "-Command", command).CombinedOutput()
+	process := exec.CommandContext(ctx, "powershell.exe", "-NoProfile", "-Command", command)
+	process.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+	output, err := process.CombinedOutput()
 	return string(output), err
+}
+
+func (windowsEnvironment) DriverNames(ctx context.Context) ([]string, error) {
+	output, err := runPowerShell(ctx, powerShellCommand("ConvertTo-Json -InputObject @(Get-PrinterDriver -ErrorAction Stop | Select-Object -ExpandProperty Name | Sort-Object -Unique)"))
+	if err != nil {
+		return nil, fmt.Errorf("list registered drivers: %w: %s", err, output)
+	}
+	var names []string
+	if err := json.Unmarshal([]byte(output), &names); err != nil {
+		return nil, err
+	}
+	return names, nil
 }

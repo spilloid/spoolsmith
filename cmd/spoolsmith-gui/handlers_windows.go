@@ -8,31 +8,36 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
-	"sort"
 	"strings"
 	"time"
 
-	"github.com/tailscale/walk"
 	"github.com/spilloid/spoolsmith/internal/actionlog"
 	"github.com/spilloid/spoolsmith/internal/catalog"
 	"github.com/spilloid/spoolsmith/internal/inspect"
 	"github.com/spilloid/spoolsmith/internal/install"
 	"github.com/spilloid/spoolsmith/internal/probe"
+	"github.com/tailscale/walk"
 )
 
 // app owns every widget handle and the same Workflow/Environment the CLI
 // uses, so the GUI is a second transport over identical, already-authorized
 // (D-0039/D-0040/D-0041) core logic rather than a separate mutation path.
 type app struct {
+	printerUI
+	reviewUI
 	mw       *walk.MainWindow
+	tabs     *walk.TabWidget
 	workflow install.Workflow
 	env      install.Environment
 	logger   *actionlog.Logger
 
-	discoverCIDR *walk.LineEdit
-	discoverBtn  *walk.PushButton
-	discoverOut  *walk.TextEdit
+	discoverCIDR      *walk.LineEdit
+	discoverBtn       *walk.PushButton
+	discoverOut       *walk.TextEdit
+	discoverList      *walk.ListBox
+	discovered        []probe.Result
+	discoverCancel    context.CancelFunc
+	discoverCancelBtn *walk.PushButton
 
 	inspectTarget *walk.LineEdit
 	inspectBtn    *walk.PushButton
@@ -43,28 +48,34 @@ type app struct {
 	probeBtn    *walk.PushButton
 	catalogOut  *walk.TextEdit
 
-	profileDir    *walk.LineEdit
-	profileList   *walk.ListBox
-	profileFiles  []string
-	profileOut    *walk.TextEdit
-	refreshBtn    *walk.PushButton
-	viewBtn       *walk.PushButton
-	loadEditBtn   *walk.PushButton
-	saveEditBtn   *walk.PushButton
-	captureTarget *walk.LineEdit
-	captureFile   *walk.LineEdit
-	captureName   *walk.LineEdit
-	captureDriver *walk.LineEdit
-	captureBtn    *walk.PushButton
-	editName      *walk.LineEdit
-	editDriver    *walk.LineEdit
-	editTarget    *walk.LineEdit
+	profileDir     *walk.LineEdit
+	profileList    *walk.ListBox
+	profileFiles   []string
+	profileOut     *walk.TextEdit
+	refreshBtn     *walk.PushButton
+	viewBtn        *walk.PushButton
+	loadEditBtn    *walk.PushButton
+	saveEditBtn    *walk.PushButton
+	captureTarget  *walk.LineEdit
+	captureFile    *walk.LineEdit
+	captureName    *walk.LineEdit
+	captureDriver  *walk.ComboBox
+	refreshDrivers *walk.PushButton
+	captureBtn     *walk.PushButton
+	editName       *walk.LineEdit
+	editDriver     *walk.LineEdit
+	editTarget     *walk.LineEdit
+	editPath       string
+	editOriginal   []byte
+	editPathLabel  *walk.Label
+	editPackage    *walk.LineEdit
+	editArchive    *walk.LineEdit
 
 	modeInstall      *walk.RadioButton
+	modeConfigure    *walk.RadioButton
 	modeUninstall    *walk.RadioButton
 	useProfileCheck  *walk.CheckBox
 	targetField      *walk.LineEdit
-	profileField     *walk.LineEdit
 	forceFamilyCombo *walk.ComboBox
 	familyIDs        []string
 	familyLabels     []string
@@ -73,6 +84,12 @@ type app struct {
 	previewBtn       *walk.PushButton
 	executeBtn       *walk.PushButton
 	planOut          *walk.TextEdit
+	mutationBusy     bool
+	// mutationExecuting is narrower than mutationBusy: only an actual install,
+	// configure or removal is in flight. A preview is read-only and must not
+	// hold the window open, so closing is blocked on this flag alone.
+	mutationExecuting bool
+	previewJSON       string
 
 	pendingInstall   *install.InstallOptions
 	pendingUninstall *install.UninstallOptions
@@ -109,48 +126,18 @@ func prettyJSON(v any) string {
 	if err != nil {
 		return fmt.Sprintf("encode result: %v", err)
 	}
-	return string(data)
+	return lines(string(data))
+}
+
+// lines converts LF to CRLF. Native Windows edit controls only break a line on
+// CRLF, so text produced by the shared workflow and the JSON encoders — both of
+// which write LF — otherwise renders as one unreadable run-on paragraph.
+func lines(text string) string {
+	return strings.ReplaceAll(strings.ReplaceAll(text, "\r\n", "\n"), "\n", "\r\n")
 }
 
 func showErr(owner walk.Form, title string, err error) {
 	walk.MsgBox(owner, title, err.Error(), walk.MsgBoxIconError)
-}
-
-// --- Discover ---------------------------------------------------------
-
-func (a *app) onDiscover() {
-	cidr := strings.TrimSpace(a.discoverCIDR.Text())
-	if cidr == "" {
-		showErr(a.mw, "Discover", fmt.Errorf("enter an IPv4 CIDR, such as 192.168.1.0/24"))
-		return
-	}
-	a.discoverBtn.SetEnabled(false)
-	a.discoverOut.SetText("Scanning for printer candidates; open ports do not establish driver compatibility...")
-	start := time.Now()
-	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-		defer cancel()
-		result, err := probe.Discover(ctx, cidr)
-		response := struct {
-			Network    string                  `json:"network"`
-			Scanned    int                     `json:"scanned"`
-			Candidates []inspect.InspectResult `json:"candidates"`
-			Error      string                  `json:"error,omitempty"`
-		}{Network: result.Network, Scanned: result.Scanned, Candidates: []inspect.InspectResult{}}
-		for _, candidate := range result.Candidates {
-			response.Candidates = append(response.Candidates, inspect.Inspect(candidate.Evidence))
-		}
-		status := "success"
-		if err != nil {
-			response.Error = err.Error()
-			status = "error"
-		}
-		a.log("gui", "discover", []string{cidr}, status, err, start)
-		a.mw.Synchronize(func() {
-			a.discoverBtn.SetEnabled(true)
-			a.discoverOut.SetText(prettyJSON(response))
-		})
-	}()
 }
 
 // --- Inspect ------------------------------------------------------------
@@ -218,144 +205,6 @@ func (a *app) onProbe() {
 	}()
 }
 
-// --- Profiles ---------------------------------------------------------
-
-func (a *app) profilePath(name string) string {
-	return filepath.Join(strings.TrimSpace(a.profileDir.Text()), name)
-}
-
-func (a *app) onRefreshProfiles() {
-	dir := strings.TrimSpace(a.profileDir.Text())
-	if dir == "" {
-		dir = "profiles"
-	}
-	var files []string
-	entries, err := os.ReadDir(dir)
-	if err == nil {
-		for _, entry := range entries {
-			if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
-				continue
-			}
-			files = append(files, entry.Name())
-		}
-	}
-	sort.Strings(files)
-	a.profileFiles = files
-	_ = a.profileList.SetModel(files)
-}
-
-func (a *app) selectedProfile() (string, bool) {
-	index := a.profileList.CurrentIndex()
-	if index < 0 || index >= len(a.profileFiles) {
-		return "", false
-	}
-	return a.profilePath(a.profileFiles[index]), true
-}
-
-func (a *app) onViewProfile() {
-	path, ok := a.selectedProfile()
-	if !ok {
-		showErr(a.mw, "Profile", fmt.Errorf("select a profile in the list first"))
-		return
-	}
-	profile, err := install.LoadProfile(path)
-	if err != nil {
-		a.profileOut.SetText("Error: " + err.Error())
-		return
-	}
-	a.profileOut.SetText(prettyJSON(profile))
-}
-
-func (a *app) onCaptureProfile() {
-	target := strings.TrimSpace(a.captureTarget.Text())
-	file := strings.TrimSpace(a.captureFile.Text())
-	name := strings.TrimSpace(a.captureName.Text())
-	driver := strings.TrimSpace(a.captureDriver.Text())
-	if target == "" || file == "" || name == "" || driver == "" {
-		showErr(a.mw, "Capture profile", fmt.Errorf("target, file, queue name, and driver name are all required"))
-		return
-	}
-	a.captureBtn.SetEnabled(false)
-	start := time.Now()
-	go func() {
-		result, err := probe.Collect(context.Background(), target)
-		var saveErr error
-		if err == nil {
-			p := install.Profile{Version: 1, Target: result.Evidence.IP, Evidence: result.Evidence, PrinterName: name, DriverName: driver}
-			saveErr = install.SaveProfile(file, p)
-		}
-		finalErr := err
-		if finalErr == nil {
-			finalErr = saveErr
-		}
-		status := "success"
-		if finalErr != nil {
-			status = "error"
-		}
-		a.log("gui", "profile capture", []string{target, file}, status, finalErr, start)
-		a.mw.Synchronize(func() {
-			a.captureBtn.SetEnabled(true)
-			if finalErr != nil {
-				showErr(a.mw, "Capture profile", finalErr)
-				return
-			}
-			walk.MsgBox(a.mw, "Capture profile", "Saved printer profile. The driver name is operator-selected; installation checks that it is registered locally.", walk.MsgBoxIconInformation)
-			a.onRefreshProfiles()
-		})
-	}()
-}
-
-func (a *app) onLoadEdit() {
-	path, ok := a.selectedProfile()
-	if !ok {
-		showErr(a.mw, "Profile edit", fmt.Errorf("select a profile in the list first"))
-		return
-	}
-	profile, err := install.LoadProfile(path)
-	if err != nil {
-		showErr(a.mw, "Profile edit", err)
-		return
-	}
-	_ = a.editName.SetText(profile.PrinterName)
-	_ = a.editDriver.SetText(profile.DriverName)
-	_ = a.editTarget.SetText(profile.Target)
-}
-
-func (a *app) onSaveEdit() {
-	path, ok := a.selectedProfile()
-	if !ok {
-		showErr(a.mw, "Profile edit", fmt.Errorf("select a profile in the list first"))
-		return
-	}
-	profile, err := install.LoadProfile(path)
-	if err != nil {
-		showErr(a.mw, "Profile edit", err)
-		return
-	}
-	if name := strings.TrimSpace(a.editName.Text()); name != "" {
-		profile.PrinterName = name
-	}
-	if driver := strings.TrimSpace(a.editDriver.Text()); driver != "" {
-		profile.DriverName = driver
-	}
-	if target := strings.TrimSpace(a.editTarget.Text()); target != "" {
-		profile.Target = target
-	}
-	start := time.Now()
-	backup, err := install.EditProfile(path, profile)
-	status := "success"
-	if err != nil {
-		status = "error"
-	}
-	a.log("gui", "profile edit", []string{path}, status, err, start)
-	if err != nil {
-		showErr(a.mw, "Profile edit", err)
-		return
-	}
-	walk.MsgBox(a.mw, "Profile edit", fmt.Sprintf("Profile updated; previous version saved to %s.\nChanging the queue name creates a separate queue; remove the old queue by name if needed.", backup), walk.MsgBoxIconInformation)
-	a.onRefreshProfiles()
-}
-
 // --- Install / uninstall ---------------------------------------------------
 //
 // Preview always forces DryRun=true: it calls the identical Workflow code the
@@ -371,13 +220,29 @@ func (a *app) resetPending() {
 	a.pendingInstall = nil
 	a.pendingUninstall = nil
 	a.executeBtn.SetEnabled(false)
+	a.previewJSON = ""
+	if a.planDetailsBtn != nil {
+		a.planDetailsBtn.SetEnabled(false)
+	}
 }
 
 func (a *app) onPreview() {
+	if a.mutationBusy {
+		return
+	}
+	if strings.TrimSpace(a.targetField.Text()) == "" {
+		a.resetPending()
+		a.planOut.SetText("Choose a saved printer or enter " + strings.TrimSuffix(strings.ToLower(a.targetLabel.Text()), ":") + " before previewing.")
+		a.targetField.SetFocus()
+		return
+	}
+	a.setMutationBusy(true)
 	a.previewBtn.SetEnabled(false)
 	a.resetPending()
-	a.planOut.SetText("Building plan...")
-	isInstall := a.modeInstall.Checked()
+	a.planOut.SetText("Checking the printer and preparing your preview. This may take a few seconds...")
+	a.reviewHint.SetText("Preparing your preview. No changes are being made.")
+	isInstall := !a.modeUninstall.Checked()
+	configure := a.modeConfigure.Checked()
 	useProfile := a.useProfileCheck.Checked()
 	dryRunOnly := a.dryRunOnlyCheck.Checked()
 	targetOrProfile := strings.TrimSpace(a.targetField.Text())
@@ -385,7 +250,10 @@ func (a *app) onPreview() {
 	if idx := a.forceFamilyCombo.CurrentIndex(); idx > 0 && idx < len(a.familyIDs) {
 		forceFamily = a.familyIDs[idx]
 	}
-	purgeDriver := a.purgeDriverCheck.Checked()
+	if useProfile {
+		forceFamily = ""
+	}
+	purgeDriver := !isInstall && a.purgeDriverCheck.Checked()
 
 	start := time.Now()
 	go func() {
@@ -397,7 +265,14 @@ func (a *app) onPreview() {
 
 		if isInstall {
 			op = "install"
-			options := install.InstallOptions{DryRun: true, ForceFamily: forceFamily}
+			options := install.InstallOptions{DryRun: true, ForceFamily: forceFamily, UpdateExisting: configure, Compact: true}
+			if configure && !useProfile {
+				a.finishPreview("configure", nil, start, fmt.Errorf("configure requires a profile file"), "")
+				return
+			}
+			if configure {
+				op = "configure"
+			}
 			if useProfile {
 				profile, err := install.LoadProfile(targetOrProfile)
 				if err != nil {
@@ -405,20 +280,29 @@ func (a *app) onPreview() {
 					return
 				}
 				options.Profile = &profile
+				if err := profile.ResolvePackagePath(targetOrProfile); err != nil {
+					a.finishPreview(op, args, start, err, "")
+					return
+				}
 				args = []string{"--profile", targetOrProfile}
 			} else {
 				options.Target = targetOrProfile
 				args = []string{targetOrProfile}
 			}
 			outcome, _ := a.workflow.RunInstall(context.Background(), a.env, strings.NewReader(""), &buf, false, options)
+			a.mw.Synchronize(func() { a.previewJSON = prettyJSON(outcome) })
+			for _, reason := range outcome.Uncertain {
+				fmt.Fprintln(&buf, "Evidence: "+reason)
+			}
 			status = outcome.Status
 			errText = outcome.Error
 			if status == "dry-run" && !dryRunOnly {
+				options.ExpectedPlan = outcome.Plan
 				a.mw.Synchronize(func() { a.pendingInstall = &options })
 			}
 		} else {
 			op = "uninstall"
-			options := install.UninstallOptions{DryRun: true, PurgeDriver: purgeDriver}
+			options := install.UninstallOptions{DryRun: true, PurgeDriver: purgeDriver, Compact: true}
 			if useProfile {
 				profile, err := install.LoadProfile(targetOrProfile)
 				if err != nil {
@@ -433,9 +317,11 @@ func (a *app) onPreview() {
 				args = []string{targetOrProfile}
 			}
 			outcome, _ := a.workflow.RunUninstall(context.Background(), a.env, strings.NewReader(""), &buf, false, options)
+			a.mw.Synchronize(func() { a.previewJSON = prettyJSON(outcome) })
 			status = outcome.Status
 			errText = outcome.Error
 			if status == "dry-run" && !dryRunOnly {
+				options.ExpectedPlan = outcome.Plan
 				a.mw.Synchronize(func() { a.pendingUninstall = &options })
 			}
 		}
@@ -444,7 +330,7 @@ func (a *app) onPreview() {
 		if errText != "" {
 			err = fmt.Errorf("%s", errText)
 		}
-		a.finishPreview(op, args, start, err, buf.String()+"\n[status: "+status+"]")
+		a.finishPreview(op, args, start, err, buf.String())
 	}()
 }
 
@@ -455,12 +341,20 @@ func (a *app) finishPreview(op string, args []string, start time.Time, err error
 	}
 	a.log("gui", op+" preview", args, status, err, start)
 	a.mw.Synchronize(func() {
-		a.previewBtn.SetEnabled(true)
-		text := transcript
-		if err != nil && strings.TrimSpace(text) == "" {
-			text = "Error: " + err.Error()
+		a.setMutationBusy(false)
+		text := lines(transcript)
+		if err != nil {
+			text = "Unable to continue\r\n" + friendlyOperationError(err.Error()) + "\r\n\r\n" + transcript
+			a.reviewHint.SetText("Resolve the issue below, then preview again.")
+		} else if a.dryRunOnlyCheck.Checked() {
+			a.reviewHint.SetText("Preview only is on. Turn it off and preview again to enable installation.")
+		} else if a.pendingInstall != nil || a.pendingUninstall != nil {
+			a.reviewHint.SetText("Review the plan below, then use the button at the bottom right to confirm.")
+		} else {
+			a.reviewHint.SetText("Preview complete. No changes are needed.")
 		}
 		a.planOut.SetText(text)
+		a.planDetailsBtn.SetEnabled(a.previewJSON != "")
 		if a.pendingInstall != nil || a.pendingUninstall != nil {
 			a.executeBtn.SetEnabled(true)
 		}
@@ -468,27 +362,40 @@ func (a *app) finishPreview(op string, args []string, start time.Time, err error
 }
 
 func (a *app) onExecute() {
+	if a.mutationBusy || a.dryRunOnlyCheck.Checked() {
+		return
+	}
 	if a.pendingInstall == nil && a.pendingUninstall == nil {
 		return
 	}
-	verb := "install"
+	verb := "add printer"
 	if a.pendingUninstall != nil {
-		verb = "uninstall"
+		verb = "remove printer"
 	}
-	if walk.MsgBox(a.mw, "Confirm "+verb, "This will run the "+verb+" plan shown above and make real changes to this machine. Proceed?", walk.MsgBoxYesNo|walk.MsgBoxIconWarning) != 6 {
+	if a.pendingInstall != nil && a.pendingInstall.UpdateExisting {
+		verb = "update settings"
+	}
+	if walk.MsgBox(a.mw, "Confirm "+verb, "Review the plan below. Proceed with these changes?\n\n"+a.planOut.Text(), walk.MsgBoxYesNo|walk.MsgBoxDefButton2|walk.MsgBoxIconWarning) != 6 {
 		return
 	}
+	a.setMutationBusy(true)
+	a.mutationExecuting = true
+	pendingInstall, pendingUninstall := a.pendingInstall, a.pendingUninstall
 	a.executeBtn.SetEnabled(false)
 	a.previewBtn.SetEnabled(false)
+	a.reviewHint.SetText("Applying your confirmed changes. Please keep SpoolSmith open.")
 	start := time.Now()
 	go func() {
 		var buf bytes.Buffer
 		var op string
 		var status, errText string
 
-		if a.pendingInstall != nil {
+		if pendingInstall != nil {
 			op = "install"
-			options := *a.pendingInstall
+			options := *pendingInstall
+			if options.UpdateExisting {
+				op = "configure"
+			}
 			options.DryRun = false
 			options.Yes = true
 			options.NonInteractive = true
@@ -496,7 +403,7 @@ func (a *app) onExecute() {
 			status, errText = outcome.Status, outcome.Error
 		} else {
 			op = "uninstall"
-			options := *a.pendingUninstall
+			options := *pendingUninstall
 			options.DryRun = false
 			options.Yes = true
 			options.NonInteractive = true
@@ -512,13 +419,59 @@ func (a *app) onExecute() {
 		if err != nil {
 			logStatus = "error"
 		}
-		a.log("gui", op+" execute", nil, logStatus, err, start)
+		var logArgs []string
+		if pendingInstall != nil && pendingInstall.ExpectedPlan != nil {
+			logArgs = []string{pendingInstall.ExpectedPlan.PrinterName, pendingInstall.ExpectedPlan.IPAddress}
+		}
+		if pendingUninstall != nil {
+			logArgs = []string{pendingUninstall.PrinterName}
+		}
+		a.log("gui", op+" execute", logArgs, logStatus, err, start)
 		a.mw.Synchronize(func() {
+			a.mutationExecuting = false
 			a.resetPending()
-			a.previewBtn.SetEnabled(true)
-			a.planOut.SetText(buf.String() + "\n[status: " + status + "]")
+			a.setMutationBusy(false)
+			text := lines(buf.String())
+			if errText != "" {
+				text = "The operation could not finish.\r\n" + friendlyOperationError(errText) + "\r\n\r\n" + text
+				a.reviewHint.SetText("Check the result below before trying again.")
+			} else if status == "success" || status == "already-absent" {
+				a.reviewHint.SetText("Done. Your saved settings are available in Saved printers.")
+			}
+			a.planOut.SetText(text)
 		})
 	}()
+}
+
+func (a *app) setMutationBusy(busy bool) {
+	a.mutationBusy = busy
+	for _, control := range []walk.Widget{a.modeInstall, a.modeConfigure, a.modeUninstall, a.useProfileCheck, a.targetField, a.forceFamilyCombo, a.purgeDriverCheck, a.dryRunOnlyCheck, a.previewBtn, a.reviewBrowseBtn} {
+		control.SetEnabled(!busy)
+	}
+	a.updateReviewControls()
+}
+
+func (a *app) bindMutationInputs() {
+	invalidate := func() { a.invalidateReview() }
+	a.targetField.TextChanged().Attach(invalidate)
+	a.forceFamilyCombo.CurrentIndexChanged().Attach(invalidate)
+	for _, checkbox := range []*walk.CheckBox{a.useProfileCheck, a.purgeDriverCheck, a.dryRunOnlyCheck} {
+		checkbox.CheckedChanged().Attach(invalidate)
+	}
+	for _, radio := range []*walk.RadioButton{a.modeInstall, a.modeConfigure, a.modeUninstall} {
+		radio.CheckedChanged().Attach(func() {
+			if a.modeConfigure.Checked() {
+				a.useProfileCheck.SetChecked(true)
+			}
+			invalidate()
+		})
+	}
+	a.mw.Closing().Attach(func(canceled *bool, _ walk.CloseReason) {
+		if a.mutationExecuting {
+			*canceled = true
+			walk.MsgBox(a.mw, "Operation in progress", "Wait for the current printer operation to finish before closing.", walk.MsgBoxIconInformation)
+		}
+	})
 }
 
 // --- Log viewer -------------------------------------------------------
@@ -529,11 +482,11 @@ func (a *app) onRefreshLog() {
 		a.logOut.SetText("(no log entries yet: " + err.Error() + ")")
 		return
 	}
-	lines := strings.Split(strings.TrimRight(string(data), "\n"), "\n")
-	if len(lines) > 500 {
-		lines = lines[len(lines)-500:]
+	entries := strings.Split(strings.TrimRight(string(data), "\n"), "\n")
+	if len(entries) > 500 {
+		entries = entries[len(entries)-500:]
 	}
-	a.logOut.SetText(strings.Join(lines, "\n"))
+	a.logOut.SetText(strings.Join(entries, "\r\n"))
 }
 
 func (a *app) onOpenLogPath() {

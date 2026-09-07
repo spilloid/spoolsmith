@@ -79,6 +79,15 @@ func run(ctx context.Context, args []string, input io.Reader, stdout, stderr io.
 	}
 
 	switch args[0] {
+	case "drivers":
+		if len(args) != 1 {
+			return usageError(stdout, stderr, "drivers", errors.New("drivers accepts no arguments"))
+		}
+		names, err := install.DriverNames(ctx, app.environment)
+		if err != nil {
+			return commandError(stdout, stderr, "drivers", err, 1)
+		}
+		return encodeSuccess(stdout, stderr, "drivers", names)
 	case "--help", "-h", "help":
 		printUsage(stdout)
 		return 0
@@ -331,6 +340,7 @@ func encodeJSON(writer io.Writer, value any) error {
 
 func printUsage(writer io.Writer) {
 	fmt.Fprintln(writer, "SpoolSmith: discover, save, and map network printers")
+	fmt.Fprintln(writer, "       spoolsmith drivers (list exact registered Windows driver names)")
 	fmt.Fprintln(writer, "usage: spoolsmith discover <IPv4-CIDR> (/24 through /32)")
 	fmt.Fprintln(writer, "       spoolsmith profile capture <target> <file> --name <queue> --driver <installed-driver-name>")
 	fmt.Fprintln(writer, "       spoolsmith profile edit <file> [--name <queue>] [--driver <name>] [--target <ip>]")
