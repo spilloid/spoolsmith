@@ -1,0 +1,237 @@
+using System;
+using System.Diagnostics;
+using System.IO;
+using FlaUI.Core;
+using FlaUI.Core.AutomationElements;
+using FlaUI.UIA2;
+
+namespace SpoolSmithGui.Tests;
+
+/// <summary>
+/// Launches the real spoolsmith-gui.exe once per test class and attaches to
+/// it with UIA2 (not UIA3: UIA3 has known compatibility bugs against raw
+/// Win32/WinForms-style controls, which is exactly what the walk toolkit
+/// creates). Each STA test owns its automation object and application lifetime
+/// so COM objects and window state are not carried between test threads.
+/// </summary>
+public sealed class AppFixture : IDisposable
+{
+    public Application App { get; }
+    public UIA2Automation Automation { get; }
+    public Window MainWindow { get; }
+    public string RepoRoot { get; }
+
+    /// <summary>
+    /// Tests launch without the startup scan so they start deterministically.
+    /// Screenshot capture opts back in, because scanning the network the PC is
+    /// already on is the behaviour being shown.
+    /// </summary>
+    public AppFixture(bool autoScan = false)
+    {
+        RepoRoot = FindRepoRoot();
+        var exePath = Path.Combine(RepoRoot, "dist", "spoolsmith-gui.exe");
+        var fromEnv = Environment.GetEnvironmentVariable("SPOOLSMITH_GUI_EXE");
+        if (!string.IsNullOrWhiteSpace(fromEnv))
+        {
+            exePath = fromEnv;
+        }
+        if (!File.Exists(exePath))
+        {
+            throw new FileNotFoundException(
+                $"spoolsmith-gui.exe not found at '{exePath}'. Build it first " +
+                "(go build -o dist/spoolsmith-gui.exe ./cmd/spoolsmith-gui) or set " +
+                "the SPOOLSMITH_GUI_EXE environment variable to its path.",
+                exePath);
+        }
+
+        var startInfo = new ProcessStartInfo(exePath)
+        {
+            UseShellExecute = false,
+            WorkingDirectory = RepoRoot,
+        };
+        // Tests start deterministically without probing the operator's Wi-Fi.
+        // The discovery test explicitly scans loopback unless opted in locally.
+        if (!autoScan)
+        {
+            startInfo.Environment["SPOOLSMITH_GUI_NO_AUTOSCAN"] = "1";
+        }
+        App = Application.Launch(startInfo);
+        Automation = new UIA2Automation();
+        MainWindow = GetMainWindowWithRetry();
+        MoveToKnownPosition();
+    }
+
+    /// <summary>
+    /// Puts the window somewhere every test can see all of it.
+    ///
+    /// Two things otherwise push part of it off the display, and UI Automation
+    /// then correctly reports those controls as IsOffscreen — which reads as a
+    /// missing button rather than a placement artifact. Observed directly: a
+    /// button lookup failed late in a full run and passed when run alone.
+    ///
+    /// First, Windows cascades each successive new window down and to the
+    /// right, and a full run launches the app once per test. Second, the
+    /// default 980x740 window is simply taller than a small desktop — a CI
+    /// runner at 1024x768 among them — so it is shrunk to fit when it has to
+    /// be. Walk enforces the app's own minimum size, so this never shrinks
+    /// past a layout the app considers valid.
+    /// </summary>
+    private void MoveToKnownPosition()
+    {
+        try
+        {
+            var hwnd = MainWindow.Properties.NativeWindowHandle.Value;
+            var workArea = System.Windows.Forms.Screen.PrimaryScreen?.WorkingArea
+                ?? new System.Drawing.Rectangle(0, 0, 1024, 768);
+            var bounds = MainWindow.BoundingRectangle;
+            var width = Math.Min((int)bounds.Width, workArea.Width);
+            var height = Math.Min((int)bounds.Height, workArea.Height);
+            SetWindowPos(hwnd, IntPtr.Zero, workArea.X, workArea.Y, width, height, SWP_NOZORDER | SWP_NOACTIVATE);
+        }
+        catch
+        {
+            // Placement is a convenience; a failure here must not mask the
+            // actual assertion the test is making.
+        }
+    }
+
+    private const uint SWP_NOZORDER = 0x0004;
+    private const uint SWP_NOACTIVATE = 0x0010;
+
+    [System.Runtime.InteropServices.DllImport("user32.dll", SetLastError = true)]
+    [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
+    private static extern bool SetWindowPos(IntPtr hwnd, IntPtr insertAfter, int x, int y, int width, int height, uint flags);
+
+    /// <summary>
+    /// UIA2's AutomationElement.FromHandle can throw a transient COMException
+    /// (E_FAIL from UiaNodeFromHandle) when called right as a window is being
+    /// created — a documented UI-Automation startup race, not a real failure.
+    /// Retrying a few times is the standard workaround.
+    /// </summary>
+    private Window GetMainWindowWithRetry()
+    {
+        Exception? last = null;
+        for (var attempt = 0; attempt < 5; attempt++)
+        {
+            try
+            {
+                var window = App.GetMainWindow(Automation, TimeSpan.FromSeconds(15))
+                    ?? throw new TimeoutException("SpoolSmith's main window never appeared.");
+                // GetMainWindow can hand back the window before it is fully
+                // realized, when it still reports an empty title. Observed
+                // intermittently: a run failed asserting the title was
+                // "SpoolSmith" and saw "" instead. Wait for the real title
+                // rather than letting the race surface as a content assertion.
+                var ready = DateTime.UtcNow.AddSeconds(10);
+                while (string.IsNullOrEmpty(window.Title) && DateTime.UtcNow < ready)
+                {
+                    System.Threading.Thread.Sleep(100);
+                }
+                return window;
+            }
+            catch (System.Runtime.InteropServices.COMException ex)
+            {
+                last = ex;
+                System.Threading.Thread.Sleep(500);
+            }
+        }
+        throw new InvalidOperationException("Could not attach to SpoolSmith's main window after retrying.", last);
+    }
+
+    /// <summary>
+    /// Selects a tab by its visible title and returns that tab's content
+    /// element. Selecting first matters: an inactive walk TabPage's children
+    /// are actually hidden (walk's TabWidget calls page.SetVisible(false) on
+    /// deselect — see tabwidget.go's onSelChange), so their controls report
+    /// IsOffscreen until their page is actually shown.
+    ///
+    /// Deliberately uses a real synthetic Click(), not UI Automation's
+    /// SelectionItemPattern: walk's own source shows SelectCurrentIndex sends
+    /// TCM_SETCURSEL and then has to manually re-invoke onSelChange() itself,
+    /// with the comment "the SendMessage(TCM_SETCURSEL) call above doesn't
+    /// cause a TCN_SELCHANGE notification" — and TCN_SELCHANGE is exactly
+    /// what actually swaps page visibility. SelectionItemPattern.Select() on
+    /// a native tab item is implemented via that same TCM_SETCURSEL, so it
+    /// hits the identical gap and silently leaves the old page showing
+    /// (confirmed directly with a screenshot: the window stayed on Discover
+    /// after "selecting" every other tab). A genuine click is real native
+    /// user interaction, which comctl32 always follows with a real
+    /// TCN_SELCHANGE, so it's the one input method walk's own page-swap
+    /// logic actually reacts to.
+    /// </summary>
+    public AutomationElement SelectTab(string title)
+    {
+        if (title is "Inspect" or "Catalog" or "Action log")
+        {
+            SelectTab("Tools");
+        }
+        var tab = MainWindow.FindFirstDescendant(cf => cf.ByControlType(FlaUI.Core.Definitions.ControlType.TabItem).And(cf.ByName(title)))
+            ?? throw new InvalidOperationException($"Tab '{title}' not found.");
+        MainWindow.SetForeground();
+        MainWindow.Focus();
+        tab.Click();
+        var marker = title switch
+        {
+            "Find a printer" => "discover-cidr",
+            "Add printer" => "capture-target",
+            "Saved printers" => "profiles-dir",
+            "Review and apply" => "mutate-target",
+            "Tools" => null,
+            "Inspect" => "inspect-target",
+            "Catalog" => "catalog-output",
+            "Action log" => "log-output",
+            _ => throw new ArgumentException("Unknown tab", nameof(title)),
+        };
+        var deadline = DateTime.UtcNow.AddSeconds(5);
+        while (DateTime.UtcNow < deadline)
+        {
+            if (marker == null)
+            {
+                var toolsContent = MainWindow.FindFirstDescendant(cf => cf.ByControlType(FlaUI.Core.Definitions.ControlType.TabItem).And(cf.ByName("Inspect")));
+                if (toolsContent != null && !toolsContent.IsOffscreen) return tab;
+            }
+            else
+            {
+                var content = MainWindow.FindFirstDescendant(cf => cf.ByName(marker));
+                if (content != null && !content.IsOffscreen) return tab;
+            }
+            // Retry harmless navigation if a launch/focus transition consumed the click.
+            MainWindow.SetForeground();
+            tab.Click();
+            System.Threading.Thread.Sleep(100);
+        }
+        throw new TimeoutException($"Tab '{title}' did not expose its content after clicking.");
+    }
+
+    /// <summary>Absolute path to a file under the repo's fixtures/ directory.</summary>
+    public string FixturePath(string name) => Path.Combine(RepoRoot, "fixtures", name);
+
+    private static string FindRepoRoot()
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir != null && !File.Exists(Path.Combine(dir.FullName, "go.mod")))
+        {
+            dir = dir.Parent;
+        }
+        if (dir == null)
+        {
+            throw new InvalidOperationException(
+                "Could not locate the spoolsmith repo root (no go.mod found above the test output directory).");
+        }
+        return dir.FullName;
+    }
+
+    public void Dispose()
+    {
+        try
+        {
+            App.Close();
+        }
+        catch
+        {
+            // Best-effort: the app may already be gone if a test crashed it.
+        }
+        Automation.Dispose();
+        App.Dispose();
+    }
+}
