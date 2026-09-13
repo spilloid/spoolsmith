@@ -22,7 +22,7 @@
     "download_signature": "Valid: Brother Industries, Ltd.",
     "catalog_signature": "Valid: Microsoft Windows Hardware Compatibility Publisher",
     "model_entry": "Present in DriverName.NTamd64 and DriverName.NTx86",
-    "windows_registration": "Verified on Windows x64 as Brother HL-L2315D series; staged INF oem15.inf",
+    "windows_registration": "Verified on Windows x64 as Brother HL-L2315D series; staged INF oem15.inf. Re-verified 2026-09-12 by this recipe itself: with the package deleted from the Driver Store, SpoolSmith's staging path hash-checked, signature-checked, extracted and registered it unattended, producing the same oem15.inf and the same DriverStore directory brohl13a.inf_amd64_e477ef8d79b8572c",
     "queue_mapping": "Verified live; first add created queue/port, second add left both unchanged",
     "physical_print_test": "Operator sent a test print to Brother Home and observed successful physical output on 2026-09-06"
   },

@@ -95,6 +95,12 @@ func Resolve(e evidence.Evidence) ResolutionResult {
 	if !ok {
 		return unresolved(fmt.Sprintf("printer family %q has no mapped driver package", match.family.ID))
 	}
+	// DriverFor returns a copy, so binding the model's verified name here cannot
+	// leak into the registry or into a sibling model's resolution. An unverified
+	// model keeps the empty name and fails closed when a plan is built.
+	if name, verified := VerifiedWindowsDriverName(match.model); verified {
+		driver.WindowsDriverName = name
+	}
 
 	family := match.family
 	return ResolutionResult{

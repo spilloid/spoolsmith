@@ -273,11 +273,6 @@ func (w Workflow) RunUninstall(ctx context.Context, env Environment, input io.Re
 		}
 	}
 
-	preflight, err := PreflightUninstall(ctx, env)
-	outcome.Preflight = &preflight
-	if err != nil {
-		return failOutcome(outcome, err, ExitPreflight)
-	}
 	configuration, err := LookupPrinter(ctx, env, options.PrinterName)
 	if errors.Is(err, ErrPrinterNotFound) {
 		outcome.Status = "already-absent"
@@ -298,6 +293,18 @@ func (w Workflow) RunUninstall(ctx context.Context, env Environment, input io.Re
 	writeUninstallPlan(interactive, plan, options.PurgeDriver, options.Compact)
 	if options.ExpectedPlan != nil && !reflect.DeepEqual(*options.ExpectedPlan, plan) {
 		return failOutcome(outcome, errors.New("remove: plan changed since preview; review a new preview before proceeding"), ExitNotConfirmed)
+	}
+
+	// Preflight runs after the plan is shown, matching RunInstall. Looking up the
+	// queue and building the removal plan only read Windows inventory, so what a
+	// removal would do stays reviewable without administrator rights — which is
+	// how an operator inspects a removal before granting them. The gate itself is
+	// unchanged: nothing has mutated yet, and Uninstall re-checks elevation at the
+	// mutation boundary.
+	preflight, err := PreflightUninstall(ctx, env)
+	outcome.Preflight = &preflight
+	if err != nil {
+		return failOutcome(outcome, err, ExitPreflight)
 	}
 
 	if options.DryRun {

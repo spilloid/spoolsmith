@@ -134,6 +134,53 @@ func TestResolveMultipleAliasesInOneField(t *testing.T) {
 	})
 }
 
+func TestResolveBindsVerifiedWindowsDriverNamePerModel(t *testing.T) {
+	tests := []struct {
+		fixture string
+		want    string
+	}{
+		// Verified on the operator's own hardware; installable.
+		{"brother-hl-l2315d-captured.json", "Brother HL-L2315D series"},
+		// Same family, never confirmed on hardware. It must not inherit its
+		// sibling's name; an empty name is what makes BuildPlan fail closed.
+		{"brother-hl-l2350dw-synthetic.json", ""},
+		{"hp-laserjet-m404-synthetic.json", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.fixture, func(t *testing.T) {
+			got := Resolve(loadFixture(t, tt.fixture))
+			if got.Driver == nil {
+				t.Fatalf("Resolve(%q) returned no driver", tt.fixture)
+			}
+			if got.Driver.WindowsDriverName != tt.want {
+				t.Fatalf("WindowsDriverName = %q, want %q", got.Driver.WindowsDriverName, tt.want)
+			}
+		})
+	}
+}
+
+// A typo in the register would silently make a model uninstallable, and a key
+// for a model no family claims would be the start of exactly the per-model
+// sprawl the catalog abstraction exists to prevent.
+func TestVerifiedWindowsDriverNamesReferenceResolvableModels(t *testing.T) {
+	resolvable := make(map[string]struct{})
+	for _, family := range Families() {
+		for _, alias := range family.Aliases {
+			for _, match := range matchIdentity(alias) {
+				resolvable[match.model] = struct{}{}
+			}
+		}
+	}
+	for model, name := range verifiedWindowsDriverNames {
+		if _, ok := resolvable[model]; !ok {
+			t.Fatalf("verified driver name is keyed on %q, which no family resolves to", model)
+		}
+		if name == "" {
+			t.Fatalf("verified driver name for %q is empty; omit the entry instead", model)
+		}
+	}
+}
+
 func assertUnresolved(t *testing.T, got ResolutionResult) {
 	t.Helper()
 	if got.Family != nil || got.Driver != nil {

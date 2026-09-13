@@ -80,3 +80,27 @@ func TestPackageWorkflowConfirmationAndFailure(t *testing.T) {
 		})
 	}
 }
+
+// The Brother archive is a self-extracting EXE that only Windows' own bsdtar
+// reads. A bare "tar.exe" resolves through PATH, so Git/MSYS's GNU tar shadows
+// it on an ordinary developer machine and staging fails while blaming the
+// archive. Staging must name System32's tar explicitly.
+func TestPackageStagingResolvesWindowsTarNotPathTar(t *testing.T) {
+	command, err := packageCommand(*brotherProfile().DriverPackage, "Brother HL-L2315D series")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(command, "& tar.exe") || strings.Contains(command, "& tar ") {
+		t.Fatal("staging resolves tar through PATH")
+	}
+	for _, want := range []string{
+		`$tar = Join-Path ([Environment]::GetFolderPath('System')) 'tar.exe'`,
+		`Test-Path -LiteralPath $tar`,
+		`& $tar -tf $archive`,
+		`& $tar -xf $archive -C $stage`,
+	} {
+		if !strings.Contains(command, want) {
+			t.Fatalf("missing %q", want)
+		}
+	}
+}

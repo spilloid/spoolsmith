@@ -56,7 +56,11 @@ func TestLocalBrotherArchiveVerificationWithStagingDoubles(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	harness := `$env:TEMP = ` + powerShellString(t.TempDir()) + `;
+	// Both variables, deliberately: [IO.Path]::GetTempPath() reads TMP before TEMP,
+	// so setting TEMP alone leaves staging in the real user temp -- where the script
+	// retains it on purpose, so every test run leaked an extracted driver package.
+	sandbox := powerShellString(t.TempDir())
+	harness := `$env:TMP = ` + sandbox + `; $env:TEMP = ` + sandbox + `;
 $global:registered = $false; $global:staged = 0;
 function Get-PrinterDriver { [CmdletBinding()]param() if ($global:registered) { [PSCustomObject]@{Name='Brother HL-L2315D series'} } };
 function pnputil.exe { if ($args[0] -ne '/add-driver' -or -not (Test-Path -LiteralPath $args[1])) { throw 'Wrong staging input' }; $global:staged++; $global:LASTEXITCODE=0 };
