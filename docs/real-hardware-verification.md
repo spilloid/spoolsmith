@@ -29,7 +29,13 @@ elevation check ran first and masked it on every unelevated attempt.
 Both are fixed. Removal now reads the live queue correctly, and the preflight moved
 to after the plan is shown so a removal is reviewable *before* you grant admin —
 the gate is unchanged, since `Uninstall` re-checks elevation at the mutation
-boundary. What remains is the elevated run below, which no one has done yet.
+boundary.
+
+**Update, 2026-09-12 (later): the elevated run below has now been done.** Live removal,
+both port-retention branches, re-add, and — with the Driver Store genuinely emptied of
+the package — the first real run of the `verified-local-archive-if-missing` staging
+path. See "Outcome" under Step 4b. The remaining Brother gap is a physical print after
+that staging cycle; HP is untouched for want of hardware.
 
 This is the one thing standing between "detection works, install is inert by design" and a
 genuinely functioning end-to-end install for the two authorized families (HP LaserJet Pro M4xx,
@@ -161,7 +167,7 @@ Then uninstall and confirm clean removal:
 
 Repeat the full install → verify → print → uninstall cycle for Brother.
 
-## Step 4b — Live removal, the one step never yet run (2026-09-12)
+## Step 4b — Live removal (2026-09-12: written pending, executed the same day)
 
 Removal is the reversibility half of D-0040's trust model and it has never executed
 against real hardware. The decode bug above is fixed and the plan is now verified
@@ -208,6 +214,34 @@ just `Get-Printer` — the same reasoning as Step 4.
 Record the outcome in `dev-process.md` including anything surprising, then tick the
 uninstall box below.
 
+### Outcome — run elevated 2026-09-12
+
+Done, including the retention branches, against the operator's live Brother HL-L2315D.
+Full narrative in `dev-process.md`; the claims this runbook asked to confirm:
+
+| Claim under test | Result |
+| --- | --- |
+| Preview populates port/driver from live inventory (decode fix holds) | confirmed — real values, never `""` |
+| Removal deletes the queue | `Removed printer`, `Get-Printer` empty |
+| Port retained while a second queue uses it | `Retained shared port`, port survived |
+| Port deleted once unused | `Removed unused SpoolSmith port`, port gone |
+| Driver survives removal without `--purge-driver` | survived both removals |
+| Re-add needs neither archive nor download | `Unchanged driver` + `Created port`/`Created printer` |
+
+**The driver-absent staging path was also exercised for real**, which nothing before
+this had done — every prior run took the `Unchanged driver` shortcut because the
+package was staged by hand on 2026-09-06. `Remove-PrinterDriver` plus `pnputil
+/delete-driver oem15.inf /uninstall` left the machine genuinely without the driver,
+and `add --profile` then verified the hash, verified Brother's Authenticode signature,
+extracted, verified the CAT against the Microsoft WHCP signer, ran `pnputil
+/add-driver` (`Published Name: oem15.inf`) and registered the driver — reporting
+`Registered driver`. Final state is identical to the starting state, same DriverStore
+directory `brohl13a.inf_amd64_e477ef8d79b8572c`.
+
+**Not confirmed by this run:** a physical test print after the staging cycle. The queue
+reports `PrinterStatus: Normal` and the package is the same one that printed on
+2026-09-06, but per Step 4's own rule only paper proves a driver.
+
 ## Step 5 — Negative-path checks (quick, worth doing once)
 
 - Run `spoolsmith install <ip>` from a **non-elevated** PowerShell window — confirm it fails
@@ -216,23 +250,41 @@ uninstall box below.
   2026-09-12 (exit 4, no mutation). `remove` behaves the same way as of the same date. What must
   never appear unelevated is an executed command, not a printed plan.
 - Temporarily rename/remove the staged driver and re-run `install --dry-run` — confirm it reports
-  the driver-not-present guidance rather than a generic error.
+  the driver-not-present guidance rather than a generic error. Confirmed 2026-09-12 without
+  touching the Driver Store, by pointing a scratch dry-run profile at a driver name Windows does
+  not have (`Brother HL-L2340D series`, strategy `existing-windows-driver`): the plan prints
+  first, then `driver not found — install it via Windows Update or run the vendor package
+  manually first, then retry`, exit 4, nothing mutated. Prefer this form — it needs no elevation
+  and cannot leave the machine without a working driver.
+
+Note that exit 4 is `ExitPreflight`, shared by *both* negative paths above — elevation refusal and
+driver-absent are the same class of fail-closed, distinguished by message, not by code. Don't read
+a bare "exit 4" in a log as necessarily meaning the elevation gate.
 
 ## Definition of done for this runbook
 
 - [ ] Real captured evidence saved for both families as genuine `fixtures/*.json` (provenance:
-      captured), committed.
+      captured), committed. Brother done 2026-09-06
+      (`fixtures/brother-hl-l2315d-captured.json`); HP outstanding for want of hardware.
 - [ ] Both `WindowsDriverName` values confirmed against real `Get-PrinterDriver` output and
       committed. Brother HL-L2315D done 2026-09-12 (`Brother HL-L2315D series`, bound per model
       in `internal/catalog/driver.go`); HP outstanding. Sibling Brother models in the same family
       are deliberately still unbound — they need their own hardware confirmation, not an
       inherited name.
 - [ ] A real install → verified-by-printing → uninstall cycle completed for **both** HP and
-      Brother, on the actual VM, against the actual printers.
-- [ ] Both negative-path checks (non-elevated, driver-absent) confirmed still fail closed.
-- [ ] Everything above logged honestly in `docs/dev-process.md`, including anything that didn't
+      Brother, on the actual VM, against the actual printers. Brother's mutation half is done
+      2026-09-12 — install, uninstall (both port branches), and driver staging from the signed
+      archive all executed live and verified against `Get-Printer`/`Get-PrinterPort`/`pnputil`
+      (Step 4b outcome). The **printing** half is outstanding: the last physical print was
+      2026-09-06, before the staging cycle. HP outstanding entirely.
+- [x] Both negative-path checks (non-elevated, driver-absent) confirmed still fail closed —
+      elevation 2026-09-12 (exit 4, plan shown, no mutation), driver-absent 2026-09-12 (exit 4,
+      explicit guidance). See Step 5.
+- [x] Everything above logged honestly in `docs/dev-process.md`, including anything that didn't
       go as expected — a clean run on the first try for privileged Windows mutation code would be
-      a little suspicious, not a reason to skip writing down what actually happened.
+      a little suspicious, not a reason to skip writing down what actually happened. The
+      2026-09-12 elevated entry records the `tar.exe` PATH defect that first presented as a
+      false test failure.
 
 ## Open questions for the handoff
 

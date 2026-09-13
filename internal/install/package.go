@@ -63,21 +63,27 @@ func packageCommand(p PackageSelection, driver string) (string, error) {
 	// Only the pinned archive is extracted. Never execute its vendor bootstrapper.
 	// Extraction is private to this attempt; retain it for diagnostics/retry rather
 	// than introduce recursive deletion into a privileged install operation.
+	// tar is resolved to System32 rather than through PATH: this archive is a
+	// self-extracting EXE that only Windows' bsdtar reads, and a developer machine
+	// with Git/MSYS on PATH resolves a bare "tar.exe" to GNU tar, which cannot read
+	// it and fails the staging path with a message blaming the archive.
 	script := fmt.Sprintf(`$drivers = @(Get-PrinterDriver -ErrorAction Stop | Where-Object { $_.Name -eq %[1]s });
 if ($drivers.Count -gt 0) { 'Unchanged driver' } else {
  if (-not [Environment]::Is64BitProcess -or $env:PROCESSOR_ARCHITECTURE -ne 'AMD64') { throw 'Package staging currently requires Windows x64' };
+ $tar = Join-Path ([Environment]::GetFolderPath('System')) 'tar.exe';
+ if (-not (Test-Path -LiteralPath $tar -PathType Leaf)) { throw 'Windows tar.exe was not found in System32; cannot read the driver archive' };
  $archive = %[2]s;
  $archiveLock = [IO.File]::Open($archive, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::Read);
  try {
  if ((Get-FileHash -LiteralPath $archive -Algorithm SHA256 -ErrorAction Stop).Hash -ne %[3]s) { throw 'Driver archive SHA-256 mismatch; no driver was staged' };
  $signature = Get-AuthenticodeSignature -LiteralPath $archive -ErrorAction Stop;
  if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.GetNameInfo([Security.Cryptography.X509Certificates.X509NameType]::SimpleName, $false) -ne 'Brother Industries, Ltd.') { throw 'Driver archive signature is not valid for Brother Industries' };
- $entries = @(& tar.exe -tf $archive); if ($LASTEXITCODE -ne 0 -or $entries.Count -eq 0) { throw 'Cannot list driver archive' };
+ $entries = @(& $tar -tf $archive); if ($LASTEXITCODE -ne 0 -or $entries.Count -eq 0) { throw 'Cannot list driver archive' };
  foreach ($entry in $entries) { if ($entry -match '(^[/\\]|:|(^|[/\\])\.\.([/\\]|$))') { throw 'Unsafe archive entry' } };
  $stage = Join-Path ([IO.Path]::GetTempPath()) ('SpoolSmith-driver-' + [Guid]::NewGuid().ToString('N'));
  New-Item -ItemType Directory -Path $stage -ErrorAction Stop | Out-Null;
  Write-Output ('Driver staging directory: ' + $stage);
- & tar.exe -xf $archive -C $stage; if ($LASTEXITCODE -ne 0) { throw 'Cannot extract driver archive' };
+ & $tar -xf $archive -C $stage; if ($LASTEXITCODE -ne 0) { throw 'Cannot extract driver archive' };
  $inf = Join-Path $stage %[4]s; $cat = Join-Path $stage %[5]s;
  $signature = Get-AuthenticodeSignature -LiteralPath $cat -ErrorAction Stop;
  if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.GetNameInfo([Security.Cryptography.X509Certificates.X509NameType]::SimpleName, $false) -ne 'Microsoft Windows Hardware Compatibility Publisher') { throw 'Driver catalog signature is invalid' };

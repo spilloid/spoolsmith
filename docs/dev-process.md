@@ -1,5 +1,85 @@
 # Dev Process Log
 
+## 2026-09-12 (later, elevated): Step 4b executed, and the staging path runs for real
+
+The operator opened an elevated session and asked for whatever this environment could
+close. It closed the two things that had never run anywhere but in doubles.
+
+**Live removal, both retention branches, against the real queue.** `remove --profile
+profiles/brother-home.json --dry-run` reported the real `SpoolSmith-192.168.68.108`
+and `Brother HL-L2315D series` from live inventory rather than the empty strings the
+decode bug used to produce, which is the first independent confirmation that the fix
+earlier today is real and not just green in a test. Then, elevated:
+
+- With a second queue (`SpoolSmith Retention Probe`) pointed at the same port,
+  removal reported `Removed printer` + **`Retained shared port`**; `Get-Printer`
+  confirmed `Brother Home` gone, probe intact, port intact.
+- Re-added from the profile: `Unchanged driver` / `Unchanged port` / `Created printer`.
+- Probe deleted so nothing else held the port; removal then reported `Removed printer`
+  + **`Removed unused SpoolSmith port`**, and the port was genuinely gone.
+- Re-added again: `Unchanged driver` / **`Created port`** / `Created printer`.
+
+The driver survived every removal, as `--purge-driver` was never passed. Step 4b's
+uninstall box is ticked on that basis.
+
+**The `verified-local-archive-if-missing` strategy had never actually staged
+anything.** Every real run since 2026-09-06 took the `Unchanged driver` shortcut,
+because the operator had staged `oem15.inf` by hand — so hash check, Authenticode
+verification, extraction, CAT verification, `pnputil /add-driver` and
+`Add-PrinterDriver` were collectively proven only against PowerShell function doubles.
+With the operator's explicit go-ahead, the driver was removed for real
+(`Remove-PrinterDriver`, then `pnputil /delete-driver oem15.inf /uninstall`, both
+confirmed absent) and `add --profile` was run against a machine that genuinely did not
+have the driver. It reported `Driver staging directory: …`, pnputil's own
+`Driver package added successfully / Published Name: oem15.inf`, then `Registered
+driver` / `Created port` / `Created printer`. Final state is byte-identical to the
+starting state, down to the same DriverStore directory
+(`brohl13a.inf_amd64_e477ef8d79b8572c`) and the same published `oem15.inf`.
+
+That is the trust model's staging half demonstrated end to end on real hardware, not
+inferred from doubles.
+
+**A real bug surfaced disguised as a test failure.** `go test ./...` failed
+`TestLocalBrotherArchiveVerificationWithStagingDoubles` with `Cannot list driver
+archive`, and the tempting read was a corrupt archive. It was neither the archive nor
+the test: the staging script called `& tar.exe` unqualified, and the suite had been
+launched from a Git Bash shell, so PATH resolved `tar.exe` to Git/MSYS **GNU tar**,
+which cannot read a self-extracting EXE. The identical suite passed from PowerShell,
+where `tar.exe` is Windows' bsdtar. This is not a test-only artifact — anyone running
+`spoolsmith.exe` from Git Bash, WSL-adjacent shells, or any machine with MSYS/Cygwin
+ahead of System32 on PATH would have had real driver staging fail, with an error
+blaming the vendor archive for a PATH problem. It fails closed, so nothing unsafe
+happened, but the diagnosis it hands the operator is wrong.
+
+Fixed in `internal/install/package.go` by resolving tar once to
+`[Environment]::GetFolderPath('System')` and checking it exists before use, with a
+distinct error if System32's tar is missing. `pnputil.exe` is deliberately left
+unqualified: no common third-party `pnputil` exists to shadow it, and the Windows
+double tests intercept it by defining a PowerShell function of that name, which an
+absolute path would bypass. `TestPackageStagingResolvesWindowsTarNotPathTar` asserts
+the generated command never reaches tar through PATH. Confirmed by re-running the full
+suite **from the Git Bash shell that previously failed it** — now clean — as well as
+from PowerShell.
+
+**Third finding, spotted by counting directories.** The real user temp held 20
+`SpoolSmith-driver-*` directories. `TestLocalBrotherArchiveVerificationWithStagingDoubles`
+sets `$env:TEMP` to a `t.TempDir()` intending to sandbox extraction, but
+`[IO.Path]::GetTempPath()` reads **`TMP` before `TEMP`**, so the override never took
+effect — verified directly: with only `TEMP` redirected `GetTempPath()` still returned
+the user's real temp, with both redirected it returned the sandbox. Because the staging
+script retains its extraction directory deliberately (diagnostics/retry, and recursive
+deletion has no business in a privileged install path), every run of that test since it
+was written has left an extracted driver package behind. Fixed by setting both
+variables; confirmed by running the test and watching the directory count stay at 20
+instead of becoming 21. The 20 existing directories were left in place rather than
+deleted — they are the operator's files, not this session's to clean up unasked.
+
+**Still open.** No physical test print was sent after the staging run; the queue
+reports `PrinterStatus: Normal` and the driver is the same signed package that printed
+successfully on 2026-09-06, but per this runbook's own rule that only paper proves a
+driver, that box stays unticked until the operator prints. HP remains entirely
+unverified — no HP hardware was present.
+
 ## 2026-09-12: the Brother driver name lands, and removal turns out to be broken
 
 Two items from the MVP gap list. The first was the small one it looked like; the
