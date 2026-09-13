@@ -91,3 +91,49 @@ func TestPowerShellConfigureAndSharedPort(t *testing.T) {
 		t.Fatalf("configure/shared: %v %s", err, output)
 	}
 }
+
+// The queue lookup feeds every removal. It is the one command whose result is
+// decoded into Go rather than merely inspected for a word, so a shape mismatch
+// between PowerShell and the struct tags cannot be caught by reading either side
+// alone: real PowerShell has to produce the object and Go has to decode it.
+func TestLookupPrinterDecodesRealPowerShellOutput(t *testing.T) {
+	const queue = "Review Queue"
+	harness := `
+function Get-Printer { [CmdletBinding()]param()
+ [PSCustomObject]@{Name='` + queue + `';PortName='SpoolSmith-192.0.2.10';DriverName='Reviewed Driver'}
+}
+`
+	command, err := lookupPrinterCommand(queue)
+	if err != nil {
+		t.Fatal(err)
+	}
+	output, err := runPowerShell(context.Background(), harness+command)
+	if err != nil {
+		t.Fatalf("PowerShell: %v\n%s", err, output)
+	}
+
+	var got PrinterConfiguration
+	if err := json.Unmarshal([]byte(strings.TrimSpace(output)), &got); err != nil {
+		t.Fatalf("decode %q: %v", output, err)
+	}
+	want := PrinterConfiguration{PrinterName: queue, PortName: "SpoolSmith-192.0.2.10", DriverName: "Reviewed Driver"}
+	if got != want {
+		t.Fatalf("LookupPrinter decoded %#v, want %#v (raw: %s)", got, want, strings.TrimSpace(output))
+	}
+}
+
+// An absent queue must stay distinguishable from a queue that decoded to zero
+// values, because removal treats the two completely differently.
+func TestLookupPrinterReportsAbsentQueueAsNull(t *testing.T) {
+	command, err := lookupPrinterCommand("Missing Queue")
+	if err != nil {
+		t.Fatal(err)
+	}
+	output, err := runPowerShell(context.Background(), "function Get-Printer { [CmdletBinding()]param() @() }\n"+command)
+	if err != nil {
+		t.Fatalf("PowerShell: %v\n%s", err, output)
+	}
+	if strings.TrimSpace(output) != "null" {
+		t.Fatalf("absent queue produced %q, want \"null\"", strings.TrimSpace(output))
+	}
+}

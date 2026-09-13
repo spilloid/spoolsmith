@@ -27,8 +27,36 @@ var drivers = map[string]DriverPackage{
 	},
 }
 
-// DriverFor returns the package strategy associated with familyID.
+// DriverFor returns the package strategy associated with familyID. The returned
+// WindowsDriverName is always empty: a family covers several models and Windows
+// registers a separate driver name for each, so the name cannot be a property of
+// the family. Resolve binds the per-model name.
 func DriverFor(familyID string) (DriverPackage, bool) {
 	driver, ok := drivers[familyID]
 	return driver, ok
+}
+
+// verifiedWindowsDriverNames maps a normalized model to the exact name Windows
+// registers for it. An entry may only be added after that name has been read
+// from Get-PrinterDriver on real hardware and the evidence recorded in
+// docs/real-hardware-verification.md.
+//
+// This is deliberately not a per-model driver database. It is a register of what
+// has actually been proven, and it stays small by construction: a sibling model
+// in the same family can never inherit a name verified for a different model,
+// because Brother and HP both name drivers per model. A model with no entry
+// resolves with an empty WindowsDriverName and every plan built from it fails
+// closed.
+var verifiedWindowsDriverNames = map[string]string{
+	// Verified 2026-09-06 on Windows x64 from the operator-supplied signed
+	// Brother package (BROHL13A.INF, staged as oem15.inf), then confirmed by a
+	// successful physical test print through the queue it created.
+	"Brother HL-L2315D": "Brother HL-L2315D series",
+}
+
+// VerifiedWindowsDriverName returns the hardware-confirmed Windows driver name
+// for normalizedModel, and reports whether one has been verified at all.
+func VerifiedWindowsDriverName(normalizedModel string) (string, bool) {
+	name, ok := verifiedWindowsDriverNames[normalizedModel]
+	return name, ok
 }

@@ -267,6 +267,33 @@ func TestUninstallExitCodeContract(t *testing.T) {
 	}
 }
 
+// An operator has to be able to read what a removal would do before deciding to
+// run it elevated. The plan is built from reads alone, so it must survive a
+// failed elevation check — while still refusing to mutate.
+func TestUninstallPlanIsReviewableWithoutElevation(t *testing.T) {
+	env := workflowEnvironment(false, true)
+	var interactive bytes.Buffer
+	outcome, code := testWorkflow(true).RunUninstall(context.Background(), env, panicReader{}, &interactive, true, UninstallOptions{
+		PrinterName: "Test Printer",
+		DryRun:      true,
+	})
+	if code != ExitPreflight {
+		t.Fatalf("RunUninstall() code = %d, want %d", code, ExitPreflight)
+	}
+	if outcome.Plan == nil {
+		t.Fatal("removal plan was not reported to an unelevated operator")
+	}
+	if len(outcome.Plan.Commands) == 0 {
+		t.Fatal("removal plan carries no commands to review")
+	}
+	if !strings.Contains(interactive.String(), "Test Printer") {
+		t.Fatalf("removal plan was not shown: %q", interactive.String())
+	}
+	if len(env.ran) != 0 {
+		t.Fatalf("unelevated removal mutated Windows: %#v", env.ran)
+	}
+}
+
 func TestRemoveAlreadyAbsentDoesNotPromptOrMutate(t *testing.T) {
 	env := workflowEnvironment(true, true)
 	env.lookupErr = ErrPrinterNotFound

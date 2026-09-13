@@ -6,6 +6,31 @@ sent a test print to Brother Home and observed it print successfully. HP verific
 and live removal are still pending. The original preparation runbook below predates
 the working profile path; see `daily-use-spec.md` and `dev-process.md` for current use.
 
+**Update, 2026-09-12:** Two things changed here, and the second is why "live removal
+pending" was a more serious entry than it looked.
+
+The Brother HL-L2315D driver name is now in the catalog, so the automatic path
+resolves a complete plan against the real printer — confirmed live: `install
+192.168.68.108 --dry-run` reports `"resolution": "automatic"` with
+`Brother HL-L2315D series`, then stops at the elevation gate. HP remains unverified
+and stays fail-closed, as does every other Brother model in the family: the name is
+bound per model, never per family, because Brother names drivers per model.
+
+**Removal was not merely unverified, it was broken.** `LookupPrinter` generated
+PowerShell emitting `PrinterName`/`PortName`/`DriverName`, while
+`PrinterConfiguration` carries `printer_name`/`port_name`/`driver_name` tags. Go's
+decoder accepts a case-insensitive field match but does not bridge an underscore, so
+every real lookup decoded to an empty configuration **with a nil error** — removal
+then failed with either "printer name and port name are required" or the baffling
+`installed queue differs from profile (port "", driver "")`. No test caught it
+because no test put real PowerShell output through the real decoder, and the
+elevation check ran first and masked it on every unelevated attempt.
+
+Both are fixed. Removal now reads the live queue correctly, and the preflight moved
+to after the plan is shown so a removal is reviewable *before* you grant admin —
+the gate is unchanged, since `Uninstall` re-checks elevation at the mutation
+boundary. What remains is the elevated run below, which no one has done yet.
+
 This is the one thing standing between "detection works, install is inert by design" and a
 genuinely functioning end-to-end install for the two authorized families (HP LaserJet Pro M4xx,
 Brother HL-L2xxx). Nothing here is a code problem — `internal/install` is fully implemented,
@@ -136,10 +161,60 @@ Then uninstall and confirm clean removal:
 
 Repeat the full install → verify → print → uninstall cycle for Brother.
 
+## Step 4b — Live removal, the one step never yet run (2026-09-12)
+
+Removal is the reversibility half of D-0040's trust model and it has never executed
+against real hardware. The decode bug above is fixed and the plan is now verified
+correct against the operator's live queue, but a fix confirmed by a preview is not a
+fix confirmed by a removal.
+
+Run the preview first, unelevated — this now works and mutates nothing:
+
+```powershell
+.\spoolsmith.exe remove --profile profiles\brother-home.json --dry-run
+```
+
+Expect the queue name, `SpoolSmith-<ip>`, and the exact driver name to be populated
+from live Windows inventory, then `administrator privileges are required`. Empty
+port/driver values mean the decode bug is back; stop and fix it rather than granting
+admin.
+
+Then, in an **elevated** shell, run the removal itself and confirm each claim:
+
+```powershell
+.\spoolsmith.exe remove --profile profiles\brother-home.json
+# Review the plan, confirm once.
+Get-Printer      | Where-Object Name -eq 'Brother Home'              # expect nothing
+Get-PrinterPort  | Where-Object Name -eq 'SpoolSmith-192.168.68.108' # expect nothing
+Get-PrinterDriver | Where-Object Name -eq 'Brother HL-L2315D series' # expect STILL PRESENT
+```
+
+The driver must survive: removal without `--purge-driver` retains it, and the
+uninstall commands additionally retain any port still referenced by another queue
+and any port not named `SpoolSmith-`. Verify the retention branches too, ideally by
+pointing a second queue at the same port before removing the first.
+
+Then prove the cycle is closed by putting it back and printing again:
+
+```powershell
+.\spoolsmith.exe add --profile profiles\brother-home.json
+```
+
+This is safe to attempt even though it removes a working printer: the signed package
+stays staged in the Driver Store as `oem15.inf` after the queue goes away, so re-adding
+needs neither the vendor archive nor a download. Confirm with a real test print, not
+just `Get-Printer` — the same reasoning as Step 4.
+
+Record the outcome in `dev-process.md` including anything surprising, then tick the
+uninstall box below.
+
 ## Step 5 — Negative-path checks (quick, worth doing once)
 
 - Run `spoolsmith install <ip>` from a **non-elevated** PowerShell window — confirm it fails
-  closed with the elevation error, before showing any plan.
+  closed with the elevation error. Note it shows the plan *first* and then refuses: that is
+  deliberate, so an operator can read what would happen before granting rights. Confirmed live
+  2026-09-12 (exit 4, no mutation). `remove` behaves the same way as of the same date. What must
+  never appear unelevated is an executed command, not a printed plan.
 - Temporarily rename/remove the staged driver and re-run `install --dry-run` — confirm it reports
   the driver-not-present guidance rather than a generic error.
 
@@ -148,7 +223,10 @@ Repeat the full install → verify → print → uninstall cycle for Brother.
 - [ ] Real captured evidence saved for both families as genuine `fixtures/*.json` (provenance:
       captured), committed.
 - [ ] Both `WindowsDriverName` values confirmed against real `Get-PrinterDriver` output and
-      committed.
+      committed. Brother HL-L2315D done 2026-09-12 (`Brother HL-L2315D series`, bound per model
+      in `internal/catalog/driver.go`); HP outstanding. Sibling Brother models in the same family
+      are deliberately still unbound — they need their own hardware confirmation, not an
+      inherited name.
 - [ ] A real install → verified-by-printing → uninstall cycle completed for **both** HP and
       Brother, on the actual VM, against the actual printers.
 - [ ] Both negative-path checks (non-elevated, driver-absent) confirmed still fail closed.

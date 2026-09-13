@@ -49,8 +49,12 @@ func lookupPrinterCommand(printerName string) (string, error) {
 	if strings.TrimSpace(printerName) == "" {
 		return "", fmt.Errorf("install: printer name is empty")
 	}
+	// The property names must be the PrinterConfiguration JSON tags exactly.
+	// Go's decoder falls back to a case-insensitive field match, but that does
+	// not bridge an underscore, so PascalCase names would decode to an empty
+	// configuration with a nil error — silently losing the queue it just read.
 	command := "$printers = @(Get-Printer -ErrorAction Stop | Where-Object { $_.Name -eq " + powerShellString(printerName) + " }); " +
 		"if ($printers.Count -eq 0) { 'null' } elseif ($printers.Count -ne 1) { throw 'Multiple matching printers' } else { $printer = $printers[0]; " +
-		"[PSCustomObject]@{PrinterName=$printer.Name;PortName=$printer.PortName;DriverName=$printer.DriverName} | ConvertTo-Json -Compress }"
+		"[PSCustomObject]@{printer_name=$printer.Name;port_name=$printer.PortName;driver_name=$printer.DriverName} | ConvertTo-Json -Compress }"
 	return powerShellCommand(command), nil
 }

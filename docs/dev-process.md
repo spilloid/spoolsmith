@@ -1,5 +1,72 @@
 # Dev Process Log
 
+## 2026-09-12: the Brother driver name lands, and removal turns out to be broken
+
+Two items from the MVP gap list. The first was the small one it looked like; the
+second was not.
+
+**Brother HL-L2315D is now installable through the automatic path.** The driver name
+was verified on real hardware back on 2026-09-06 and simply never reached the
+catalog, which is why every automatic install still failed closed on
+`WindowsDriverName`. Filling it in at family level would have been wrong: the family
+covers five models and Brother names drivers per model, so `Brother HL-L2315D series`
+would have been asserted for an HL-L2350DW nobody has ever tested. The name is
+therefore bound per normalized model in a register that `Resolve` consults, while
+`DriverFor` keeps returning an empty name at family level — the existing
+`TestWindowsDriverNamesRemainUnverified` still passes unchanged, which is a good sign
+the invariant was the right one. A second test asserts every key in the register is a
+model some family actually resolves to, so the register cannot quietly become the
+per-model database `CLAUDE.md` forbids. Verified live: `install 192.168.68.108
+--dry-run` now reports `"resolution": "automatic"` with the real driver name and a
+complete two-command plan, stopping at the elevation gate.
+
+**Removal was broken, not just unverified.** `lookupPrinterCommand` emitted
+`[PSCustomObject]@{PrinterName=…;PortName=…;DriverName=…}` while
+`PrinterConfiguration` is tagged `printer_name`/`port_name`/`driver_name`. Go's
+decoder prefers an exact tag match and falls back to case-insensitive, but
+case-insensitivity does not bridge an underscore — so every real lookup produced a
+zero-valued struct and a **nil error**. `remove --profile` then reported
+`installed queue differs from profile (port "", driver "")`, and `uninstall <name>`
+would have hit "printer name and port name are required". Confirmed directly: the
+generated command really returns `{"PrinterName":"Brother Home",…}`, and unmarshalling
+that into the struct yields three empty strings with no error.
+
+Two things hid it. No test ever put real PowerShell output through the real decoder —
+the Windows double tests exercise control flow and check for words in output, and the
+pure tests construct `PrinterConfiguration` values directly. And `RunUninstall` called
+`PreflightUninstall` before the lookup, so on any unelevated machine the elevation
+error arrived first and nothing downstream ever ran.
+
+Fixed by emitting the tag names, with a Windows test that drives real PowerShell
+through `json.Unmarshal` into the actual struct and asserts all three fields, plus one
+asserting an absent queue is still distinguishable from a decoded-empty one. The
+decode test was mutation-checked: reinstating the PascalCase names makes it fail with
+exactly the empty-struct symptom, so it is not passing vacuously.
+
+Preflight also moved to after the plan is shown, matching `RunInstall`. Lookup and
+plan construction are reads, so a removal is now reviewable before admin is granted,
+which is how an operator ought to inspect one. The gate is not relaxed: `Uninstall`
+re-checks elevation at the mutation boundary, and the existing
+`TestUninstallDryRunNeverMutatesInAnyPreflightOutcome` "not elevated" case still
+expects `ExitPreflight` and still passes. Verified live against the operator's queue:
+the plan now reports `Brother Home`, `SpoolSmith-192.168.68.108`, and
+`Brother HL-L2315D series` read from Windows, then refuses to proceed.
+
+`remove` has still never run elevated against real hardware. That is the one
+outstanding item and `real-hardware-verification.md` now carries an exact runbook for
+it, including the retention branches and why re-adding afterwards needs no download.
+
+Two incidental notes worth writing down. Running the suite from a Git Bash shell fails
+`TestLocalBrotherArchiveVerificationWithStagingDoubles` with
+`/usr/bin/tar: Cannot connect to C: resolve failed`, because GNU tar shadows
+`C:\Windows\System32\tar.exe` on `PATH` and reads `C:\…` as a remote host. The suite is
+green from PowerShell. That also means `package.go` resolves `tar.exe` and
+`pnputil.exe` through `PATH` inside a privileged staging script — absolute System32
+paths would be sturdier and that is not yet done. Separately, a PowerShell
+`Get-Content -Raw` / `Set-Content` round-trip over `powershell.go` introduced a BOM and
+mangled an em dash; both were repaired, and edits to Go sources should not go through
+that path.
+
 ## 2026-09-07: v0.3.0 cut
 
 PR #2 merged to `main` as `4d4140b` with both CI runs green. Tagged `v0.3.0` on
