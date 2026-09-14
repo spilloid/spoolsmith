@@ -35,6 +35,7 @@ type InstallOptions struct {
 	ExpectedPlan   *Plan
 	Target         string
 	Profile        *Profile
+	Offline        bool
 	UpdateExisting bool
 	Compact        bool
 	ForceFamily    string
@@ -59,16 +60,17 @@ type UninstallOptions struct {
 
 // Outcome is the machine-readable result of an install or uninstall workflow.
 type Outcome struct {
-	Operation  string           `json:"operation"`
-	Status     string           `json:"status"`
-	DryRun     bool             `json:"dry_run"`
-	Confirmed  bool             `json:"confirmed"`
-	Resolution string           `json:"resolution,omitempty"`
-	Uncertain  []string         `json:"uncertain,omitempty"`
-	Plan       *Plan            `json:"plan,omitempty"`
-	Preflight  *PreflightResult `json:"preflight,omitempty"`
-	Result     *Result          `json:"result,omitempty"`
-	Error      string           `json:"error,omitempty"`
+	Operation   string           `json:"operation"`
+	Status      string           `json:"status"`
+	DryRun      bool             `json:"dry_run"`
+	Confirmed   bool             `json:"confirmed"`
+	Resolution  string           `json:"resolution,omitempty"`
+	Uncertain   []string         `json:"uncertain,omitempty"`
+	Plan        *Plan            `json:"plan,omitempty"`
+	Preflight   *PreflightResult `json:"preflight,omitempty"`
+	Result      *Result          `json:"result,omitempty"`
+	Error       string           `json:"error,omitempty"`
+	LocalStatus *LocalStatus     `json:"local_status,omitempty"`
 }
 
 // Workflow owns detection, catalog selection, preflight, and confirmation so
@@ -98,6 +100,9 @@ func (w Workflow) RunInstall(ctx context.Context, env Environment, input io.Read
 	if err := w.validate(); err != nil {
 		return failOutcome(outcome, err, ExitGeneralError)
 	}
+	if options.Offline && options.Profile == nil {
+		return failOutcome(outcome, errors.New("install: --offline requires an administrator-prevalidated --profile"), ExitUsageError)
+	}
 	if options.Profile != nil {
 		if options.ForceFamily != "" || options.Target != "" {
 			return failOutcome(outcome, errors.New("install: --profile cannot be combined with a target or --force-family"), ExitUsageError)
@@ -118,7 +123,13 @@ func (w Workflow) RunInstall(ctx context.Context, env Environment, input io.Read
 		forcedFamily, forcedDriver = &family, &driver
 	}
 
-	probeResult, err := w.Collect(ctx, options.Target)
+	var probeResult probe.Result
+	var err error
+	if options.Offline {
+		probeResult.Evidence.IP = options.Target
+	} else {
+		probeResult, err = w.Collect(ctx, options.Target)
+	}
 	if err != nil {
 		return failOutcome(outcome, fmt.Errorf("install: collect evidence: %w", err), ExitGeneralError)
 	}
@@ -126,7 +137,11 @@ func (w Workflow) RunInstall(ctx context.Context, env Environment, input io.Read
 	reader := bufferedReader(input)
 	resolution := catalog.ResolutionResult{}
 	forced := forcedFamily != nil
-	if options.Profile != nil {
+	if options.Offline {
+		resolution = options.Profile.selectedResolution()
+		resolution.Uncertain = append(resolution.Uncertain, "offline provisioning: live identity was not checked; reachability and printing are unverified")
+		forced = true
+	} else if options.Profile != nil {
 		resolution, err = options.Profile.resolution(probeResult.Evidence)
 		if errors.Is(err, errIdentityUnavailable) {
 			fmt.Fprintln(interactive, "Identity probes were unavailable; retrying once for a sleeping printer.")
@@ -175,7 +190,11 @@ func (w Workflow) RunInstall(ctx context.Context, env Environment, input io.Read
 	if options.Profile != nil {
 		outcome.Resolution = "operator-profile"
 		outcome.Uncertain = append([]string(nil), resolution.Uncertain...)
-		fmt.Fprintln(interactive, "Profile: driver compatibility was selected by the operator; live model evidence matches the capture.")
+		if options.Offline {
+			outcome.Resolution = "offline-operator-profile"
+		} else {
+			fmt.Fprintln(interactive, "Profile: driver compatibility was selected by the operator; live model evidence matches the capture.")
+		}
 	}
 	for _, reason := range resolution.Uncertain {
 		fmt.Fprintf(interactive, "  Note: %s\n", reason)
@@ -185,6 +204,7 @@ func (w Workflow) RunInstall(ctx context.Context, env Environment, input io.Read
 		return failOutcome(outcome, err, ExitGeneralError)
 	}
 	plan.ForcedOverride = forced
+	plan.Offline = options.Offline
 	plan.UpdateExisting = options.UpdateExisting
 	plan.Commands = installCommands(plan)
 	if options.Profile != nil && options.Profile.DriverPackage != nil {
@@ -248,6 +268,17 @@ func (w Workflow) RunInstall(ctx context.Context, env Environment, input io.Read
 			return failOutcome(outcome, err, ExitPreflight)
 		}
 		return failOutcome(outcome, err, ExitGeneralError)
+	}
+	if options.Offline {
+		status, checkErr := CheckStatus(ctx, env, *options.Profile)
+		outcome.LocalStatus = &status
+		if checkErr != nil {
+			return failOutcome(outcome, fmt.Errorf("install: local verification: %w", checkErr), ExitGeneralError)
+		}
+		if !status.Compliant {
+			return failOutcome(outcome, fmt.Errorf("install: local verification failed: %s", strings.Join(status.Mismatches, "; ")), ExitGeneralError)
+		}
+		fmt.Fprintln(interactive, "Configured and verified locally. Printer reachability and printing have not been tested.")
 	}
 	outcome.Status = "success"
 	fmt.Fprintf(interactive, "Printer configured: %s (%s). Reapplying the same profile is safe.\n", plan.PrinterName, plan.IPAddress)
@@ -440,6 +471,9 @@ func readAnswer(input io.Reader) (string, error) {
 
 func writeInstallPlan(writer io.Writer, plan Plan, compact bool) {
 	fmt.Fprintln(writer, "Install plan")
+	if plan.Offline {
+		fmt.Fprintln(writer, "  OFFLINE: live identity is not checked. Verify local queue, driver and RAW TCP 9100 endpoint after applying; printing requires network connectivity.")
+	}
 	if plan.DriverPackage != nil {
 		record, _ := plan.DriverPackage.record(plan.DriverName)
 		fmt.Fprintf(writer, "  Driver package: %s\n  Local archive: %s\n  Expected SHA-256: %s\n  Vendor source: %s\n", plan.DriverPackage.ID, plan.DriverPackage.Archive, record.SHA256, record.SourceURL)

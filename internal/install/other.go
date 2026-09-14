@@ -11,6 +11,10 @@ var errWindowsOnly = errors.New("install: windows-only, not supported on this pl
 
 type unsupportedEnvironment struct{}
 
+func (unsupportedEnvironment) LocalConfiguration(context.Context, string) (LocalConfiguration, error) {
+	return LocalConfiguration{}, errWindowsOnly
+}
+
 // NewEnvironment returns an environment that fails clearly on non-Windows platforms.
 func NewEnvironment() Environment {
 	return unsupportedEnvironment{}

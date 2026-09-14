@@ -14,6 +14,7 @@ import (
 	"github.com/spilloid/spoolsmith/internal/catalog"
 	"github.com/spilloid/spoolsmith/internal/inspect"
 	"github.com/spilloid/spoolsmith/internal/install"
+	"github.com/spilloid/spoolsmith/internal/intune"
 	"github.com/spilloid/spoolsmith/internal/probe"
 )
 
@@ -79,6 +80,11 @@ func run(ctx context.Context, args []string, input io.Reader, stdout, stderr io.
 	}
 
 	switch args[0] {
+	case "capabilities":
+		if len(args) != 1 {
+			return usageError(stdout, stderr, "capabilities", errors.New("capabilities accepts no arguments"))
+		}
+		return encodeSuccess(stdout, stderr, "capabilities", []string{intune.EndpointCapability})
 	case "drivers":
 		if len(args) != 1 {
 			return usageError(stdout, stderr, "drivers", errors.New("drivers accepts no arguments"))
@@ -95,6 +101,10 @@ func run(ctx context.Context, args []string, input io.Reader, stdout, stderr io.
 		return runDiscover(ctx, args[1:], stdout, stderr, app)
 	case "profile":
 		return runProfile(ctx, args[1:], stdout, stderr, app)
+	case "status":
+		return runStatus(ctx, args[1:], stdout, stderr, app)
+	case "intune":
+		return runIntune(ctx, args[1:], input, stdout, stderr, app)
 	case "inspect":
 		if len(args) != 2 {
 			return usageError(stdout, stderr, "inspect", errors.New("inspect requires exactly one target"))
@@ -175,7 +185,7 @@ func parseInstallArgs(args []string) (install.InstallOptions, error) {
 	for index := 0; index < len(args); index++ {
 		arg := args[index]
 		switch arg {
-		case "--yes", "--json", "--non-interactive", "--dry-run", "--what-if":
+		case "--yes", "--json", "--non-interactive", "--dry-run", "--what-if", "--offline":
 			key := arg
 			if arg == "--what-if" {
 				key = "--dry-run"
@@ -185,6 +195,8 @@ func parseInstallArgs(args []string) (install.InstallOptions, error) {
 			}
 			seen[key] = true
 			switch key {
+			case "--offline":
+				options.Offline = true
 			case "--yes":
 				options.Yes = true
 				options.NonInteractive = true
@@ -245,6 +257,9 @@ func parseInstallArgs(args []string) (install.InstallOptions, error) {
 			return options, errors.New("--profile cannot be combined with a target or --force-family")
 		}
 		return options, nil
+	}
+	if options.Offline {
+		return options, errors.New("--offline requires an administrator-prevalidated --profile")
 	}
 	if options.Target == "" {
 		return options, errors.New("install requires exactly one target")
@@ -339,6 +354,9 @@ func encodeJSON(writer io.Writer, value any) error {
 }
 
 func printUsage(writer io.Writer) {
+	fmt.Fprintln(writer, "       spoolsmith intune wizard | intune build --help (local Win32 app packaging)")
+	fmt.Fprintln(writer, "       spoolsmith status --profile <file> [--json] (local configuration only)")
+	fmt.Fprintln(writer, "       spoolsmith add|configure --profile <file> --offline [--yes] [--dry-run] [--json]")
 	fmt.Fprintln(writer, "SpoolSmith: discover, save, and map network printers")
 	fmt.Fprintln(writer, "       spoolsmith drivers (list exact registered Windows driver names)")
 	fmt.Fprintln(writer, "usage: spoolsmith discover <IPv4-CIDR> (/24 through /32)")

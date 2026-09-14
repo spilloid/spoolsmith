@@ -13,6 +13,10 @@ import (
 
 type windowsEnvironment struct{}
 
+func (windowsEnvironment) LocalConfiguration(ctx context.Context, name string) (LocalConfiguration, error) {
+	return readLocalConfiguration(ctx, runPowerShell, name)
+}
+
 // NewEnvironment returns the real Windows-backed install environment.
 func NewEnvironment() Environment {
 	return windowsEnvironment{}
@@ -61,6 +65,9 @@ func (windowsEnvironment) LookupPrinter(ctx context.Context, printerName string)
 }
 
 func runPowerShell(ctx context.Context, command string) (string, error) {
+	// Windows PowerShell otherwise uses the active console code page, which
+	// corrupts non-ASCII queue/driver names in JSON inventory read by Go.
+	command = "[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false); " + command
 	process := exec.CommandContext(ctx, "powershell.exe", "-NoProfile", "-Command", command)
 	process.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
 	output, err := process.CombinedOutput()

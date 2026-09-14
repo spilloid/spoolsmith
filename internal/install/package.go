@@ -17,6 +17,12 @@ type PackageSelection struct {
 	Archive string `json:"archive"`
 }
 
+// PackageSHA256 exposes the reviewed payload pin to local packaging tools.
+func (p PackageSelection) PackageSHA256(driver string) (string, error) {
+	r, err := p.record(driver)
+	return r.SHA256, err
+}
+
 type packageRecord struct {
 	ID        string `json:"id"`
 	SHA256    string `json:"sha256"`

@@ -766,3 +766,41 @@ real `WindowsDriverName`, staging a vendor driver package, and a real install/un
 Requires Administrator rights this session's shell does not currently have (the Administrators
 group token showed "deny only" — UAC has not elevated it) and a decision on how to obtain the real
 HP printer's evidence. Both raised to the operator rather than assumed past.
+
+## 2026-09-13: offline and Intune implementation for issues #5 and #6
+
+Implemented on `codex/offline-intune`, based on fetched main `b9846ed`, in a separate
+worktree to preserve the original checkout's unfinished clone/bundle changes.
+
+Offline profile add/configure bypasses collection explicitly and verifies local
+queue, registered driver, canonical managed port, address, RAW protocol and port
+9100 after installation. `status --profile` exposes the same local inventory checks.
+Live validation remains the default. Package and confirmation gates are retained.
+
+Added CLI and desktop packaging wizards, compatible Windows CLI/hash validation,
+review-before-export, optional invocation of Microsoft's Content Prep Tool, and
+reviewable SYSTEM lifecycle scripts. Persistent protected revision state supports
+repeat application, matching-queue adoption, conflict rejection, updates, interrupted
+attempts and cache-independent removal. Queue renames require explicit retirement;
+updates preserve old ports, and removal preserves drivers/shared ports.
+
+Validation and pilot limitations are recorded in `docs/intune-deployment.md`.
+Do not close either issue solely on mocked tests: the Windows and Intune acceptance
+criteria still need real pilot evidence.
+
+Local checks completed: Go build/vet and full test suite, Windows amd64 cross-build
+and vet, race tests for `internal/install` and `cmd/spoolsmith`, generated PowerShell
+syntax parsing, detection mismatch tests, and lifecycle script execution with mocked
+Windows boundaries. The lifecycle test exercises repeat installation, deployment
+ownership conflicts, same-revision change rejection, interrupted-update retry,
+downgrade rejection, and removal after source cache deletion. A separate native
+process test verifies JSON capture and preservation of nonzero CLI exit codes.
+
+The script tests caught an actual .NET `File.Replace` null-backup argument issue;
+metadata replacement now retains a previous copy. Explicit UTF-8 decoding/output
+also avoids Windows PowerShell's legacy code-page corruption of non-ASCII queue
+and driver names. PowerShell 7 on Linux validates script behavior; Windows
+PowerShell 5.1, real ACLs and the desktop wizard still require the documented pilot.
+
+The original main checkout was subsequently fast-forwarded to `b9846ed`; its local
+bundle work reapplied cleanly. A named pre-pull stash remains as a recovery copy.

@@ -30,6 +30,7 @@ type Plan struct {
 	Commands       []string              `json:"commands"`
 	ForcedOverride bool                  `json:"forced_override"`
 	UpdateExisting bool                  `json:"update_existing"`
+	Offline        bool                  `json:"offline,omitempty"`
 	DriverPackage  *PackageSelection     `json:"driver_package,omitempty"`
 }
 
@@ -135,6 +136,11 @@ func Preflight(ctx context.Context, env Environment, plan Plan) (PreflightResult
 	var result PreflightResult
 	if env == nil {
 		return result, errors.New("install: environment is nil")
+	}
+	if plan.Offline {
+		if _, ok := env.(localInventoryEnvironment); !ok {
+			return result, errors.New("install: environment cannot verify local printer configuration")
+		}
 	}
 	elevated, err := env.IsElevated(ctx)
 	if err != nil {
