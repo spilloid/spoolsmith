@@ -1,5 +1,23 @@
 # Dev Process Log
 
+## 2026-09-14: prepare Windows 11 pilot and review remaining gaps
+
+Before the operator's VM became available, added an ordered native test runbook,
+an evidence/result template and an author reflection on implementation commit
+`20ab179`. The runbook keeps the existing pilot binary/hash fixed and separates
+SSH CLI, RDP GUI, SYSTEM endpoint, physical-print and Intune tenant results.
+
+Source review identified two concrete control-flow gaps to reproduce: early
+failures can precede deployment-log initialization, and a failed install that
+creates a port but no queue can leave that port after already-absent removal clears
+the deployment claim. Additional questions cover conservative removal prerequisites,
+the difference between per-command and whole-operation timeouts, and matching Go
+and PowerShell detection semantics. These are recorded in
+`docs/offline-intune-reflection.md`; they have not been marked fixed or VM-tested.
+
+This follow-up changes documentation only. The original pilot ZIP and binaries
+remain unchanged, so the next observations can be tied to the recorded build.
+
 ## 2026-09-12 (later, elevated): Step 4b executed, and the staging path runs for real
 
 The operator opened an elevated session and asked for whatever this environment could

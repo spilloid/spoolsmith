@@ -11,6 +11,11 @@ are still pending.** The automated PowerShell tests exercise generated scripts
 with substituted Windows inventory and privilege boundaries; they do not validate
 NTFS ACL behavior, an OEM driver, Company Portal, or a tenant deployment.
 
+For the next native test session, use the [Windows 11 VM runbook](validation/2026-09-14-windows11-pilot.md)
+and [result template](validation/windows11-results-template.md). The
+[pre-pilot reflection](offline-intune-reflection.md) records known diagnostic and
+partial-install cleanup gaps, plus the Windows boundaries still needing evidence.
+
 ## Prepare a validated profile and binary
 
 Use a currently supported Windows x64 endpoint with the Print Spooler and PrintManagement
