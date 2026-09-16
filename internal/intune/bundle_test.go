@@ -120,6 +120,26 @@ func TestContentPrepRejectsOutputWithinSource(t *testing.T) {
 		}
 	}
 }
+
+// shellEnv builds the environment for a generated script run.
+//
+// PSModulePath is deliberately dropped. On a CI runner whose job shell is
+// PowerShell 7, the inherited PSModulePath points at 7's module directories;
+// handing that to powershell.exe 5.1 overrides its own $PSHOME\Modules, so
+// autoloading stops finding even core cmdlets and the scripts fail with
+// "Get-FileHash is not recognized". Removing the variable lets each shell
+// compute its own default, which is what a real endpoint has.
+func shellEnv(extra ...string) []string {
+	base := make([]string, 0, len(os.Environ())+len(extra))
+	for _, entry := range os.Environ() {
+		if strings.HasPrefix(strings.ToUpper(entry), "PSMODULEPATH=") {
+			continue
+		}
+		base = append(base, entry)
+	}
+	return append(base, extra...)
+}
+
 func powershell(t *testing.T) string {
 	t.Helper()
 	if path := os.Getenv("SPOOLSMITH_PWSH"); path != "" {
@@ -148,7 +168,9 @@ func TestGeneratedPowerShellParses(t *testing.T) {
 			path := filepath.Join(t.TempDir(), name)
 			os.WriteFile(path, data, 0600)
 			script := `$tokens=$null;$parseErrors=$null;[Management.Automation.Language.Parser]::ParseFile(` + psString(path) + `,[ref]$tokens,[ref]$parseErrors)|Out-Null;if($parseErrors.Count){$parseErrors|Out-String|Write-Output;exit 1}`
-			if out, err := exec.Command(shell, "-NoProfile", "-NonInteractive", "-Command", script).CombinedOutput(); err != nil {
+			parse := exec.Command(shell, "-NoProfile", "-NonInteractive", "-Command", script)
+			parse.Env = shellEnv()
+			if out, err := parse.CombinedOutput(); err != nil {
 				t.Fatalf("%s: %v %s", name, err, out)
 			}
 		})
@@ -182,6 +204,7 @@ function Get-PrinterDriver { [CmdletBinding()]param();if($mode -ne 'registration
 function Get-PrinterPort { [CmdletBinding()]param();if($mode -eq 'port'){return};$address=$m.profile.target;$protocol=1;$number=9100;if($mode -eq 'address'){$address='192.0.2.41'};if($mode -eq 'protocol'){$protocol=2};if($mode -eq 'number'){$number=515};[pscustomobject]@{Name=('SpoolSmith-'+$m.profile.target);PrinterHostAddress=$address;Protocol=$protocol;PortNumber=$number} }
 & ` + psString(path)
 			cmd := exec.Command(shell, "-NoProfile", "-NonInteractive", "-Command", prelude)
+			cmd.Env = shellEnv()
 			out, err := cmd.CombinedOutput()
 			if failure == "" {
 				if err != nil || !strings.Contains(string(out), "configured locally") {
@@ -238,7 +261,7 @@ function Invoke-SpoolSmith([string]$Directory,[string]$Operation,[bool]$Offline,
 	execute := func(script string, fail bool) error {
 		t.Helper()
 		cmd := exec.Command(shell, "-NoProfile", "-NonInteractive", "-File", script)
-		cmd.Env = append(os.Environ(), "SPOOLSMITH_TEST_ROOT="+root)
+		cmd.Env = shellEnv("SPOOLSMITH_TEST_ROOT=" + root)
 		if fail {
 			cmd.Env = append(cmd.Env, "SPOOLSMITH_TEST_FAIL=after-mutation")
 		}
@@ -340,7 +363,7 @@ func main(){fmt.Print("{\"compliant\":true}");c,_:=strconv.Atoi(os.Getenv("SPOOL
 	os.WriteFile(runtimePath, script, 0600)
 	for _, want := range []int{0, 4} {
 		cmd := exec.Command(shell, "-NoProfile", "-NonInteractive", "-Command", ". "+psString(runtimePath)+"; Invoke-SpoolSmith "+psString(dir)+" 'status' $false "+psString(dir)+" | ConvertTo-Json -Depth 10")
-		cmd.Env = append(os.Environ(), fmt.Sprintf("SPOOLSMITH_TEST_EXIT=%d", want))
+		cmd.Env = shellEnv(fmt.Sprintf("SPOOLSMITH_TEST_EXIT=%d", want))
 		out, err := cmd.CombinedOutput()
 		if err != nil {
 			t.Fatalf("%v %s", err, out)
