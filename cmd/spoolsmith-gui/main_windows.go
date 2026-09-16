@@ -3,17 +3,28 @@
 package main
 
 import (
+	"fmt"
+	"github.com/spilloid/spoolsmith/internal/evidence"
 	"log"
+	"net/netip"
+	"strings"
 
 	"github.com/spilloid/spoolsmith/internal/catalog"
 	"github.com/tailscale/walk"
 	. "github.com/tailscale/walk/declarative"
 )
 
+// Four tabs, in the order the work actually happens: look at what this PC
+// has, add something to it, review the change, and everything else.
+//
+// The previous five tabs numbered themselves "1." "2." "3." as though they
+// were a wizard, while an unnumbered fourth sat between two of them and the
+// tab strip let you start anywhere. Finding a printer and choosing its
+// settings were two tabs for one continuous task, so the app changed tabs
+// under the operator mid-thought.
 const (
-	tabDiscover = iota
-	tabSetup
-	tabProfiles
+	tabThisPC = iota
+	tabAdd
 	tabReview
 	tabTools
 )
@@ -28,7 +39,7 @@ func formGrid(columns int) Grid { return Grid{Columns: columns, Spacing: 8} }
 // clients can identify them independently of their current values.
 func name(id string) Accessibility { return Accessibility{Name: id} }
 func heading(text string) Label {
-	return Label{Text: text, Font: Font{Family: "Segoe UI", PointSize: 14, Bold: true}}
+	return Label{Text: text, Font: Font{Family: "Segoe UI", PointSize: 15, Bold: true}, TextColor: walk.RGB(24, 76, 133)}
 }
 
 func main() {
@@ -46,16 +57,17 @@ func main() {
 	}
 	mainWindow := MainWindow{
 		AssignTo: &a.mw, Title: "SpoolSmith",
-		Font:    Font{Family: "Segoe UI", PointSize: 10},
-		MinSize: Size{Width: 820, Height: 620}, Size: Size{Width: 980, Height: 740},
+		Background: SolidColorBrush{Color: walk.RGB(245, 247, 251)},
+		Font:       Font{Family: "Segoe UI", PointSize: 10},
+		MinSize:    Size{Width: 820, Height: 620}, Size: Size{Width: 980, Height: 740},
 		Layout: VBox{MarginsZero: true, Spacing: 0},
 		Children: []Widget{
-			Composite{Layout: pagePadding(), Children: []Widget{
-				heading("SpoolSmith"),
-				Label{Text: "Find your printer. Choose its settings. Review and install."},
+			Composite{Background: SolidColorBrush{Color: walk.RGB(24, 76, 133)}, Layout: pagePadding(), Children: []Widget{
+				Label{Text: "SpoolSmith", TextColor: walk.RGB(255, 255, 255), Font: Font{Family: "Segoe UI", PointSize: 20, Bold: true}},
+				Label{Text: "See what this PC has, add a printer, or copy one to another PC.", TextColor: walk.RGB(230, 240, 255)},
 			}},
 			TabWidget{AssignTo: &a.tabs, Pages: []TabPage{
-				discoverPage(a), setupPage(a), profilesPage(a), mutatePage(a), toolsPage(a),
+				thisPCPage(a), addPage(a), mutatePage(a), toolsPage(a),
 			}},
 			Composite{Layout: HBox{Margins: Margins{Left: 16, Top: 6, Right: 16, Bottom: 8}}, Children: []Widget{
 				Label{AssignTo: &a.accessStatus, Text: "You can find printers and save settings without changing Windows."},
@@ -76,10 +88,9 @@ func main() {
 		log.Fatal(err)
 	}
 	a.tabs.SetVisible(true)
-	a.setReviewMode("install")
-	a.useProfileCheck.SetChecked(true)
 	a.bindMutationInputs()
 	a.initializePrinters()
+	a.initializeThisPC()
 	a.initializeReview()
 	applyStyle(a)
 	a.startNetworkDiscovery()
@@ -123,154 +134,127 @@ func (a *app) onPlanDetails() {
 	}
 }
 
-func discoverPage(a *app) TabPage {
-	return TabPage{Title: "Find a printer", Layout: pagePadding(), Children: []Widget{
-		heading("1. Find your printer"),
-		Label{Text: "Your current network is scanned on launch. Select a printer to continue."},
+// addPage merges what used to be "Find a printer" and "Add printer", and adds
+// the two file-based ways in.
+//
+// Discovery and choosing settings were always one task: nobody scans a network
+// and then decides not to set anything up. Splitting them across tabs meant the
+// app navigated for you at the moment you were concentrating, and the settings
+// tab was reachable while empty. Here the settings appear underneath the
+// printer you picked, and the page is honest when nothing is picked yet.
+func addPage(a *app) TabPage {
+	return TabPage{Title: "Add a printer", Background: SolidColorBrush{Color: walk.RGB(250, 251, 253)}, Layout: pagePadding(), Children: []Widget{
+		heading("Add a printer to this PC"),
+		Label{Text: "Find it on the network, or open a printer file or saved setup."},
 		Composite{Layout: row(), Children: []Widget{
 			Label{Text: "Network or IP:"},
 			LineEdit{AssignTo: &a.discoverCIDR, CueBanner: "192.168.1.0/24 or 192.168.1.50", Accessibility: name("discover-cidr")},
 			PushButton{AssignTo: &a.discoverBtn, Text: "Scan", OnClicked: a.onDiscover},
+			PushButton{Text: "Use IP directly", OnClicked: func() {
+				target := strings.TrimSpace(a.discoverCIDR.Text())
+				ip, err := netip.ParseAddr(target)
+				if err != nil || ip.Zone() != "" {
+					showErr(a.mw, "Printer address", fmt.Errorf("enter a single printer IP address to continue"))
+					return
+				}
+				if !a.reviewSavedPrinter(ip.String()) {
+					a.openPrinterSetup(evidence.Evidence{IP: ip.String()})
+				}
+			}},
 			PushButton{AssignTo: &a.discoverCancelBtn, Text: "Cancel scan", Enabled: false, OnClicked: a.onCancelDiscovery},
 		}},
 		Label{AssignTo: &a.networkStatus, Text: "Looking for your Wi-Fi or Ethernet network..."},
-		TextEdit{AssignTo: &a.discoverOut, Text: "Preparing discovery...", ReadOnly: true, VScroll: true,
-			MinSize: Size{Height: 62}, MaxSize: Size{Height: 82}, Accessibility: name("discover-output")},
-		ListBox{AssignTo: &a.discoverList, MinSize: Size{Height: 100}, Accessibility: name("discover-results"), OnItemActivated: a.onUseDiscovered},
+		ListBox{AssignTo: &a.discoverList, MinSize: Size{Height: 96}, Accessibility: name("discover-results"), OnItemActivated: a.onUseDiscovered},
 		Composite{Layout: row(), Children: []Widget{
-			PushButton{AssignTo: &a.discoverUseBtn, Text: "Review selected printer", Enabled: false, OnClicked: a.onUseDiscovered},
-			PushButton{AssignTo: &a.discoverCustomizeBtn, Text: "Use different settings", Enabled: false, OnClicked: a.onCustomizeDiscovered},
-			HSpacer{},
+			PushButton{AssignTo: &a.discoverUseBtn, Text: "Use this printer", Enabled: false, OnClicked: a.onUseDiscovered},
 			PushButton{AssignTo: &a.discoverDetailsBtn, Text: "Scan details", Enabled: false, OnClicked: a.onDiscoveryDetails},
+			HSpacer{},
+			PushButton{Text: "Open a printer file...", OnClicked: a.onOpenBundle},
+			PushButton{Text: "Open a saved setup...", OnClicked: a.onOpenSavedSetup},
 		}},
-		GroupBox{Title: "Already know the printer's IP address?", Layout: row(), Children: []Widget{
-			LineEdit{AssignTo: &a.knownTarget, CueBanner: "Printer IP, for example 192.168.1.50", Accessibility: name("known-ip"),
-				OnKeyDown: func(key walk.Key) {
-					if key == walk.KeyReturn {
-						a.onKnownIP()
-					}
-				}},
-			PushButton{Text: "Continue with IP", OnClicked: a.onKnownIP},
-		}},
-	}}
-}
-
-func setupPage(a *app) TabPage {
-	return TabPage{Title: "Add printer", Layout: pagePadding(), Children: []Widget{
-		heading("2. Choose printer settings"),
-		Label{Text: "Give the printer a name and choose a compatible driver installed on this computer."},
-		GroupBox{Title: "Printer", Layout: formGrid(2), Children: []Widget{
-			Label{Text: "IP address:"}, LineEdit{AssignTo: &a.captureTarget, CueBanner: "192.168.1.50", Accessibility: name("capture-target")},
-			Label{Text: "Printer name:"}, LineEdit{AssignTo: &a.captureName, CueBanner: "Office printer", Accessibility: name("capture-name")},
-			Label{Text: "Windows driver:"}, ComboBox{AssignTo: &a.captureDriver, Editable: true, Accessibility: name("capture-driver")},
-		}},
-		Label{AssignTo: &a.driverStatus, Text: "Drivers will load when you open this screen."},
-		Composite{Layout: row(), Children: []Widget{
-			PushButton{AssignTo: &a.refreshDrivers, Text: "Refresh drivers", OnClicked: a.onDrivers}, HSpacer{},
-		}},
-		GroupBox{Title: "Save settings for next time", Layout: VBox{Spacing: 8}, Children: []Widget{
-			Label{Text: "A profile saves this printer's address, name and driver so you can reuse the setup."},
+		TextEdit{AssignTo: &a.discoverOut, Text: "Preparing discovery...", ReadOnly: true, VScroll: true,
+			MinSize: Size{Height: 48}, MaxSize: Size{Height: 64}, Accessibility: name("discover-output")},
+		GroupBox{AssignTo: &a.setupGroup, Title: "Printer settings", Visible: false, Layout: VBox{Spacing: 8}, Children: []Widget{
+			Composite{Layout: formGrid(2), Children: []Widget{
+				Label{Text: "IP address:"}, LineEdit{AssignTo: &a.captureTarget, CueBanner: "192.168.1.50", Accessibility: name("capture-target")},
+				Label{Text: "Printer name:"}, LineEdit{AssignTo: &a.captureName, CueBanner: "Office printer", Accessibility: name("capture-name")},
+				Label{Text: "Windows driver:"}, ComboBox{AssignTo: &a.captureDriver, Editable: true, Accessibility: name("capture-driver")},
+				Label{Text: "Save settings to:"}, LineEdit{AssignTo: &a.captureFile, Accessibility: name("capture-file")},
+			}},
 			Composite{Layout: row(), Children: []Widget{
-				Label{Text: "Profile file:"},
-				LineEdit{AssignTo: &a.captureFile, Accessibility: name("capture-file")},
+				Label{AssignTo: &a.driverStatus, Text: "Drivers will load when you choose a printer."},
+				HSpacer{},
+				PushButton{AssignTo: &a.refreshDrivers, Text: "Refresh drivers", OnClicked: a.onDrivers},
 				PushButton{AssignTo: &a.captureBrowseBtn, Text: "Browse...", OnClicked: a.onBrowseCapture},
 			}},
-		}},
-		Label{AssignTo: &a.captureStatus, Text: "Save and review checks the printer and saves its settings. Installation comes after review."},
-		VSpacer{},
-		Composite{Layout: row(), Children: []Widget{
-			PushButton{Text: "Back to printers", OnClicked: func() { a.tabs.SetCurrentIndex(tabDiscover) }},
-			HSpacer{}, PushButton{AssignTo: &a.captureBtn, Text: "Save and review", OnClicked: a.onCaptureProfile},
-		}},
-	}}
-}
-
-func profilesPage(a *app) TabPage {
-	return TabPage{Title: "Saved printers", Layout: pagePadding(), Children: []Widget{
-		heading("Your saved printers"),
-		Label{Text: "Reuse a setup on this computer, update its settings, or remove its Windows printer."},
-		Composite{Layout: row(), Children: []Widget{
-			Label{Text: "Profile folder:"}, LineEdit{AssignTo: &a.profileDir, Text: "profiles", Accessibility: name("profiles-dir")},
-			PushButton{AssignTo: &a.profileBrowseBtn, Text: "Browse...", OnClicked: a.onBrowseProfiles},
-			PushButton{AssignTo: &a.refreshBtn, Text: "Refresh", OnClicked: a.onRefreshProfiles},
-		}},
-		HSplitter{Children: []Widget{
-			ListBox{AssignTo: &a.profileList, MinSize: Size{Width: 230, Height: 100}, Accessibility: name("profiles-list"), OnItemActivated: func() { a.useSelectedProfile("install") }},
-			TextEdit{AssignTo: &a.profileOut, ReadOnly: true, VScroll: true, MinSize: Size{Width: 280, Height: 100}, Accessibility: name("profiles-output")},
-		}},
-		Composite{Layout: row(), Children: []Widget{
-			PushButton{AssignTo: &a.profileSetupBtn, Text: "Set up printer", Enabled: false, OnClicked: func() { a.useSelectedProfile("install") }},
-			PushButton{AssignTo: &a.profileConfigureBtn, Text: "Update printer", Enabled: false, OnClicked: func() { a.useSelectedProfile("configure") }},
-			PushButton{AssignTo: &a.profileRemoveBtn, Text: "Remove printer", Enabled: false, OnClicked: func() { a.useSelectedProfile("remove") }},
-			HSpacer{},
-			PushButton{AssignTo: &a.loadEditBtn, Text: "Edit settings", Enabled: false, OnClicked: a.onLoadEdit},
-			PushButton{AssignTo: &a.profileDetailsBtn, Text: "Profile details", Enabled: false, OnClicked: a.onProfileDetails},
-		}},
-		GroupBox{AssignTo: &a.profileEditor, Title: "Edit saved settings", Visible: false, Layout: formGrid(4), Children: []Widget{
-			Label{AssignTo: &a.editPathLabel, Text: "", ColumnSpan: 4},
-			Label{Text: "Printer name:"}, LineEdit{AssignTo: &a.editName, Accessibility: name("edit-name")},
-			Label{Text: "Driver name:"}, LineEdit{AssignTo: &a.editDriver, Accessibility: name("edit-driver")},
-			Label{Text: "IP address:"}, LineEdit{AssignTo: &a.editTarget, Accessibility: name("edit-target")},
-			Label{Text: "Package ID (optional):"}, LineEdit{AssignTo: &a.editPackage, Accessibility: name("edit-package")},
-			Label{Text: "Local archive:"}, LineEdit{AssignTo: &a.editArchive, Accessibility: name("edit-archive"), ColumnSpan: 3},
-			Label{Text: "Leave both package fields empty to use an installed driver.", ColumnSpan: 4},
-			Label{AssignTo: &a.editStatus, Text: "A backup is kept whenever you save changes.", ColumnSpan: 4},
-			Composite{ColumnSpan: 4, Layout: row(), Children: []Widget{
-				HSpacer{}, PushButton{AssignTo: &a.cancelEditBtn, Text: "Cancel editing", OnClicked: a.onCancelEdit},
-				PushButton{AssignTo: &a.saveEditBtn, Text: "Save changes", OnClicked: a.onSaveEdit},
+			Label{AssignTo: &a.captureStatus, Text: "Saving checks the printer and keeps its settings for next time."},
+			Composite{Layout: row(), Children: []Widget{
+				PushButton{Text: "Review catalog setup", OnClicked: func() {
+					a.startOperation(operation{Kind: opInstall, Target: strings.TrimSpace(a.captureTarget.Text())})
+				}},
+				HSpacer{}, PushButton{AssignTo: &a.captureBtn, Text: "Save and review", OnClicked: a.onCaptureProfile},
 			}},
 		}},
+		VSpacer{},
 	}}
 }
 
+// mutatePage states the one thing about to happen, instead of asking the
+// operator to reselect it.
+//
+// It used to carry three mode radios, a "use a saved profile" checkbox, and one
+// text field that meant a profile path, a queue name or an IP address depending
+// on which radio was active. All of that restated a decision already made by
+// whichever button opened this screen.
 func mutatePage(a *app) TabPage {
-	return TabPage{Title: "Review and apply", Layout: pagePadding(), Children: []Widget{
-		heading("3. Review your changes"),
-		Label{AssignTo: &a.reviewHint, Text: "Choose a saved printer or browse for a profile, then preview its setup."},
+	return TabPage{Title: "Review and apply", Background: SolidColorBrush{Color: walk.RGB(250, 251, 253)}, Layout: pagePadding(), Children: []Widget{
+		heading("Review your change"),
+		Label{AssignTo: &a.summaryLabel, Text: "Choose a printer from This PC, or add one, to see its changes here.",
+			Font: Font{Family: "Segoe UI", PointSize: 11}, Accessibility: name("review-summary")},
+		Label{AssignTo: &a.reviewHint, Text: "Nothing has changed yet."},
 		Composite{Layout: row(), Children: []Widget{
-			RadioButton{AssignTo: &a.modeInstall, Text: "Add printer"},
-			RadioButton{AssignTo: &a.modeConfigure, Text: "Update settings"},
-			RadioButton{AssignTo: &a.modeUninstall, Text: "Remove printer"},
-		}},
-		Composite{Layout: row(), Children: []Widget{
-			Label{AssignTo: &a.targetLabel, Text: "Profile file:"},
-			LineEdit{AssignTo: &a.targetField, CueBanner: "Choose a saved printer or browse for a profile", Accessibility: name("mutate-target")},
-			PushButton{AssignTo: &a.reviewBrowseBtn, Text: "Choose profile...", OnClicked: a.onBrowseReview},
-		}},
-		Composite{Layout: row(), Children: []Widget{
-			CheckBox{AssignTo: &a.advancedCheck, Text: "Advanced options", OnCheckedChanged: a.onToggleAdvanced}, HSpacer{},
+			CheckBox{AssignTo: &a.advancedCheck, Text: "More options", OnCheckedChanged: a.onToggleAdvanced},
+			HSpacer{},
 			PushButton{AssignTo: &a.previewBtn, Text: "Preview changes", OnClicked: a.onPreview},
 		}},
 		Composite{AssignTo: &a.advancedPanel, Visible: false, Layout: VBox{MarginsZero: true, Spacing: 8}, Children: []Widget{
-			CheckBox{AssignTo: &a.useProfileCheck, Text: "Use a saved profile"},
-			Composite{Layout: row(), Children: []Widget{
+			CheckBox{AssignTo: &a.updateCheck, Text: "Update an existing queue to match this printer file"},
+			CheckBox{AssignTo: &a.offlineCheck, Text: "Do not contact the printer (its identity will not be checked)"},
+			Composite{AssignTo: &a.familyRow, Layout: row(), Children: []Widget{
 				Label{Text: "Printer family:"},
 				ComboBox{AssignTo: &a.forceFamilyCombo, Model: a.familyLabels, CurrentIndex: 0, Accessibility: name("mutate-force-family")},
-				CheckBox{AssignTo: &a.purgeDriverCheck, Text: "Also remove unused driver"},
 			}},
-			CheckBox{AssignTo: &a.dryRunOnlyCheck, Text: "Preview only (disable installation)"},
+			Composite{AssignTo: &a.purgeRow, Layout: row(), Children: []Widget{
+				CheckBox{AssignTo: &a.purgeDriverCheck, Text: "Also remove the driver, if nothing else uses it"},
+				HSpacer{},
+			}},
+			CheckBox{AssignTo: &a.dryRunOnlyCheck, Text: "Preview only (never apply)"},
 		}},
 		TextEdit{AssignTo: &a.planOut, Text: "Your preview will appear here. No changes are made until you review and confirm them.", ReadOnly: true, VScroll: true, Accessibility: name("mutate-output")},
 		Composite{Layout: row(), Children: []Widget{
-			PushButton{Text: "Saved printers", OnClicked: func() { a.tabs.SetCurrentIndex(tabProfiles) }},
+			PushButton{Text: "This PC", OnClicked: func() { a.tabs.SetCurrentIndex(tabThisPC) }},
 			PushButton{AssignTo: &a.planDetailsBtn, Text: "Full plan / JSON", Enabled: false, OnClicked: a.onPlanDetails},
-			HSpacer{}, PushButton{AssignTo: &a.executeBtn, Text: "Add printer...", Enabled: false, OnClicked: a.onExecute},
+			HSpacer{}, PushButton{AssignTo: &a.executeBtn, Text: "Apply...", Enabled: false, OnClicked: a.onExecute},
 		}},
 	}}
 }
 
 func toolsPage(a *app) TabPage {
 	return TabPage{Title: "Tools", Layout: pagePadding(), Children: []Widget{
-		PushButton{Text: "Build an Intune printer app...", OnClicked: a.onIntuneWizard},
 		heading("Printer diagnostics"),
 		Label{Text: "Inspect device evidence, explore the driver catalog, or review recent activity."},
 		TabWidget{Pages: []TabPage{inspectPage(a), catalogPage(a), logPage(a)}},
+		Composite{Layout: row(), Children: []Widget{
+			PushButton{AssignTo: &a.intuneBtn, Text: "Build an Intune printer app...", Enabled: false, OnClicked: a.onIntuneWizard},
+			Label{Text: "Coming soon — not yet tested against a real Intune tenant."},
+			HSpacer{},
+		}},
 	}}
 }
 func inspectPage(a *app) TabPage {
 	return TabPage{Title: "Inspect", Layout: pagePadding(), Children: []Widget{
 		Composite{Layout: row(), Children: []Widget{
-			Label{Text: "IP or fixture file:"}, LineEdit{AssignTo: &a.inspectTarget, Accessibility: name("inspect-target")},
+			Label{Text: "IP, fixture or .ssb file:"}, LineEdit{AssignTo: &a.inspectTarget, Accessibility: name("inspect-target")},
 			PushButton{AssignTo: &a.inspectBtn, Text: "Inspect", OnClicked: a.onInspect},
 		}},
 		TextEdit{AssignTo: &a.inspectOut, ReadOnly: true, VScroll: true, HScroll: true, Accessibility: name("inspect-output")},

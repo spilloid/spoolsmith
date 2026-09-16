@@ -12,6 +12,7 @@ import (
 
 	"github.com/spilloid/spoolsmith/internal/inspect"
 	"github.com/spilloid/spoolsmith/internal/install"
+	"github.com/spilloid/spoolsmith/internal/profileset"
 )
 
 func runDiscover(ctx context.Context, args []string, stdout, stderr io.Writer, app application) int {
@@ -48,6 +49,26 @@ func runDiscover(ctx context.Context, args []string, stdout, stderr io.Writer, a
 }
 
 func runProfile(ctx context.Context, args []string, stdout, stderr io.Writer, app application) int {
+	if len(args) > 0 && (args[0] == "export-all" || args[0] == "import-all") {
+		if len(args) != 3 {
+			return usageError(stdout, stderr, "profile", errors.New("use profile export-all <folder> <collection.json> or profile import-all <collection.json> <folder>"))
+		}
+		var count int
+		var err error
+		if args[0] == "export-all" {
+			count, err = profileset.Export(args[1], args[2])
+		} else {
+			count, err = profileset.Import(args[1], args[2])
+		}
+		if err != nil {
+			return commandError(stdout, stderr, "profile "+args[0], err, 1)
+		}
+		return encodeSuccess(stdout, stderr, "profile "+args[0], struct {
+			Count       int    `json:"count"`
+			Destination string `json:"destination"`
+		}{count, args[2]})
+	}
+
 	if len(args) > 0 && args[0] == "edit" {
 		return runProfileEdit(args[1:], stdout, stderr)
 	}

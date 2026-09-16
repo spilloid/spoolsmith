@@ -5,15 +5,14 @@ printer setup from one PC to another, and maps Windows queues using locally inst
 drivers after you review the plan. A small family catalog also provides automatic
 identification and driver guidance.
 
-**v0.5.0 is the published release: the command-line tool and the native Windows desktop app.**
-This release adds the machine-to-machine copy workflow (`printers`, `copy`, `apply`,
-`bundle inspect`), offline provisioning (`--offline`, `status`), and `repoint` for moving an
-existing queue to a new address. Automatic package downloads and broader package coverage are
-still pending.
+**v0.6.0 includes the command-line tool and the native Windows desktop app.**
+The desktop now mirrors the copy, apply, installed-printer inventory, address-change,
+offline setup and local-status workflows. Saved setups can be exported and imported
+in bulk as JSON, and the app has a lighter layout with blue accents.
 
-The copy workflow and the offline workflow were verified against real Windows 11 hardware;
-the desktop app does **not** yet expose copy or apply. See
-[Current limitations](#current-limitations) for exactly what is and is not confirmed.
+The underlying copy and offline workflows have real Windows 11 validation from
+v0.5.0. See [Current limitations](#current-limitations) for the validation boundaries.
+Automatic downloads and Intune packaging remain outside the shipped surface.
 
 ## Copy a printer from one PC to another
 
@@ -87,23 +86,35 @@ the executable is self-contained and can be copied or renamed freely:
 go build -ldflags="-H windowsgui" -o dist/spoolsmith-gui.exe ./cmd/spoolsmith-gui
 ```
 
-The app opens on **Find a printer** and scans the network this PC is already on,
-detected from its connected Wi-Fi or primary Ethernet adapter. Override the subnet
-in **Network or IP** and choose **Scan**, or skip discovery entirely by entering a
-known address under **Already know the printer's IP address?**.
+The app opens on **This PC**, showing Windows' installed printers. Select one to
+**Copy to a file**, **Change address**, or **Remove printer**. Copying can include the
+driver; exporting driver files requires administrator rights.
 
-Selecting a discovered printer and choosing **Set up selected printer** goes
-straight to a preview when that address already has a saved setup — launch, scan,
-review is the whole path. **Set up with different settings** ignores the saved
-setup and opens **Add printer**, where you name the printer and pick its Windows
-driver; the exact installed names come from **Refresh drivers**, and the model the
-printer reported selects an unambiguous match for you to confirm. **Save and
-review** captures the printer's evidence, writes the setup, and opens the preview.
+**Add a printer** combines network discovery and printer settings. Enter a subnet
+and **Scan**, or enter one address and choose **Use IP directly**. Choose a compatible
+installed driver and **Save and review**, or use **Review catalog setup** for catalog
+resolution. **Open a printer file** reads a copied `.ssb`; **More options** on its
+review offers offline setup and updating an existing queue. **Tools → Inspect** can
+also verify a bundle and show its complete manifest without contacting the printer.
 
-**Saved printers** lists what this PC has stored, and set up, update or remove each
-one. **Edit settings** changes a saved file in place, keeping a backup. Profile
-paths and package archives stay portable: relative archive paths resolve beside the
-profile.
+**Open a saved setup** lists reusable profiles. Set up, update, remove, edit with a
+backup, or **Check status** against local Windows configuration. Status does not
+prove reachability or printing. **Open another folder** switches the profile library.
+The default library sits beside the executable; `SPOOLSMITH_PROFILES_DIR` can override it.
+
+**Export all JSON** saves every profile in the current folder into one versioned
+collection. **Import all JSON** validates the entire collection, preserves all profile
+properties and evidence, and refuses existing filenames (including case-only clashes).
+Import saves files only; each Windows change still needs review and confirmation.
+Driver archives are not embedded: carry them separately and preserve their relative
+paths beside the imported profiles. Keep collection exports outside the profile folder.
+
+The CLI exposes the same transfer:
+
+```powershell
+spoolsmith profile export-all profiles printer-setups.json
+spoolsmith profile import-all printer-setups.json imported-profiles
+```
 
 ### Desktop tests
 
@@ -118,9 +129,8 @@ dotnet test test/gui/SpoolSmithGui.Tests
 No test confirms an install or changes a Windows printer. Two intermittent
 failures are known and unresolved: a launched app occasionally exits before the
 tests can attach to it, and a control occasionally still reports itself
-offscreen after its tab is selected. Both are test-harness timing, not app
-behaviour — but they are why this suite does not gate CI yet. Re-run before
-concluding a failure is real.
+offscreen after its tab is selected. These failures need investigation when they recur; the suite is compiled by CI
+and can be run through the manual Desktop validation workflow. It does not gate CI.
 
 `SPOOLSMITH_CAPTURE_SITE_SHOTS=1` additionally regenerates the product site's
 screenshots from the running app.
@@ -322,11 +332,8 @@ Read this before pointing SpoolSmith at a printer you actually depend on:
 - **`uninstall --purge-driver` can retain a driver that is actually unused.** Windows removes a
   queue asynchronously, so the in-use check that guards driver removal can still see the queue
   that was just deleted and keep the driver. Observed on real hardware. Removing such a driver
-  afterwards needs a spooler restart before Windows stops reporting it as in use. Not fixed in
-  v0.5.0.
-- **The desktop app cannot copy or apply.** `printers`, `copy`, `apply`, `bundle inspect` and
-  `repoint` are command-line only in v0.5.0. The GUI keeps its existing find/set-up/review
-  workflow. CLI/GUI parity for the copy workflow is the next release's work.
+  afterwards needs a spooler restart before Windows stops reporting it as in use. Still present in
+  v0.6.0.
 - **A copied bundle carries driver files from another machine's driver store.** That is a
   different provenance from the vendor-installer path: the bundle's hashes detect corruption and
   casual edits, and Windows' own driver-signing enforcement is what actually gates staging. Treat
@@ -400,7 +407,7 @@ and [illustrative example](examples/intune/README.md). Windows/SYSTEM, Company P
 and Intune pilot verification remain pending; automated script tests are not tenant
 validation.
 
-**The Intune commands are not in the v0.5.0 release.** `intune wizard` and `intune build` are
+**The Intune commands are not in the v0.6.0 release.** `intune wizard` and `intune build` are
 present in source and covered by tests, but are deliberately off the shipped command table until
 the packaging has been piloted against a real tenant; build from source to use them. The
 read-only `capabilities` probe does remain, because the packager identifies a compatible CLI by

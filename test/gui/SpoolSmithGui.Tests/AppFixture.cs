@@ -26,7 +26,7 @@ public sealed class AppFixture : IDisposable
     /// Screenshot capture opts back in, because scanning the network the PC is
     /// already on is the behaviour being shown.
     /// </summary>
-    public AppFixture(bool autoScan = false)
+    public AppFixture(bool autoScan = false, string? profilesDirectory = null)
     {
         RepoRoot = FindRepoRoot();
         var exePath = Path.Combine(RepoRoot, "dist", "spoolsmith-gui.exe");
@@ -55,6 +55,7 @@ public sealed class AppFixture : IDisposable
         {
             startInfo.Environment["SPOOLSMITH_GUI_NO_AUTOSCAN"] = "1";
         }
+        if (profilesDirectory != null) startInfo.Environment["SPOOLSMITH_PROFILES_DIR"] = profilesDirectory;
         App = Application.Launch(startInfo);
         Automation = new UIA2Automation();
         MainWindow = GetMainWindowWithRetry();
@@ -197,10 +198,9 @@ public sealed class AppFixture : IDisposable
         tab.Click();
         var marker = title switch
         {
-            "Find a printer" => "discover-cidr",
-            "Add printer" => "capture-target",
-            "Saved printers" => "profiles-dir",
-            "Review and apply" => "mutate-target",
+            "This PC" => "thispc-list",
+            "Add a printer" => "discover-cidr",
+            "Review and apply" => "mutate-output",
             "Tools" => null,
             "Inspect" => "inspect-target",
             "Catalog" => "catalog-output",

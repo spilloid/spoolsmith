@@ -138,3 +138,24 @@ func TestProfilePackageEditAndClear(t *testing.T) {
 		t.Fatalf("%#v %v", loaded, err)
 	}
 }
+
+func TestProfileCollectionCLI(t *testing.T) {
+	source, dest := t.TempDir(), t.TempDir()
+	p := install.Profile{Version: 1, Target: "192.0.2.10", PrinterName: "Test Printer", DriverName: "Test Driver", Evidence: evidence.Evidence{IP: "192.0.2.10", Provenance: "captured", HTTPTitle: "Test printer"}}
+	if err := install.SaveProfile(filepath.Join(source, "office.json"), p); err != nil {
+		t.Fatal(err)
+	}
+	collection := filepath.Join(t.TempDir(), "all.json")
+	for _, args := range [][]string{{"profile", "export-all", source, collection}, {"profile", "import-all", collection, dest}} {
+		var stdout, stderr bytes.Buffer
+		if code := run(context.Background(), args, strings.NewReader(""), &stdout, &stderr, testApplication()); code != 0 {
+			t.Fatalf("%v: %d %s", args, code, stderr.String())
+		}
+		if !strings.Contains(stdout.String(), `"count": 1`) {
+			t.Fatalf("missing result: %s", stdout.String())
+		}
+	}
+	if _, err := install.LoadProfile(filepath.Join(dest, "office.json")); err != nil {
+		t.Fatal(err)
+	}
+}

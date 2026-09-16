@@ -215,9 +215,14 @@ On Windows 11 build 26200, against a real Brother HL-L2315D:
 Still unverified: a live `repoint` mutation (only its preview has been run), and no test page
 has been printed through a bundle-staged driver.
 
-## Known gaps in v0.5.0
+## Current limitations
 
-- The desktop app cannot copy or apply. Command line only for now.
+The v0.6.0 desktop mirrors this workflow: **This PC → Copy to a file** on the source,
+then **Add a printer → Open a printer file** on the destination. Review, preview and
+confirm the plan. **More options** offers offline mode and updating an existing queue.
+**This PC → Change address** reviews an address change; **Tools → Inspect** verifies
+and displays a bundle manifest. The CLI examples above remain supported.
+
 - `uninstall --purge-driver` can leave a driver registered that nothing uses any more. Windows
   removes queues asynchronously, so the check guarding driver removal can still see the queue
   that was just deleted. If you then want the driver genuinely gone, restart the spooler first:

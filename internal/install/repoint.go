@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"reflect"
 	"strings"
 
 	"github.com/spilloid/spoolsmith/internal/catalog"
@@ -20,6 +21,7 @@ type RepointOptions struct {
 	NonInteractive bool
 	DryRun         bool
 	Compact        bool
+	ExpectedPlan   *Plan
 }
 
 // BuildRepointPlan points an existing queue at a different printer address,
@@ -68,13 +70,14 @@ func BuildRepointPlan(current PrinterConfiguration, newAddress string) (Plan, er
 		Strategy:          "existing-windows-driver",
 	}
 	plan := Plan{
-		IPAddress:      ip,
-		PrinterName:    current.PrinterName,
-		PortName:       portName,
-		DriverName:     current.DriverName,
-		Family:         family,
-		Driver:         driver,
-		UpdateExisting: true,
+		PreviousPortName: current.PortName,
+		IPAddress:        ip,
+		PrinterName:      current.PrinterName,
+		PortName:         portName,
+		DriverName:       current.DriverName,
+		Family:           family,
+		Driver:           driver,
+		UpdateExisting:   true,
 	}
 	plan.Commands = installCommands(plan)
 	return plan, nil
@@ -97,6 +100,9 @@ func (w Workflow) RunRepoint(ctx context.Context, env Environment, input io.Read
 	plan, err := BuildRepointPlan(current, options.NewAddress)
 	if err != nil {
 		return failOutcome(outcome, err, ExitUsageError)
+	}
+	if options.ExpectedPlan != nil && !reflect.DeepEqual(*options.ExpectedPlan, plan) {
+		return failOutcome(outcome, errors.New("repoint: plan changed since preview; review a new preview before proceeding"), ExitNotConfirmed)
 	}
 	outcome.Plan = &plan
 	if fingerprint, hashErr := FingerprintPlan(plan); hashErr == nil {

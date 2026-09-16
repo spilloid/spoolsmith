@@ -21,18 +21,19 @@ type Environment interface {
 
 // Plan is the complete, reviewable set of commands for one operation.
 type Plan struct {
-	IPAddress      string                `json:"ip_address,omitempty"`
-	PrinterName    string                `json:"printer_name"`
-	PortName       string                `json:"port_name"`
-	DriverName     string                `json:"driver_name,omitempty"`
-	Family         catalog.Family        `json:"family,omitempty"`
-	Driver         catalog.DriverPackage `json:"driver,omitempty"`
-	Commands       []string              `json:"commands"`
-	ForcedOverride bool                  `json:"forced_override"`
-	UpdateExisting bool                  `json:"update_existing"`
-	Offline        bool                  `json:"offline,omitempty"`
-	DriverPackage  *PackageSelection     `json:"driver_package,omitempty"`
-	BundleDriver   *BundleDriver         `json:"bundle_driver,omitempty"`
+	PreviousPortName string                `json:"previous_port_name,omitempty"`
+	IPAddress        string                `json:"ip_address,omitempty"`
+	PrinterName      string                `json:"printer_name"`
+	PortName         string                `json:"port_name"`
+	DriverName       string                `json:"driver_name,omitempty"`
+	Family           catalog.Family        `json:"family,omitempty"`
+	Driver           catalog.DriverPackage `json:"driver,omitempty"`
+	Commands         []string              `json:"commands"`
+	ForcedOverride   bool                  `json:"forced_override"`
+	UpdateExisting   bool                  `json:"update_existing"`
+	Offline          bool                  `json:"offline,omitempty"`
+	DriverPackage    *PackageSelection     `json:"driver_package,omitempty"`
+	BundleDriver     *BundleDriver         `json:"bundle_driver,omitempty"`
 }
 
 // Result records the plan and every command attempted.

@@ -21,8 +21,8 @@ public sealed class FunctionalTests : IDisposable
 
     public FunctionalTests()
     {
-        _fixture = new AppFixture();
-        _testDirectory = Path.Combine(_fixture.RepoRoot, "dist", "gui-test-data", Guid.NewGuid().ToString("N"));
+        _testDirectory = Path.Combine(Path.GetTempPath(), "spoolsmith-gui-test-" + Guid.NewGuid().ToString("N"));
+        _fixture = new AppFixture(profilesDirectory: _testDirectory);
     }
 
     public void Dispose()
@@ -35,16 +35,16 @@ public sealed class FunctionalTests : IDisposable
     public void MainWindow_launches_with_expected_title()
     {
         Assert.Equal("SpoolSmith", _fixture.MainWindow.Title);
-        Assert.False(Find(_fixture.MainWindow, "discover-cidr").IsOffscreen);
+        Assert.False(Find(_fixture.MainWindow, "thispc-list").IsOffscreen);
         var visibleTabs = _fixture.MainWindow.FindAllDescendants(cf => cf.ByControlType(ControlType.TabItem))
             .Where(tab => !tab.IsOffscreen).Select(tab => tab.Name).ToArray();
-        Assert.Equal(new[] { "Find a printer", "Add printer", "Saved printers", "Review and apply", "Tools" }, visibleTabs);
+        Assert.Equal(new[] { "This PC", "Add a printer", "Review and apply", "Tools" }, visibleTabs);
     }
 
     [StaFact]
     public void Scan_completes_and_populates_discovery_results()
     {
-        _fixture.SelectTab("Find a printer");
+        _fixture.SelectTab("Add a printer");
         // CI only probes loopback. A local operator can opt into a real subnet
         // and require a known candidate to appear in the native results list.
         var cidr = Environment.GetEnvironmentVariable("SPOOLSMITH_DISCOVERY_CIDR") ?? "127.0.0.1/32";
@@ -109,120 +109,78 @@ public sealed class FunctionalTests : IDisposable
     }
 
     [StaFact]
-    public void Updating_settings_requires_a_profile_and_cannot_enable_execution()
+    public void Empty_review_cannot_enable_execution()
     {
         _fixture.SelectTab("Review and apply");
-        var execute = FindButton(_fixture.MainWindow, "Add printer...");
-        Assert.False(execute.IsEnabled);
-        var configure = Find(_fixture.MainWindow, "Update settings").AsRadioButton();
-        configure.Click();
-        Assert.True(configure.IsChecked);
-        // These constraints live in the advanced panel, which is hidden until
-        // asked for, and a hidden control is absent from the automation tree.
-        _fixture.MainWindow.FindFirstDescendant(cf => cf.ByName("Advanced options"))!.AsCheckBox().Click();
-        WaitUntil(() => !IsHidden("Use a saved profile"), "Advanced options did not open.");
-        Assert.True(Find(_fixture.MainWindow, "Use a saved profile").AsCheckBox().IsChecked);
-        Assert.False(Find(_fixture.MainWindow, "Use a saved profile").IsEnabled);
-        Assert.False(Find(_fixture.MainWindow, "mutate-force-family").IsEnabled);
-        var output = Find(_fixture.MainWindow, "mutate-output").AsTextBox();
-        FindButton(_fixture.MainWindow, "Preview changes").Invoke();
-        WaitForText(output, t => t.Contains("profile", StringComparison.OrdinalIgnoreCase));
-        Assert.False(FindButton(_fixture.MainWindow, "Update settings...").IsEnabled);
+        Assert.False(FindButton(_fixture.MainWindow, "Apply...").IsEnabled);
+        Assert.False(FindButton(_fixture.MainWindow, "Preview changes").IsEnabled);
     }
 
-    /// <summary>
-    /// walk's SetVisible is a no-op while a control's tab page is hidden — the
-    /// control already reports itself invisible through its hidden ancestor —
-    /// so a panel hidden during startup silently reappears the first time its
-    /// page is opened. Both optional panels were doing exactly that, showing an
-    /// empty editor and the advanced options to every operator.
-    /// </summary>
     [StaFact]
-    public void Optional_panels_stay_hidden_until_they_are_asked_for()
+    public void Direct_IP_opens_settings_on_the_same_page()
     {
-        _fixture.SelectTab("Saved printers");
-        Assert.True(IsHidden("Edit saved settings"), "The saved-settings editor opened without being asked for.");
-
-        _fixture.SelectTab("Review and apply");
-        Assert.True(IsHidden("Preview only (disable installation)"), "Advanced options opened without being asked for.");
-
-        _fixture.MainWindow.FindFirstDescendant(cf => cf.ByName("Advanced options"))!.AsCheckBox().Click();
-        WaitUntil(() => !IsHidden("Preview only (disable installation)"), "Advanced options did not open when requested.");
+        _fixture.SelectTab("Add a printer");
+        SetText(Find(_fixture.MainWindow, "discover-cidr").AsTextBox(), "192.0.2.40");
+        FindButton(_fixture.MainWindow, "Use IP directly").Invoke();
+        WaitUntil(() => !IsHidden("capture-target"), "Settings did not open.");
+        Assert.Equal("192.0.2.40", Find(_fixture.MainWindow, "capture-target").AsTextBox().Text);
+        Assert.False(FindButton(_fixture.MainWindow, "Save and review").IsOffscreen);
     }
 
-    /// <summary>
-    /// A control walk has hidden leaves the automation tree entirely, so being
-    /// absent is the primary signal. IsOffscreen additionally catches a control
-    /// that is present but clipped out of view. Native static labels do not all
-    /// publish IsOffscreen through UIA2; for those, presence is the answer.
-    /// </summary>
+    [StaFact]
+    public void Optional_panels_stay_hidden_until_requested()
+    {
+        _fixture.SelectTab("Add a printer");
+        Assert.True(IsHidden("capture-target"));
+        _fixture.SelectTab("Review and apply");
+        Assert.True(IsHidden("Preview only (never apply)"));
+        Find(_fixture.MainWindow, "More options").AsCheckBox().Click();
+        WaitUntil(() => !IsHidden("Preview only (never apply)"), "More options did not open.");
+        Assert.True(IsHidden("Also remove the driver, if nothing else uses it"));
+        Assert.True(IsHidden("Do not contact the printer (its identity will not be checked)"));
+    }
+
     private bool IsHidden(string accessibleName)
     {
         var element = _fixture.MainWindow.FindFirstDescendant(cf => cf.ByName(accessibleName));
-        if (element == null) return true;
-        try
-        {
-            return element.IsOffscreen;
-        }
-        catch (FlaUI.Core.Exceptions.PropertyNotSupportedException)
-        {
-            return false;
-        }
+        return element == null || element.IsOffscreen;
+    }
+
+    private Window OpenSavedSetups()
+    {
+        _fixture.SelectTab("Add a printer");
+        FindButton(_fixture.MainWindow, "Open a saved setup...").Invoke();
+        Window? dialog = null;
+        WaitUntil(() => (dialog = _fixture.App.GetAllTopLevelWindows(_fixture.Automation)
+            .FirstOrDefault(w => w.Title == "Saved printer setups")) != null, "Saved setups did not open.");
+        return dialog!;
     }
 
     [StaFact]
-    public void Missing_saved_printer_folder_explains_how_to_get_started()
+    public void Empty_saved_folder_exposes_import_without_creating_files()
     {
-        _fixture.SelectTab("Saved printers");
-        var missingDirectory = Path.Combine(_testDirectory, "not-created");
-        SetText(Find(_fixture.MainWindow, "profiles-dir").AsTextBox(), missingDirectory);
-        FindButton(_fixture.MainWindow, "Refresh").Invoke();
-
-        var text = WaitForText(Find(_fixture.MainWindow, "profiles-output").AsTextBox(),
-            t => t.Contains("No saved printers", StringComparison.OrdinalIgnoreCase));
-        Assert.Contains("Add printer", text, StringComparison.OrdinalIgnoreCase);
-        Assert.Empty(Find(_fixture.MainWindow, "profiles-list").AsListBox().Items);
-        Assert.False(FindButton(_fixture.MainWindow, "Set up printer").IsEnabled);
-        Assert.False(FindButton(_fixture.MainWindow, "Update printer").IsEnabled);
-        Assert.False(FindButton(_fixture.MainWindow, "Remove printer").IsEnabled);
-        Assert.False(Directory.Exists(missingDirectory));
+        var dialog = OpenSavedSetups();
+        Assert.Contains("No saved setups", Find(dialog, "saved-detail").AsTextBox().Text);
+        Assert.False(FindButton(dialog, "Set up this printer").IsEnabled);
+        Assert.True(FindButton(dialog, "Import all JSON...").IsEnabled);
+        Assert.True(FindButton(dialog, "Export all JSON...").IsEnabled);
+        FindButton(dialog, "Close").Invoke();
+        Assert.False(Directory.Exists(_testDirectory));
     }
 
     [StaTheory]
-    [InlineData("Set up printer", "Add printer", "Add printer...")]
-    [InlineData("Update printer", "Update settings", "Update settings...")]
-    [InlineData("Remove printer", "Remove printer", "Remove printer...")]
-    public void Saved_printer_selection_shows_details_and_hands_off_to_review(string action, string mode, string applyCaption)
+    [InlineData("Set up this printer", "Add printer...")]
+    [InlineData("Update to match", "Update printer...")]
+    [InlineData("Remove...", "Remove printer...")]
+    public void Saved_setup_hands_the_named_operation_to_review(string action, string applyCaption)
     {
-        var profilePath = CreateSavedPrinter();
-        _fixture.SelectTab("Saved printers");
-        SetText(Find(_fixture.MainWindow, "profiles-dir").AsTextBox(), _testDirectory);
-        FindButton(_fixture.MainWindow, "Refresh").Invoke();
-
-        var list = Find(_fixture.MainWindow, "profiles-list").AsListBox();
-        Assert.Single(list.Items);
-        list.Items[0].Click();
-        var details = WaitForText(Find(_fixture.MainWindow, "profiles-output").AsTextBox(),
-            t => t.Contains("Test office printer", StringComparison.Ordinal));
-        Assert.Contains("Test driver", details);
-        Assert.Contains("127.0.0.1", details);
-        FindButton(_fixture.MainWindow, action).Invoke();
-
-        var target = Find(_fixture.MainWindow, "mutate-target").AsTextBox();
-        WaitUntil(() => !target.IsOffscreen, "Saved printer action did not open Review & apply.");
-        Assert.Equal(profilePath, target.Text);
-        // The saved profile is what the review acts on, shown by the field's
-        // own label rather than the advanced checkbox that mirrors it.
-        Assert.False(IsHidden("Profile file:"));
-        // Exactly one operation may be selected. walk's SetChecked sets only the
-        // control it is called on, so a handoff that forgets to clear the others
-        // leaves two modes checked and the preview can run the wrong operation.
-        var modes = _fixture.MainWindow.FindAllDescendants(cf => cf.ByControlType(ControlType.RadioButton))
-            .Where(radio => radio.Name is "Add printer" or "Update settings" or "Remove printer")
-            .ToArray();
-        Assert.Equal(3, modes.Length);
-        Assert.Equal(new[] { mode }, modes.Where(radio => radio.AsRadioButton().IsChecked).Select(radio => radio.Name).ToArray());
+        CreateSavedPrinter();
+        var dialog = OpenSavedSetups();
+        Assert.Contains("Test office printer", Find(dialog, "saved-detail").AsTextBox().Text);
+        FindButton(dialog, action).Invoke();
+        WaitUntil(() => !IsHidden("review-summary"), "Review did not open.");
         Assert.False(FindButton(_fixture.MainWindow, applyCaption).IsEnabled);
+        Assert.True(FindButton(_fixture.MainWindow, "Preview changes").IsEnabled);
     }
 
     private string CreateSavedPrinter()

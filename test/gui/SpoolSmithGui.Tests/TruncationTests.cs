@@ -40,7 +40,7 @@ public sealed class TruncationTests : IDisposable
     {
         get
         {
-            foreach (var tab in new[] { "Find a printer", "Add printer", "Saved printers", "Review and apply", "Inspect", "Catalog", "Action log" })
+            foreach (var tab in new[] { "This PC", "Add a printer", "Review and apply", "Inspect", "Catalog", "Action log" })
             {
                 yield return new object[] { tab, false, false };
                 yield return new object[] { tab, true, false };

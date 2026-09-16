@@ -99,3 +99,47 @@ func TestRunRepointDryRunMutatesNothing(t *testing.T) {
 type discardWriter struct{}
 
 func (discardWriter) Write(p []byte) (int, error) { return len(p), nil }
+
+func TestRepointExecutionMustMatchReviewedPlan(t *testing.T) {
+	for _, changed := range []bool{false, true} {
+		env := workflowEnvironment(true, true)
+		w := NewWorkflow()
+		opts := RepointOptions{PrinterName: "Test Printer", NewAddress: "192.0.2.50", DryRun: true}
+		preview, code := w.RunRepoint(t.Context(), env, strings.NewReader(""), discardWriter{}, false, opts)
+		if code != ExitSuccess {
+			t.Fatal(preview)
+		}
+		opts.DryRun = false
+		opts.Yes = true
+		opts.ExpectedPlan = preview.Plan
+		if changed {
+			env.configuration.DriverName = "Different driver after preview"
+		}
+		outcome, code := w.RunRepoint(t.Context(), env, strings.NewReader(""), discardWriter{}, false, opts)
+		if changed {
+			if code != ExitNotConfirmed || len(env.ran) != 0 {
+				t.Fatalf("changed plan ran: %#v", outcome)
+			}
+		} else if code != ExitSuccess || len(env.ran) == 0 {
+			t.Fatalf("matching plan failed: %#v", outcome)
+		}
+	}
+}
+
+func TestRepointRejectsQueueMovedAfterPreview(t *testing.T) {
+	env := workflowEnvironment(true, true)
+	w := NewWorkflow()
+	opts := RepointOptions{PrinterName: "Test Printer", NewAddress: "192.0.2.50", DryRun: true}
+	preview, code := w.RunRepoint(t.Context(), env, strings.NewReader(""), discardWriter{}, false, opts)
+	if code != ExitSuccess {
+		t.Fatal(preview)
+	}
+	env.configuration.PortName = "Changed-port"
+	opts.DryRun = false
+	opts.Yes = true
+	opts.ExpectedPlan = preview.Plan
+	outcome, code := w.RunRepoint(t.Context(), env, strings.NewReader(""), discardWriter{}, false, opts)
+	if code != ExitNotConfirmed || len(env.ran) != 0 {
+		t.Fatalf("moved queue mutated: %#v", outcome)
+	}
+}
