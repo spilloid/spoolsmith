@@ -73,12 +73,17 @@ function Invoke-SpoolSmith([string]$Directory,[string]$Operation,[bool]$Offline,
     if ($Operation -ne 'status') { $arguments += @('--yes','--non-interactive') }
     if ($Offline -and $Operation -ne 'status' -and $Operation -ne 'remove') { $arguments += '--offline' }
     $process = Start-Process -FilePath (Join-Path $Directory 'spoolsmith.exe') -ArgumentList $arguments -PassThru -NoNewWindow -RedirectStandardOutput $outFile -RedirectStandardError $errFile
+    # Windows PowerShell 5.1 can lose ExitCode after WaitForExit unless the
+    # process handle has been cached first. Reproduced with both exit 0 and 3.
+    $processHandle = $process.Handle
     if (-not $process.WaitForExit(600000)) {
         & (Join-Path $env:SystemRoot 'System32\taskkill.exe') /PID $process.Id /T /F | Out-Null
         return @{Code=1460; Data=$null; Error='Timed out after ten minutes; review durable logs before retry'}
     }
     $process.WaitForExit()
     $code=$process.ExitCode
+    $process.Dispose()
+    if ($null -eq $code) { throw 'Native process exited without a readable exit code; refusing to report success' }
     $data=$null
     if (Test-Path -LiteralPath $outFile) { try { $data=Read-JSON $outFile } catch {} }
     return @{Code=$code; Data=$data; Error=(Get-Content -LiteralPath $errFile -Raw -Encoding UTF8)}
