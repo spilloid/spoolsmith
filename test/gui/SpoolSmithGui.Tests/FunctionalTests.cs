@@ -181,8 +181,10 @@ public sealed class FunctionalTests : IDisposable
         var dialog = OpenSavedSetups();
         Assert.Contains("Test office printer", Find(dialog, "saved-detail").AsTextBox().Text);
         FindButton(dialog, action).Invoke();
-        try { WaitUntil(() => !IsHidden("review-summary"), "Review did not open."); }
+        try { WaitUntil(() => !IsHidden("mutate-output"), "Review did not open."); }
         catch { _fixture.MainWindow.CaptureToFile(Path.Combine(_fixture.RepoRoot,"dist","review-handoff-failure.png")); throw; }
+        Assert.Contains(_fixture.MainWindow.FindAllDescendants(cf => cf.ByControlType(ControlType.Text)),
+            label => label.Name.Contains("Test office printer", StringComparison.Ordinal) && !label.IsOffscreen);
         Assert.False(FindButton(_fixture.MainWindow, applyCaption).IsEnabled);
         Assert.True(FindButton(_fixture.MainWindow, "Preview changes").IsEnabled);
     }
