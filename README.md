@@ -409,7 +409,8 @@ validation.
 
 **The Intune commands are not in the v0.6.0 release.** `intune wizard` and `intune build` are
 present in source and covered by tests, but are deliberately off the shipped command table until
-the packaging has been piloted against a real tenant; build from source to use them. The
+the packaging has been piloted against a real tenant. The internal implementation and
+tests remain in source; rebuilding alone does not enable the disabled command. The
 read-only `capabilities` probe does remain, because the packager identifies a compatible CLI by
 finding that marker string inside the executable. The offline provisioning commands above
 (`--offline`, `status`) *are* released.

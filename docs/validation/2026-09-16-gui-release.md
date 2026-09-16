@@ -37,6 +37,13 @@ including direct-IP layout, dialog close, and an offline profile preview that
 reports the absent driver while leaving Apply disabled. Its three remaining
 failures were the handoff test lookup described above, not a failure to navigate.
 
+The final [Desktop validation run](https://github.com/spilloid/spoolsmith/actions/runs/35102287642)
+passed **27/27** checks on commit `fd24fa4`. This includes every saved-setup handoff,
+empty-review gating, modal close, direct-IP setup, minimum/default-size captions,
+fixture inspection, catalog, loopback discovery and offline missing-driver refusal.
+[Linux and Windows CI](https://github.com/spilloid/spoolsmith/actions/runs/35102287763)
+also passed for that commit. Subsequent release-record changes are documentation only.
+
 ## Boundaries
 
 These checks do not constitute a new physical-printer pilot. The previous v0.5.0

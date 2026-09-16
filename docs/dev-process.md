@@ -1,5 +1,25 @@
 # Dev Process Log
 
+## 2026-09-16: v0.6.0 desktop parity and bulk JSON transfer
+
+Completed the operator-authorized GUI handoff and workspace TODO requests. This PC
+now mirrors queue inventory, copy, repoint and removal; Add a printer handles saved
+profiles and bundles, including offline and update options. Tools can inspect bundles,
+and saved setups expose local status plus shared CLI/GUI bulk JSON transfer. Native
+styling uses a blue header, light surfaces and Segoe UI without replacing the toolkit.
+
+Address-change execution is bound to the preview's driver and original port. Copy and
+bundle-driver preparation are shared between front ends. Imports validate the entire
+collection, preserve all supported properties and refuse collisions.
+
+The real hosted desktop suite found a clipped direct-IP form and a misplaced footer;
+both were fixed. Some failed checks were test lookup errors rather than application
+failures, as screenshots showed. The final run passed 27/27; Linux and Windows CI
+passed too. See `validation/2026-09-16-gui-release.md` for findings, exact runs and
+hardware-validation boundaries. Release packaging now includes both binaries, stamps
+the CLI, uses a console-free GUI and builds the selected release tag.
+
+
 ## 2026-09-15: Windows 11 VM pilot executed; GUI manifest embedded
 
 Ran the 2026-09-14 runbook against the operator's Windows 11 Pro VM (build 26200)
