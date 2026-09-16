@@ -162,7 +162,7 @@ func TestDetectionChecksRealConfigurationAndEmitsOnlyOnMatch(t *testing.T) {
 	}
 	path := filepath.Join(t.TempDir(), "detect.ps1")
 	os.WriteFile(path, p.files["detect.ps1"], 0600)
-	for _, failure := range []string{"", "queue", "driver", "registration", "port", "address", "protocol", "number", "revision", "pending", "spooler", "tampered-profile"} {
+	for _, failure := range []string{"", "queue", "driver", "registration", "port", "address", "protocol", "number", "revision", "pending", "spooler", "tampered-profile", "reparse", "untrusted-owner", "writable-state"} {
 		t.Run("mismatch-"+failure, func(t *testing.T) {
 			m := p.Manifest
 			if failure == "revision" {
@@ -173,6 +173,8 @@ func TestDetectionChecksRealConfigurationAndEmitsOnlyOnMatch(t *testing.T) {
 			}
 			b, _ := json.Marshal(m)
 			prelude := `$m=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String(` + psString(base64.StdEncoding.EncodeToString(b)) + `))|ConvertFrom-Json;$mode=` + psString(failure) + `;
+function Get-Item {param($LiteralPath,[switch]$Force);$attributes=0;if($mode -eq 'reparse'){$attributes=1024};[pscustomobject]@{Attributes=$attributes;Parent=$null}}
+function Get-Acl {param($LiteralPath);$acl=[pscustomobject]@{};$acl|Add-Member ScriptMethod GetOwner {param($type);$sid='S-1-5-18';if($mode -eq 'untrusted-owner'){$sid='S-1-5-11'};[pscustomobject]@{Value=$sid}};$acl|Add-Member ScriptMethod GetAccessRules {param($explicit,$inherited,$type);if($mode -eq 'writable-state'){[pscustomobject]@{AccessControlType='Allow';FileSystemRights=2;IdentityReference=[pscustomobject]@{Value='S-1-5-11'}}}};return $acl}
 function Get-Content {param($LiteralPath,[switch]$Raw) return ($m|ConvertTo-Json -Depth 20)}
 function Test-Path {param($LiteralPath) return ($mode -eq 'pending')}
 function Get-Printer { [CmdletBinding()]param();if($mode -eq 'spooler'){throw 'spooler down'};if($mode -eq 'queue'){return};$driver=$m.profile.driver_name;if($mode -eq 'driver'){$driver='Other'};[pscustomobject]@{Name=$m.profile.printer_name;DriverName=$driver;PortName=('SpoolSmith-'+$m.profile.target)} }

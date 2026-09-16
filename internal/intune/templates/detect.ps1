@@ -4,6 +4,23 @@ $ErrorActionPreference='Stop'
 try {
     if (-not [Environment]::Is64BitProcess) { exit 1 }
     $root=Join-Path ([Environment]::GetFolderPath('CommonApplicationData')) 'SpoolSmith\Deployments\{{.ID}}'
+    # This script is uploaded standalone, so validate the state trust boundary here.
+    # Check both the directory chain and file: a protected parent does not repair
+    # an explicitly weakened child ACL. Never follow a reparse point.
+    $paths=@((Split-Path (Split-Path $root)),(Split-Path $root),$root,(Join-Path $root 'current.json'))
+    foreach ($path in $paths) {
+        $item=Get-Item -LiteralPath $path -Force
+        while ($null -ne $item) {
+            if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) { exit 1 }
+            if ($item -is [IO.FileInfo]) { $item=$item.Directory } else { $item=$item.Parent }
+        }
+        $acl=Get-Acl -LiteralPath $path
+        if ($acl.GetOwner([Security.Principal.SecurityIdentifier]).Value -notin @('S-1-5-18','S-1-5-32-544')) { exit 1 }
+        $write=[Security.AccessControl.FileSystemRights]'Write,Modify,FullControl,Delete,ChangePermissions,TakeOwnership'
+        foreach ($rule in $acl.GetAccessRules($true,$true,[Security.Principal.SecurityIdentifier])) {
+            if ($rule.AccessControlType -eq 'Allow' -and ($rule.FileSystemRights -band $write) -and $rule.IdentityReference.Value -notin @('S-1-5-18','S-1-5-32-544')) { exit 1 }
+        }
+    }
     $manifest=Get-Content -LiteralPath (Join-Path $root 'current.json') -Raw -Encoding UTF8 | ConvertFrom-Json
     if ($manifest.id -ne '{{.ID}}' -or $manifest.revision -ne {{.Revision}} -or $manifest.configuration_sha256 -ne '{{.ConfigSHA256}}') { exit 1 }
     if (Test-Path -LiteralPath (Join-Path $root 'pending.json')) { exit 1 }

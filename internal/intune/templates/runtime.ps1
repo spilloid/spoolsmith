@@ -1,6 +1,8 @@
 # Shared endpoint helpers. All printer operations go through the pinned CLI.
 $ErrorActionPreference = 'Stop'
-[Console]::OutputEncoding = New-Object Text.UTF8Encoding($false)
+# Console encoding is best-effort under service hosts without a console handle.
+# JSON file I/O below specifies UTF-8 independently.
+try { [Console]::OutputEncoding = New-Object Text.UTF8Encoding($false) } catch {}
 function Assert-Platform {
     if (-not [Environment]::Is64BitProcess) { throw 'Run this script in 64-bit PowerShell' }
     if ($env:PROCESSOR_ARCHITECTURE -ne 'AMD64') { throw 'This deployment requires Windows x64' }
