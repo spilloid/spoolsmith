@@ -14,6 +14,7 @@ import (
 	"github.com/spilloid/spoolsmith/internal/catalog"
 	"github.com/spilloid/spoolsmith/internal/inspect"
 	"github.com/spilloid/spoolsmith/internal/install"
+	"github.com/spilloid/spoolsmith/internal/intune"
 	"github.com/spilloid/spoolsmith/internal/probe"
 )
 
@@ -79,6 +80,16 @@ func run(ctx context.Context, args []string, input io.Reader, stdout, stderr io.
 	}
 
 	switch args[0] {
+	// capabilities stays on the command table even though `intune` itself is
+	// held out of this release: the packager identifies a compatible CLI by
+	// scanning the executable for this marker string, so removing the only
+	// reference to it also removes it from the compiled binary, and every
+	// build-from-source packaging run would reject its own fresh CLI.
+	case "capabilities":
+		if len(args) != 1 {
+			return usageError(stdout, stderr, "capabilities", errors.New("capabilities accepts no arguments"))
+		}
+		return encodeSuccess(stdout, stderr, "capabilities", []string{intune.EndpointCapability})
 	case "drivers":
 		if len(args) != 1 {
 			return usageError(stdout, stderr, "drivers", errors.New("drivers accepts no arguments"))

@@ -400,7 +400,9 @@ and [illustrative example](examples/intune/README.md). Windows/SYSTEM, Company P
 and Intune pilot verification remain pending; automated script tests are not tenant
 validation.
 
-**The Intune commands are not in the v0.5.0 release.** `intune wizard`, `intune build` and
-`capabilities` are present in source and covered by tests, but are deliberately off the shipped
-command table until the packaging has been piloted against a real tenant. The offline
-provisioning commands above (`--offline`, `status`) *are* released.
+**The Intune commands are not in the v0.5.0 release.** `intune wizard` and `intune build` are
+present in source and covered by tests, but are deliberately off the shipped command table until
+the packaging has been piloted against a real tenant; build from source to use them. The
+read-only `capabilities` probe does remain, because the packager identifies a compatible CLI by
+finding that marker string inside the executable. The offline provisioning commands above
+(`--offline`, `status`) *are* released.
