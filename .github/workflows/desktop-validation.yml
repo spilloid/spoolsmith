@@ -20,12 +20,12 @@ jobs:
       - name: Exercise desktop and capture screens
         env:
           SPOOLSMITH_CAPTURE_SITE_SHOTS: '1'
-        run: dotnet test test/gui/SpoolSmithGui.Tests --logger 'trx;LogFileName=desktop.trx' --results-directory dist/gui-results
+        run: dotnet test test/gui/SpoolSmithGui.Tests --blame-hang-timeout 90s --logger 'trx;LogFileName=desktop.trx' --results-directory dist/gui-results
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: desktop-validation
           path: |
             dist/gui-results
-            dist/*failure.png
+            dist/*.png
             docs/img/*.png

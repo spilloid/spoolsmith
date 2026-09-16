@@ -124,6 +124,7 @@ public sealed class FunctionalTests : IDisposable
         FindButton(_fixture.MainWindow, "Use IP directly").Invoke();
         WaitUntil(() => !IsHidden("capture-target"), "Settings did not open.");
         Assert.Equal("192.0.2.40", Find(_fixture.MainWindow, "capture-target").AsTextBox().Text);
+        _fixture.MainWindow.CaptureToFile(Path.Combine(_fixture.RepoRoot,"dist","gui-direct-ip.png"));
         Assert.False(FindButton(_fixture.MainWindow, "Save and review").IsOffscreen);
     }
 
@@ -151,8 +152,9 @@ public sealed class FunctionalTests : IDisposable
         _fixture.SelectTab("Add a printer");
         FindButton(_fixture.MainWindow, "Open a saved setup...").Invoke();
         Window? dialog = null;
-        WaitUntil(() => (dialog = _fixture.App.GetAllTopLevelWindows(_fixture.Automation)
-            .FirstOrDefault(w => w.Title == "Saved printer setups")) != null, "Saved setups did not open.");
+        try { WaitUntil(() => (dialog = _fixture.MainWindow.ModalWindows.Concat(_fixture.App.GetAllTopLevelWindows(_fixture.Automation))
+            .FirstOrDefault(w => w.Title == "Saved printer setups")) != null, "Saved setups did not open."); }
+        catch { _fixture.MainWindow.CaptureToFile(Path.Combine(_fixture.RepoRoot,"dist","saved-dialog-failure.png")); throw; }
         return dialog!;
     }
 

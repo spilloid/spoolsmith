@@ -64,7 +64,7 @@ public sealed class TruncationTests : IDisposable
         _fixture.SelectTab(tabTitle);
         if (advanced)
         {
-            _fixture.MainWindow.FindFirstDescendant(cf => cf.ByName("Advanced options"))!.AsCheckBox().Click();
+            _fixture.MainWindow.FindFirstDescendant(cf => cf.ByName("More options"))!.AsCheckBox().Click();
         }
         var condition = TextBearingTypes
             .Select(t => (FlaUI.Core.Conditions.ConditionBase)_fixture.MainWindow.ConditionFactory.ByControlType(t))

@@ -63,8 +63,10 @@ func main() {
 		Layout: VBox{MarginsZero: true, Spacing: 0},
 		Children: []Widget{
 			Composite{Background: SolidColorBrush{Color: walk.RGB(24, 76, 133)}, Layout: pagePadding(), Children: []Widget{
-				Label{Text: "SpoolSmith", TextColor: walk.RGB(255, 255, 255), Font: Font{Family: "Segoe UI", PointSize: 20, Bold: true}},
-				Label{Text: "See what this PC has, add a printer, or copy one to another PC.", TextColor: walk.RGB(230, 240, 255)},
+				Composite{Layout: row(), Children: []Widget{
+					Label{Text: "SpoolSmith", TextColor: walk.RGB(255, 255, 255), Font: Font{Family: "Segoe UI", PointSize: 18, Bold: true}},
+					HSpacer{}, Label{Text: "Printers, ready to carry.", TextColor: walk.RGB(230, 240, 255)},
+				}},
 			}},
 			TabWidget{AssignTo: &a.tabs, Pages: []TabPage{
 				thisPCPage(a), addPage(a), mutatePage(a), toolsPage(a),
@@ -81,10 +83,11 @@ func main() {
 	// so every nested tab descendant receives its own native control ID.
 	a.mw.ToolBar().SetVisible(false)
 	parent := a.tabs.Parent()
+	tabIndex := parent.Children().Index(a.tabs)
 	if err := a.tabs.SetParent(nil); err != nil {
 		log.Fatal(err)
 	}
-	if err := a.tabs.SetParent(parent); err != nil {
+	if err := parent.Children().Insert(tabIndex, a.tabs); err != nil {
 		log.Fatal(err)
 	}
 	a.tabs.SetVisible(true)
@@ -146,34 +149,36 @@ func addPage(a *app) TabPage {
 	return TabPage{Title: "Add a printer", Background: SolidColorBrush{Color: walk.RGB(250, 251, 253)}, Layout: pagePadding(), Children: []Widget{
 		heading("Add a printer to this PC"),
 		Label{Text: "Find it on the network, or open a printer file or saved setup."},
-		Composite{Layout: row(), Children: []Widget{
-			Label{Text: "Network or IP:"},
-			LineEdit{AssignTo: &a.discoverCIDR, CueBanner: "192.168.1.0/24 or 192.168.1.50", Accessibility: name("discover-cidr")},
-			PushButton{AssignTo: &a.discoverBtn, Text: "Scan", OnClicked: a.onDiscover},
-			PushButton{Text: "Use IP directly", OnClicked: func() {
-				target := strings.TrimSpace(a.discoverCIDR.Text())
-				ip, err := netip.ParseAddr(target)
-				if err != nil || ip.Zone() != "" {
-					showErr(a.mw, "Printer address", fmt.Errorf("enter a single printer IP address to continue"))
-					return
-				}
-				if !a.reviewSavedPrinter(ip.String()) {
-					a.openPrinterSetup(evidence.Evidence{IP: ip.String()})
-				}
+		Composite{AssignTo: &a.searchGroup, Layout: VBox{MarginsZero: true, Spacing: 10}, Children: []Widget{
+			Composite{Layout: row(), Children: []Widget{
+				Label{Text: "Network or IP:"},
+				LineEdit{AssignTo: &a.discoverCIDR, CueBanner: "192.168.1.0/24 or 192.168.1.50", Accessibility: name("discover-cidr")},
+				PushButton{AssignTo: &a.discoverBtn, Text: "Scan", OnClicked: a.onDiscover},
+				PushButton{Text: "Use IP directly", OnClicked: func() {
+					target := strings.TrimSpace(a.discoverCIDR.Text())
+					ip, err := netip.ParseAddr(target)
+					if err != nil || ip.Zone() != "" {
+						showErr(a.mw, "Printer address", fmt.Errorf("enter a single printer IP address to continue"))
+						return
+					}
+					if !a.reviewSavedPrinter(ip.String()) {
+						a.openPrinterSetup(evidence.Evidence{IP: ip.String()})
+					}
+				}},
+				PushButton{AssignTo: &a.discoverCancelBtn, Text: "Cancel scan", Enabled: false, OnClicked: a.onCancelDiscovery},
 			}},
-			PushButton{AssignTo: &a.discoverCancelBtn, Text: "Cancel scan", Enabled: false, OnClicked: a.onCancelDiscovery},
+			Label{AssignTo: &a.networkStatus, Text: "Looking for your Wi-Fi or Ethernet network..."},
+			ListBox{AssignTo: &a.discoverList, MinSize: Size{Height: 96}, Accessibility: name("discover-results"), OnItemActivated: a.onUseDiscovered},
+			Composite{Layout: row(), Children: []Widget{
+				PushButton{AssignTo: &a.discoverUseBtn, Text: "Use this printer", Enabled: false, OnClicked: a.onUseDiscovered},
+				PushButton{AssignTo: &a.discoverDetailsBtn, Text: "Scan details", Enabled: false, OnClicked: a.onDiscoveryDetails},
+				HSpacer{},
+				PushButton{Text: "Open a printer file...", OnClicked: a.onOpenBundle},
+				PushButton{Text: "Open a saved setup...", OnClicked: a.onOpenSavedSetup},
+			}},
+			TextEdit{AssignTo: &a.discoverOut, Text: "Preparing discovery...", ReadOnly: true, VScroll: true,
+				MinSize: Size{Height: 48}, MaxSize: Size{Height: 64}, Accessibility: name("discover-output")},
 		}},
-		Label{AssignTo: &a.networkStatus, Text: "Looking for your Wi-Fi or Ethernet network..."},
-		ListBox{AssignTo: &a.discoverList, MinSize: Size{Height: 96}, Accessibility: name("discover-results"), OnItemActivated: a.onUseDiscovered},
-		Composite{Layout: row(), Children: []Widget{
-			PushButton{AssignTo: &a.discoverUseBtn, Text: "Use this printer", Enabled: false, OnClicked: a.onUseDiscovered},
-			PushButton{AssignTo: &a.discoverDetailsBtn, Text: "Scan details", Enabled: false, OnClicked: a.onDiscoveryDetails},
-			HSpacer{},
-			PushButton{Text: "Open a printer file...", OnClicked: a.onOpenBundle},
-			PushButton{Text: "Open a saved setup...", OnClicked: a.onOpenSavedSetup},
-		}},
-		TextEdit{AssignTo: &a.discoverOut, Text: "Preparing discovery...", ReadOnly: true, VScroll: true,
-			MinSize: Size{Height: 48}, MaxSize: Size{Height: 64}, Accessibility: name("discover-output")},
 		GroupBox{AssignTo: &a.setupGroup, Title: "Printer settings", Visible: false, Layout: VBox{Spacing: 8}, Children: []Widget{
 			Composite{Layout: formGrid(2), Children: []Widget{
 				Label{Text: "IP address:"}, LineEdit{AssignTo: &a.captureTarget, CueBanner: "192.168.1.50", Accessibility: name("capture-target")},
@@ -189,6 +194,7 @@ func addPage(a *app) TabPage {
 			}},
 			Label{AssignTo: &a.captureStatus, Text: "Saving checks the printer and keeps its settings for next time."},
 			Composite{Layout: row(), Children: []Widget{
+				PushButton{Text: "Back to discovery", OnClicked: func() { a.setupOpen = false; a.setupGroup.SetVisible(false); a.searchGroup.SetVisible(true) }},
 				PushButton{Text: "Review catalog setup", OnClicked: func() {
 					a.startOperation(operation{Kind: opInstall, Target: strings.TrimSpace(a.captureTarget.Text())})
 				}},

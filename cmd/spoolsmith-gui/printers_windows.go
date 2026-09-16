@@ -21,6 +21,7 @@ import (
 )
 
 type printerUI struct {
+	searchGroup                                *walk.Composite
 	discoverUseBtn, discoverDetailsBtn         *walk.PushButton
 	captureStatus, driverStatus                *walk.Label
 	captureBrowseBtn                           *walk.PushButton
@@ -53,6 +54,7 @@ func (a *app) initializePrinters() {
 		switch a.tabs.CurrentIndex() {
 		case tabAdd:
 			a.setupGroup.SetVisible(a.setupOpen)
+			a.searchGroup.SetVisible(!a.setupOpen)
 			if a.setupOpen && !a.driversLoaded {
 				a.onDrivers()
 			}
@@ -103,6 +105,9 @@ func (a *app) onDiscover() {
 			Candidates []inspect.InspectResult `json:"candidates"`
 			Error      string                  `json:"error,omitempty"`
 		}{Network: result.Network, Scanned: result.Scanned, Candidates: []inspect.InspectResult{}}
+		if err != nil {
+			response.Error = err.Error()
+		}
 		for _, candidate := range result.Candidates {
 			response.Candidates = append(response.Candidates, inspect.Inspect(candidate.Evidence))
 		}
@@ -240,6 +245,7 @@ func (a *app) openPrinterSetup(e evidence.Evidence) {
 	// empty save path.
 	a.suggestCaptureFile(e.IP)
 	a.captureStatus.SetText("Printer: " + printerIdentity(e) + ". Choose its compatible Windows driver, then save and review.")
+	a.searchGroup.SetVisible(false)
 	a.setupGroup.SetVisible(true)
 	a.tabs.SetCurrentIndex(tabAdd)
 	a.onDrivers()

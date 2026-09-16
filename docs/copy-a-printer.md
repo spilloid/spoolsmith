@@ -3,7 +3,7 @@
 Someone needs a printer. Someone else, two desks over, already has it working. This is the
 shortest safe path between those two facts.
 
-Everything here is v0.5.0 command-line. The desktop app does not do this yet.
+The examples below use the CLI. Since v0.6.0, the desktop also offers these workflows through This PC, Add a printer and Tools.
 
 ## The short version
 

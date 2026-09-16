@@ -152,7 +152,7 @@ func (a *app) startNetworkDiscovery() {
 	a.discoverBtn.Clicked().Attach(func() { a.networkTouched = true })
 	if os.Getenv("SPOOLSMITH_GUI_NO_AUTOSCAN") == "1" {
 		a.networkStatus.SetText("Automatic scan is off. Enter a network or printer IP to scan.")
-		a.discoverOut.SetText("Enter a network above, or continue with a known printer IP below.")
+		a.discoverOut.SetText("Enter a network above to scan, or enter one printer address and choose Use IP directly.")
 		return
 	}
 	a.discoverCancelBtn.SetEnabled(true)

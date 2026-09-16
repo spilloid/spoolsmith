@@ -311,8 +311,8 @@ Read this before pointing SpoolSmith at a printer you actually depend on:
 - **Automatic catalog resolution covers two families:** HP LaserJet Pro M4xx and Brother
   HL-L2xxx. Other printer candidates remain visible in discovery; use an explicitly
   configured profile to map them.
-- **Direct `install <ip>` still lacks verified built-in driver names.** Profiles supply
-  the exact registered driver name without changing the built-in catalog.
+- **Automatic driver naming is verified only for the Brother HL-L2315D.** Other models
+  need a profile with an explicitly selected, compatible Windows driver.
 - **Profiles map a driver to a RAW TCP 9100 queue.** The reviewed Brother local-archive
   recipe can stage a missing driver; other drivers must already be registered.
   IPP-only drivers/printers and LPR-only printers require different queue strategies;
