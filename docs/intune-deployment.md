@@ -33,8 +33,11 @@ See Microsoft's [Win32 prerequisites and setup](https://learn.microsoft.com/en-u
    supported by this packaging path. Both the archive hash and Windows signature
    checks remain mandatory when staging the supported archive. Keeping a driver
    registered does not prove it is compatible with the printer; validate that first.
-3. Build the CLI and optional desktop app from this source. v0.4.0 lacks the new
-   endpoint commands. The packager rejects an older or incompatible executable.
+3. Build the CLI and optional desktop app from this source. **No published release
+   contains the endpoint commands yet** — they were deliberately held out of the
+   v0.5.0 command table pending a real tenant pilot, and v0.4.0 predates them. You
+   must build from source to follow this guide. The packager rejects an older or
+   incompatible executable.
 
 ```powershell
 go build -o spoolsmith.exe ./cmd/spoolsmith

@@ -34,7 +34,7 @@ sufficient for a plain Go CLI with zero CGO/Node/desktop-framework dependencies.
    mirror netviz's exact pattern for resolving the tag from either source). One job,
    `runs-on: windows-latest`, matrix of one entry today (`{goos: windows, goarch: amd64}`) written
    so a second matrix row is the only change needed to add another platform later. Steps:
-   - checkout, `actions/setup-go@v5` pinned to a Go 1.22.x-compatible version string
+   - checkout, `actions/setup-go@v5` pinned to a Go 1.24.x-compatible version string
    - `go build -o dist/spoolsmith.exe ./cmd/spoolsmith`
    - stage `dist/spoolsmith.exe`, `README.md`, `LICENSE` into a `spoolsmith/` directory
    - `Compress-Archive` into `spoolsmith-<tag>-windows-amd64.zip`

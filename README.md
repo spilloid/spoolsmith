@@ -1,15 +1,82 @@
 # SpoolSmith
 
-SpoolSmith discovers network printers, saves reusable printer profiles, and maps Windows
-queues using locally installed drivers after you review the plan. A small family catalog
-also provides automatic identification and driver guidance.
+SpoolSmith discovers network printers, saves reusable printer profiles, copies a working
+printer setup from one PC to another, and maps Windows queues using locally installed
+drivers after you review the plan. A small family catalog also provides automatic
+identification and driver guidance.
 
-**v0.4.0 is the published release: the native Windows desktop app and the command-line tool.** Live discovery and reusable JSON profiles
-are implemented. Profile installation maps a queue using an already-installed Windows
-driver, or stages the reviewed local Brother package if that driver is missing —
-both now verified against real hardware, including removal and a staging run on a
-machine without the driver. Automatic package downloads and broader package
-coverage are still pending, and no printed page has yet confirmed v0.4.0.
+**v0.5.0 is the published release: the command-line tool and the native Windows desktop app.**
+This release adds the machine-to-machine copy workflow (`printers`, `copy`, `apply`,
+`bundle inspect`), offline provisioning (`--offline`, `status`), and `repoint` for moving an
+existing queue to a new address. Automatic package downloads and broader package coverage are
+still pending.
+
+The copy workflow and the offline workflow were verified against real Windows 11 hardware;
+the desktop app does **not** yet expose copy or apply. See
+[Current limitations](#current-limitations) for exactly what is and is not confirmed.
+
+## Copy a printer from one PC to another
+
+The case this exists for: someone needs a printer, someone else already has it working, and
+you would rather not rediscover the driver name, the address, and the port settings by hand.
+
+On the PC that already prints:
+
+```powershell
+# What does this PC have? (read-only; wraps Get-Printer and Get-PrinterPort)
+spoolsmith printers
+
+# Copy one of them. Omit the queue name to pick from a numbered list;
+# omit the file name to have it named after the queue.
+spoolsmith copy "Accounting" accounting.ssb --include-driver
+```
+
+`--include-driver` exports the driver package out of the Windows driver store so the target PC
+does not need it beforehand. It requires an elevated prompt, and SpoolSmith checks that before
+doing any other work. Without it the bundle carries the mapping only, and the target PC must
+already have that driver registered.
+
+Copy `accounting.ssb` to the other PC however you normally move a file, then:
+
+```powershell
+# Read the bundle without touching the network or this PC
+spoolsmith bundle inspect accounting.ssb
+
+# Preview against the real printer, then apply after one confirmation
+spoolsmith apply accounting.ssb --dry-run
+spoolsmith apply accounting.ssb
+```
+
+`apply` re-checks the printer's live identity against what was captured at copy time, so it
+fails closed if the address now answers as a different device. When the printer is not
+reachable — a client site you are preparing for, a machine on another VLAN — `apply --offline`
+skips that check and says so in the plan before you confirm it.
+
+A bundle is a plain zip: a manifest carrying configuration and provenance, and optionally the
+exported driver files, each listed with its size and SHA-256 and verified on extraction. It
+contains no commands. The hashes are tamper-evidence, not a signature — the trust anchor for a
+driver payload is Windows' own catalog signature check when `pnputil` stages the INF.
+
+### Rolling the same reviewed setup out to several PCs
+
+`--dry-run` prints a fingerprint of the exact plan you reviewed. Passing it back with
+`--plan-hash` accepts that one plan and refuses every other, so a machine that would have
+computed something different stops instead of mutating:
+
+```powershell
+spoolsmith apply accounting.ssb --dry-run          # prints: Reviewed plan fingerprint: 5364...
+spoolsmith apply accounting.ssb --plan-hash 5364...
+```
+
+This is narrower than `--yes`, not broader: `--yes` accepts whatever plan the machine computes,
+sight unseen.
+
+### Queues that cannot be copied
+
+`printers` marks these with `!` and states why. SpoolSmith only reproduces RAW TCP 9100 queues
+pointed at a literal IP address, because anything else would quietly build a different queue on
+the next PC. An LPR queue, a non-9100 port, a port naming a host rather than an address, and
+"Microsoft Print to PDF" are all refused rather than approximated.
 
 ## Native Windows GUI
 
@@ -185,7 +252,7 @@ single reviewed decision instead of a wizard.
 Grab the latest Windows build from [Releases](https://github.com/spilloid/spoolsmith/releases).
 It's a single `spoolsmith.exe` — no installer, no dependencies.
 
-Building from source needs Go 1.22+:
+Building from source needs Go 1.24+:
 
 ```sh
 git clone https://github.com/spilloid/spoolsmith.git
@@ -213,6 +280,14 @@ spoolsmith install 192.168.1.50 --force-family hp-laserjet-m4xx
 
 # Reverses exactly what install set up
 spoolsmith uninstall "HP LaserJet Pro M404dn"
+
+# What this PC already has, and which queues can be copied elsewhere
+spoolsmith printers
+spoolsmith printers --copyable --json
+
+# Move an existing queue to a new address, keeping its name and driver
+spoolsmith repoint "Accounting" 192.168.1.75 --dry-run
+spoolsmith repoint "Accounting" 192.168.1.75
 ```
 
 Data-command and redirected `stdout` is JSON. Interactive prompts and human-readable
@@ -234,6 +309,28 @@ Read this before pointing SpoolSmith at a printer you actually depend on:
   the current install plan uses the Windows standard TCP/IP port with its RAW default.
 - **Discovery requires an explicit IPv4 CIDR** (`/24` through `/32`); it does not yet
   discover across VLANs or implement multicast discovery. Candidates are not certified printers.
+- **The copy workflow is verified end to end on Windows 11 (build 26200).** Confirmed against
+  real hardware: listing queues; `copy --include-driver` exporting a 115-file, 25.9 MB Brother
+  package; bundle write, re-read and hash verification; `apply --dry-run` matching the live
+  printer's identity to the capture; `apply` running idempotently; a reviewed plan fingerprint
+  accepted and a wrong one refused. The driver-staging path was then proved directly: with the
+  driver deregistered *and* its driver-store package deleted, `apply` verified the payload's
+  catalog signature (Microsoft Windows Hardware Compatibility Publisher), staged it with
+  `pnputil /add-driver` as `oem16.inf`, registered it, and created the queue.
+  **Still unverified:** a live `repoint` mutation (only its preview was run), and no test print
+  has been sent through a bundle-staged driver.
+- **`uninstall --purge-driver` can retain a driver that is actually unused.** Windows removes a
+  queue asynchronously, so the in-use check that guards driver removal can still see the queue
+  that was just deleted and keep the driver. Observed on real hardware. Removing such a driver
+  afterwards needs a spooler restart before Windows stops reporting it as in use. Not fixed in
+  v0.5.0.
+- **The desktop app cannot copy or apply.** `printers`, `copy`, `apply`, `bundle inspect` and
+  `repoint` are command-line only in v0.5.0. The GUI keeps its existing find/set-up/review
+  workflow. CLI/GUI parity for the copy workflow is the next release's work.
+- **A copied bundle carries driver files from another machine's driver store.** That is a
+  different provenance from the vendor-installer path: the bundle's hashes detect corruption and
+  casual edits, and Windows' own driver-signing enforcement is what actually gates staging. Treat
+  a bundle as trusted exactly as much as the machine it came from.
 - **Live discovery, add and repeated add are verified with a Brother HL-L2315D.**
   Real Windows queue/port reads confirmed the mapping and repeat-add no-op behavior.
   The operator also observed a successful physical test print. Removal/configuration
@@ -301,4 +398,9 @@ and content-preparation instructions.
 See the [complete Intune tutorial and lifecycle checklist](docs/intune-deployment.md)
 and [illustrative example](examples/intune/README.md). Windows/SYSTEM, Company Portal,
 and Intune pilot verification remain pending; automated script tests are not tenant
-validation. Released v0.4.0 binaries do not contain these commands.
+validation.
+
+**The Intune commands are not in the v0.5.0 release.** `intune wizard`, `intune build` and
+`capabilities` are present in source and covered by tests, but are deliberately off the shipped
+command table until the packaging has been piloted against a real tenant. The offline
+provisioning commands above (`--offline`, `status`) *are* released.

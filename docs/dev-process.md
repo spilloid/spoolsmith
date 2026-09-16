@@ -897,3 +897,69 @@ PowerShell 5.1, real ACLs and the desktop wizard still require the documented pi
 
 The original main checkout was subsequently fast-forwarded to `b9846ed`; its local
 bundle work reapplied cleanly. A named pre-pull stash remains as a recovery copy.
+
+## 2026-09-15 — v0.5.0: the copy workflow, offline provisioning merged, real-hardware validation
+
+Operator direction: make it possible to pull a working printer's configuration off one user's
+PC from the CLI and load it onto another user's PC, with the CLI interoperable with the GUI.
+Subsequent direction in the same session: offline modes should be first class; easy-mode
+commands should offer a numbered selection unless running unattended; the CLI should be able to
+probe existing printers; and updating an existing queue's address belongs in the same shape of
+work.
+
+**Two parallel streams were merged.** `codex/offline-intune` (six commits, unpushed, carrying
+offline provisioning, `status`, Intune packaging, and `internal/winres`) was merged into main
+alongside uncommitted clone/bundle/apply work. The overlaps were unions rather than
+disagreements: `Outcome` gained `PlanHash` from one side and `LocalStatus` from the other, and
+`Plan` gained `BundleDriver` and `Offline` respectively. Full suite green after the merge.
+
+**Intune is deliberately not in this release.** `intune wizard`, `intune build` and
+`capabilities` were removed from the command table while keeping `internal/intune`, its
+templates and its tests in the tree and in CI. The offline half of that branch has a recorded
+Windows 11 pilot behind it; the Intune half does not. Restoring it is a two-line revert once the
+operator has piloted the packaging against a real tenant.
+
+**What was built:** `printers` (read-only listing over `Get-Printer` joined to
+`Get-PrinterPort`, marking which queues can be copied and why not); `copy` (the former `clone`,
+which still works) taking an optional queue name and optional bundle path, with a numbered
+selection when a terminal is present and a refusal naming `spoolsmith printers` when it is not;
+an Administrator preflight before `--include-driver` does any work; a single probe retry when
+the first answer carries no identity; `apply --offline`; and `repoint <queue> <new-ip>`.
+
+The copy-eligibility rule was extracted so the listing and `CloneQueue` read the same function —
+`TestListingAgreesWithCloneQueue` asserts the two agree across every rejection case, so the
+listing can never advertise a queue the copy path would refuse. `repoint` reuses
+`installCommands` with `UpdateExisting`, which is exactly the reviewed "queue exists but its
+port differs" path, rather than introducing new PowerShell.
+
+**Two real defects were found on first contact with real hardware**, both in PowerShell text the
+unit suite could only match as strings: a match counter named `$matches`, which collides with
+PowerShell's automatic `$Matches` hashtable and made driver export fail with "The '++' operator
+works only on numbers"; and `pnputil` printing its banner into the stream carrying the script's
+JSON result. Both fixed, both now covered by tests.
+
+**The driver-staging path was then proved directly** by deregistering the Brother driver and
+deleting its driver-store package, then applying the bundle: catalog signature verified as
+Microsoft Windows Hardware Compatibility Publisher, staged with `pnputil /add-driver` as
+`oem16.inf`, registered, queue created. Full record in
+[`validation/2026-09-15-copy-workflow.md`](validation/2026-09-15-copy-workflow.md).
+
+**Finding raised, not fixed:** `uninstall --purge-driver` can retain a driver nothing uses.
+Windows removes queues asynchronously, so the in-use guard re-read `Get-Printer` and still saw
+the queue that had just been deleted. The failure mode is conservative — a driver retained,
+never one removed while in use — but the flag does not reliably do what its name says and the
+operator is not told why. Documented in the README's limitations.
+
+**Governance debt, recorded here deliberately rather than silently carried.** `--include-driver`
+copies driver files out of one machine's driver store onto another. D-0040's trust model is
+written around vendor-published installers and Windows' own `Add-PrinterDriver`/`pnputil` path,
+and says "no mirrors". The bundle path keeps D-0040's actual trust anchor intact — Windows'
+catalog signature check at staging time, which this session demonstrated running and passing —
+and adds no network fetch. But a peer machine's driver store is a provenance D-0040 did not
+contemplate, and that is a trust-model extension that should be on the record as a decision
+rather than inferred from a diff. The operator was asked, considered it, and chose to ship
+v0.5.0 and write the corporate-strategy entry afterwards. **That entry is still owed.**
+
+**Not verified:** a genuine second machine (the target state was manufactured on the source
+machine), a live `repoint` mutation, a physical test print through a bundle-staged driver, and
+anything on Windows PowerShell 5.1. GUI parity for the copy workflow is the next release's work.
