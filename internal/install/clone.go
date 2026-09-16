@@ -74,24 +74,15 @@ func CloneQueue(ctx context.Context, env Environment, printerName string) (Clone
 	if err != nil {
 		return ClonedQueue{}, err
 	}
-	if port.Protocol != 0 && port.Protocol != 1 {
-		return ClonedQueue{}, fmt.Errorf("clone: queue %q uses port %q with protocol %d (not RAW); SpoolSmith only maps RAW TCP queues, so cloning it would produce a different queue", printerName, port.PortName, port.Protocol)
+	if reason := copyBlockedReason(port); reason != "" {
+		return ClonedQueue{}, fmt.Errorf("copy: queue %q cannot be copied because %s", printerName, reason)
 	}
-	if port.PortNumber != 0 && port.PortNumber != 9100 {
-		return ClonedQueue{}, fmt.Errorf("clone: queue %q uses TCP port %d; SpoolSmith only maps the RAW 9100 default, so cloning it would produce a different queue", printerName, port.PortNumber)
-	}
-	address := strings.TrimSpace(port.HostAddress)
-	if address == "" {
-		return ClonedQueue{}, fmt.Errorf("clone: port %q reports no printer host address; this is not a standard TCP/IP port SpoolSmith can reproduce", port.PortName)
-	}
-	if net.ParseIP(address) == nil {
-		return ClonedQueue{}, fmt.Errorf("clone: port %q points at %q, which is a host name rather than a literal IP address; recreate the queue against the printer's IP, or capture a profile directly with `profile capture`", port.PortName, address)
-	}
+	address := net.ParseIP(strings.TrimSpace(port.HostAddress))
 	return ClonedQueue{
 		PrinterName: configuration.PrinterName,
 		DriverName:  configuration.DriverName,
 		PortName:    configuration.PortName,
-		HostAddress: net.ParseIP(address).String(),
+		HostAddress: address.String(),
 	}, nil
 }
 

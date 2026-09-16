@@ -43,3 +43,7 @@ func (unsupportedEnvironment) LookupPort(context.Context, string) (PortConfigura
 func (unsupportedEnvironment) ExportDriver(context.Context, string, string) (DriverExport, error) {
 	return DriverExport{}, errWindowsOnly
 }
+
+func (unsupportedEnvironment) ListPrinters(context.Context) ([]InstalledQueue, error) {
+	return nil, errWindowsOnly
+}

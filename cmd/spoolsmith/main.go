@@ -101,8 +101,12 @@ func run(ctx context.Context, args []string, input io.Reader, stdout, stderr io.
 		return runDiscover(ctx, args[1:], stdout, stderr, app)
 	case "profile":
 		return runProfile(ctx, args[1:], stdout, stderr, app)
-	case "clone":
-		return runClone(ctx, args[1:], stdout, stderr, app)
+	case "copy", "clone":
+		return runClone(ctx, args[1:], input, stdout, stderr, app)
+	case "printers":
+		return runPrinters(ctx, args[1:], stdout, stderr, app)
+	case "repoint":
+		return runRepoint(ctx, args[1:], input, stdout, stderr, app)
 	case "apply":
 		return runApply(ctx, args[1:], input, stdout, stderr, app)
 	case "bundle":
@@ -360,28 +364,39 @@ func encodeJSON(writer io.Writer, value any) error {
 }
 
 func printUsage(writer io.Writer) {
-	fmt.Fprintln(writer, "       spoolsmith intune wizard | intune build --help (local Win32 app packaging)")
-	fmt.Fprintln(writer, "       spoolsmith status --profile <file> [--json] (local configuration only)")
-	fmt.Fprintln(writer, "       spoolsmith add|configure --profile <file> --offline [--yes] [--dry-run] [--json]")
-	fmt.Fprintln(writer, "SpoolSmith: discover, save, and map network printers")
-	fmt.Fprintln(writer, "       spoolsmith drivers (list exact registered Windows driver names)")
-	fmt.Fprintln(writer, "usage: spoolsmith discover <IPv4-CIDR> (/24 through /32)")
-	fmt.Fprintln(writer, "       spoolsmith clone <installed-queue-name> <bundle-file> [--include-driver] [--note <text>]")
-	fmt.Fprintln(writer, "       spoolsmith apply <bundle-file> [--dry-run] [--plan-hash <fingerprint>] [--yes|--non-interactive|--json] [--update]")
-	fmt.Fprintln(writer, "       spoolsmith bundle inspect <bundle-file>")
-	fmt.Fprintln(writer, "       spoolsmith profile capture <target> <file> --name <queue> --driver <installed-driver-name>")
-	fmt.Fprintln(writer, "       spoolsmith profile edit <file> [--name <queue>] [--driver <name>] [--target <ip>]")
-	fmt.Fprintln(writer, "       spoolsmith profile edit <file> [--package <recipe-id> --archive <local-file> | --clear-package]")
-	fmt.Fprintln(writer, "       spoolsmith add --profile <file> [--dry-run] [--json]")
-	fmt.Fprintln(writer, "       spoolsmith configure --profile <file> [--dry-run] [--json]")
-	fmt.Fprintln(writer, "       spoolsmith remove --profile <file> [--dry-run] [--json]")
-	fmt.Fprintln(writer, "       spoolsmith inspect <target>")
-	fmt.Fprintln(writer, "       spoolsmith catalog probe <ip>")
-	fmt.Fprintln(writer, "       spoolsmith catalog families")
-	fmt.Fprintln(writer, "       spoolsmith install <ip> [--force-family <id>] [--yes|--non-interactive|--json] [--dry-run|--what-if]")
-	fmt.Fprintln(writer, "       spoolsmith uninstall <printer-name> [--purge-driver] [--yes|--non-interactive|--json] [--dry-run|--what-if]")
-	fmt.Fprintln(writer, "       --dry-run/--what-if takes precedence over --yes and never prompts or mutates")
+	fmt.Fprintln(writer, "SpoolSmith: find, save, copy, and map network printers")
+	fmt.Fprintln(writer, "")
+	fmt.Fprintln(writer, "Look at this PC")
+	fmt.Fprintln(writer, "  spoolsmith printers [--copyable] [--json]   installed queues, and which can be copied")
+	fmt.Fprintln(writer, "  spoolsmith drivers                         exact registered Windows driver names")
+	fmt.Fprintln(writer, "  spoolsmith status --profile <file> [--json] local configuration only, no network")
+	fmt.Fprintln(writer, "")
+	fmt.Fprintln(writer, "Copy a printer from one PC to another")
+	fmt.Fprintln(writer, "  spoolsmith copy [<queue>] [<bundle-file>] [--include-driver] [--note <text>]")
+	fmt.Fprintln(writer, "  spoolsmith apply <bundle-file> [--dry-run] [--offline] [--update]")
+	fmt.Fprintln(writer, "                                 [--plan-hash <fingerprint>] [--yes|--non-interactive|--json]")
+	fmt.Fprintln(writer, "  spoolsmith bundle inspect <bundle-file>    read a bundle, touching nothing")
+	fmt.Fprintln(writer, "  Omit <queue> to choose from a numbered list; omit <bundle-file> to name it after the queue.")
+	fmt.Fprintln(writer, "")
+	fmt.Fprintln(writer, "Find and save a printer")
+	fmt.Fprintln(writer, "  spoolsmith discover <IPv4-CIDR>            /24 through /32")
+	fmt.Fprintln(writer, "  spoolsmith inspect <target>")
+	fmt.Fprintln(writer, "  spoolsmith catalog probe <ip> | catalog families")
+	fmt.Fprintln(writer, "  spoolsmith profile capture <target> <file> --name <queue> --driver <installed-driver-name>")
+	fmt.Fprintln(writer, "  spoolsmith profile edit <file> [--name <queue>] [--driver <name>] [--target <ip>]")
+	fmt.Fprintln(writer, "  spoolsmith profile edit <file> [--package <recipe-id> --archive <local-file> | --clear-package]")
+	fmt.Fprintln(writer, "")
+	fmt.Fprintln(writer, "Map, change, and remove queues")
+	fmt.Fprintln(writer, "  spoolsmith add|configure --profile <file> [--offline] [--dry-run] [--yes] [--json]")
+	fmt.Fprintln(writer, "  spoolsmith repoint <queue> <new-ip> [--dry-run] [--yes|--non-interactive|--json]")
+	fmt.Fprintln(writer, "  spoolsmith remove --profile <file> [--dry-run] [--json]")
+	fmt.Fprintln(writer, "  spoolsmith install <ip> [--force-family <id>] [--dry-run|--what-if] [--yes|--non-interactive|--json]")
+	fmt.Fprintln(writer, "  spoolsmith uninstall <printer-name> [--purge-driver] [--dry-run|--what-if] [--yes|--non-interactive|--json]")
+	fmt.Fprintln(writer, "")
+	fmt.Fprintln(writer, "--dry-run/--what-if takes precedence over --yes and never prompts or mutates.")
+	fmt.Fprintln(writer, "--offline skips the live identity check; the plan says so before you confirm it.")
 }
+
 
 func isTerminal(file *os.File) bool {
 	info, err := file.Stat()

@@ -109,3 +109,11 @@ func (windowsEnvironment) ExportDriver(ctx context.Context, driverName, destDir 
 	}
 	return decodeDriverExport(output)
 }
+
+func (windowsEnvironment) ListPrinters(ctx context.Context) ([]InstalledQueue, error) {
+	output, err := runPowerShell(ctx, listPrintersCommand())
+	if err != nil {
+		return nil, fmt.Errorf("install: list printers: %w: %s", err, strings.TrimSpace(output))
+	}
+	return decodeInstalledQueues(output)
+}
