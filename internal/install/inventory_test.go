@@ -107,6 +107,9 @@ func TestDecodeInstalledQueues(t *testing.T) {
 	if queues[0].PrinterName != "Office" || queues[0].DriverName != "Brother HL-L2315D series" || queues[0].HostAddress != "192.0.2.10" {
 		t.Fatalf("decodeInstalledQueues() = %#v", queues[0])
 	}
+	if queues[0].ProtocolName != "RAW" {
+		t.Fatalf("protocol 1 rendered as %q, want RAW", queues[0].ProtocolName)
+	}
 	if !queues[0].Copyable() {
 		t.Fatalf("expected a RAW 9100 queue to be copyable: %s", queues[0].CopyBlockedReason())
 	}
@@ -133,5 +136,13 @@ func TestListPrintersCommandForcesAnArray(t *testing.T) {
 	}
 	if strings.Contains(command, "-AsArray") {
 		t.Fatal("listPrintersCommand() uses -AsArray, which Windows PowerShell 5.1 does not have")
+	}
+}
+
+func TestProtocolName(t *testing.T) {
+	for protocol, want := range map[int]string{1: "RAW", 2: "LPR", 0: "", 7: "unknown (7)"} {
+		if got := protocolName(protocol); got != want {
+			t.Fatalf("protocolName(%d) = %q, want %q", protocol, got, want)
+		}
 	}
 }

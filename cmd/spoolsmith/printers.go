@@ -70,6 +70,8 @@ func writeQueueTable(writer io.Writer, queues []install.InstalledQueue) {
 		target := queue.HostAddress
 		if strings.TrimSpace(target) == "" {
 			target = queue.PortName
+		} else if queue.ProtocolName != "" {
+			target = fmt.Sprintf("%s %s/%d", target, queue.ProtocolName, queue.PortNumber)
 		}
 		marker := "  "
 		if !queue.Copyable() {

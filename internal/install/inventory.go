@@ -25,6 +25,11 @@ type InstalledQueue struct {
 	HostAddress string `json:"host_address,omitempty"`
 	PortNumber  int    `json:"port_number,omitempty"`
 	Protocol    int    `json:"protocol,omitempty"`
+	// ProtocolName is Protocol in the words Windows' own UI uses. The number
+	// is kept alongside it because it is what Get-PrinterPort reports and what
+	// a comparison should be written against; the name is for the human
+	// reading the output, who should not have to know that 1 means RAW.
+	ProtocolName string `json:"protocol_name,omitempty"`
 	// PortKnown reports whether the queue's port resolved to a port Windows
 	// still has. A queue naming a port that no longer exists is reported as-is
 	// rather than dropped from the listing.
@@ -70,6 +75,20 @@ func copyBlockedReason(port PortConfiguration) string {
 		return fmt.Sprintf("its port %q points at %q, which is a host name rather than a literal IP address; recreate the queue against the printer's IP, or capture a profile directly with `profile capture`", port.PortName, address)
 	}
 	return ""
+}
+
+// protocolName renders Windows' own port protocol encoding.
+func protocolName(protocol int) string {
+	switch protocol {
+	case 1:
+		return "RAW"
+	case 2:
+		return "LPR"
+	case 0:
+		return ""
+	default:
+		return fmt.Sprintf("unknown (%d)", protocol)
+	}
 }
 
 type printerInventoryEnvironment interface {
@@ -131,6 +150,11 @@ func decodeInstalledQueues(output string) ([]InstalledQueue, error) {
 	var queues []InstalledQueue
 	if err := json.Unmarshal([]byte(trimmed), &queues); err != nil {
 		return nil, fmt.Errorf("install: decode installed printers: %w", err)
+	}
+	// Derived in Go rather than in PowerShell so the name and the number can
+	// never disagree about the same port.
+	for index := range queues {
+		queues[index].ProtocolName = protocolName(queues[index].Protocol)
 	}
 	return queues, nil
 }

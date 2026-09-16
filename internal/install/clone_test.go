@@ -242,3 +242,49 @@ func TestPlanHashConfirmation(t *testing.T) {
 		}
 	})
 }
+
+// TestExportDriverCommandAvoidsAutomaticVariables guards a defect that only a
+// machine with a driver to export could surface: PowerShell variable names are
+// case-insensitive, so a counter named $matches collides with the automatic
+// $Matches hashtable the script's own -match calls populate, and incrementing
+// it fails with "The '++' operator works only on numbers".
+func TestExportDriverCommandAvoidsAutomaticVariables(t *testing.T) {
+	command, err := exportDriverCommand("Brother HL-L2315D series", `C:\temp\export`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// $Matches[...] reads are correct and expected; assignments to it are not.
+	for _, forbidden := range []string{"$matches =", "$matches++", "$Matches =", "$Matches++"} {
+		if strings.Contains(command, forbidden) {
+			t.Fatalf("exportDriverCommand() writes to the automatic $Matches variable (%q): %s", forbidden, command)
+		}
+	}
+	if !strings.Contains(command, "$matchCount") {
+		t.Fatalf("exportDriverCommand() lost its match counter: %s", command)
+	}
+}
+
+// pnputil prints its own banner to the same stream as the script's result.
+// That is what "invalid character 'M'" was, on real hardware.
+func TestDecodeDriverExportIgnoresToolChatter(t *testing.T) {
+	export, err := decodeDriverExport("Microsoft PnP Utility\r\n\r\nExporting driver package: oem15.inf\r\n{\"published_name\":\"oem15.inf\",\"original_name\":\"brhl2315a.inf\",\"provider\":\"Brother\"}\r\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if export.PublishedName != "oem15.inf" || export.OriginalName != "brhl2315a.inf" {
+		t.Fatalf("decodeDriverExport() = %#v", export)
+	}
+	if _, err := decodeDriverExport("Microsoft PnP Utility\r\nno result here\r\n"); err == nil {
+		t.Fatal("decodeDriverExport() accepted output with no JSON result")
+	}
+}
+
+func TestExportDriverCommandSilencesPnputil(t *testing.T) {
+	command, err := exportDriverCommand("Brother HL-L2315D series", `C:\temp\export`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(command, "/export-driver $published $dest | Out-Null") {
+		t.Fatalf("exportDriverCommand() lets pnputil print into the result stream: %s", command)
+	}
+}

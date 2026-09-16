@@ -111,6 +111,13 @@ func lookupPortCommand(portName string) (string, error) {
 // exportDriverCommand resolves a registered printer driver to its driver-store
 // package and copies that package out with pnputil.
 //
+// The match counter is deliberately not named $matches. PowerShell variable
+// names are case-insensitive, and $Matches is the automatic hashtable that
+// -match populates -- which this script reads two lines later for its capture
+// groups. Naming the counter $matches makes $matches++ fail at runtime with
+// "The '++' operator works only on numbers", and only on a machine that
+// actually has a driver to export. Found exactly that way, on real hardware.
+//
 // Get-PrinterDriver reports the INF's path in the driver store, not its
 // published oem#.inf name, and pnputil /export-driver needs the published name.
 // pnputil /enum-drivers is the documented mapping between the two. An
@@ -136,20 +143,20 @@ $infPath = [string]$drivers[0].InfPath;
 if ([string]::IsNullOrWhiteSpace($infPath)) { throw 'Windows reports no INF path for this driver; it cannot be exported' };
 $original = [IO.Path]::GetFileName($infPath);
 $enumerated = & pnputil.exe /enum-drivers; if ($LASTEXITCODE -ne 0) { throw 'Cannot enumerate the driver store' };
-$published = $null; $provider = ''; $class = ''; $current = $null; $currentProvider = ''; $currentClass = ''; $matches = 0;
+$published = $null; $provider = ''; $class = ''; $current = $null; $currentProvider = ''; $currentClass = ''; $matchCount = 0;
 foreach ($line in $enumerated) {
   if ($line -match '^\s*Published Name\s*:\s*(.+?)\s*$') { $current = $Matches[1]; $currentProvider = ''; $currentClass = ''; continue }
   if ($line -match '^\s*Provider Name\s*:\s*(.+?)\s*$') { $currentProvider = $Matches[1]; continue }
   if ($line -match '^\s*Class Name\s*:\s*(.+?)\s*$') { $currentClass = $Matches[1]; continue }
   if ($line -match '^\s*Original Name\s*:\s*(.+?)\s*$') {
-    if ($Matches[1] -ieq $original) { $matches++; $published = $current; $provider = $currentProvider; $class = $currentClass }
+    if ($Matches[1] -ieq $original) { $matchCount++; $published = $current; $provider = $currentProvider; $class = $currentClass }
   }
 }
-if ($matches -eq 0) { throw ('No driver-store package publishes ' + $original + '; an inbox or Windows Update driver cannot be exported, and the target machine will need to obtain it the same way this one did') };
-if ($matches -gt 1) { throw ('Driver store publishes ' + $original + ' more than once; refusing to guess which package to export') };
+if ($matchCount -eq 0) { throw ('No driver-store package publishes ' + $original + '; an inbox or Windows Update driver cannot be exported, and the target machine will need to obtain it the same way this one did') };
+if ($matchCount -gt 1) { throw ('Driver store publishes ' + $original + ' more than once; refusing to guess which package to export') };
 $dest = %[2]s;
 New-Item -ItemType Directory -Path $dest -Force -ErrorAction Stop | Out-Null;
-& pnputil.exe /export-driver $published $dest; if ($LASTEXITCODE -ne 0) { throw 'Driver export failed' };
+& pnputil.exe /export-driver $published $dest | Out-Null; if ($LASTEXITCODE -ne 0) { throw 'Driver export failed' };
 $exported = @(Get-ChildItem -LiteralPath $dest -Filter $original -Recurse -File);
 if ($exported.Count -ne 1) { throw 'Exported package does not contain exactly one copy of the expected INF' };
 [PSCustomObject]@{published_name=$published;original_name=$original;provider=$provider;class_name=$class} | ConvertTo-Json -Compress`,
@@ -170,9 +177,12 @@ func decodePortConfiguration(output string) (PortConfiguration, error) {
 }
 
 func decodeDriverExport(output string) (DriverExport, error) {
-	trimmed := strings.TrimSpace(output)
+	document, err := lastJSONObject(output)
+	if err != nil {
+		return DriverExport{}, err
+	}
 	var export DriverExport
-	if err := json.Unmarshal([]byte(trimmed), &export); err != nil {
+	if err := json.Unmarshal([]byte(document), &export); err != nil {
 		return DriverExport{}, fmt.Errorf("install: decode driver export: %w", err)
 	}
 	if strings.TrimSpace(export.PublishedName) == "" || strings.TrimSpace(export.OriginalName) == "" {
@@ -211,4 +221,23 @@ func FindExportedINF(destDir, originalName string) (string, error) {
 	default:
 		return "", fmt.Errorf("install: exported package contains %d copies of %q; refusing to guess which one to stage", len(found), originalName)
 	}
+}
+
+// lastJSONObject returns the final line of output that is a JSON object.
+//
+// This step shells out to pnputil, which prints its own banner and progress to
+// the same stream as the script's result -- so the result was not the only
+// thing on stdout, and decoding the whole stream failed on real hardware with
+// "invalid character 'M'". The script now silences pnputil, and this is the
+// second line of defence: any tool in this path that prints on its own does
+// not corrupt a result that is still perfectly readable.
+func lastJSONObject(output string) (string, error) {
+	lines := strings.Split(strings.TrimSpace(output), "\n")
+	for index := len(lines) - 1; index >= 0; index-- {
+		line := strings.TrimSpace(lines[index])
+		if strings.HasPrefix(line, "{") && strings.HasSuffix(line, "}") {
+			return line, nil
+		}
+	}
+	return "", fmt.Errorf("install: no JSON result in command output: %s", strings.TrimSpace(output))
 }
