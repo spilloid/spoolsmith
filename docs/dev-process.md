@@ -1,5 +1,67 @@
 # Dev Process Log
 
+## 2026-09-15: Windows 11 VM pilot executed; GUI manifest embedded
+
+Ran the 2026-09-14 runbook against the operator's Windows 11 Pro VM (build 26200)
+over SSH and RDP. Results, with per-case evidence paths, are in
+`docs/validation/2026-09-15-windows11-results.md`; raw outputs are under
+`dist/vm-evidence/2026-09-15/`.
+
+Three defects were found by running the thing rather than by reading it. Two were
+fixed earlier in the session (`92e7f5d`, `71bbb75`). The third is this commit.
+
+**The GUI's side-car manifest was a latent field defect, not a staging mistake.**
+The first RDP launch died with `InitCommonControlsEx failed` and no window. The
+obvious explanations were wrong: the side-car had been renamed to match the
+renamed executable, and a four-arm test at fresh paths showed renaming is
+harmless. What actually matters is ordering. Windows caches an executable's
+activation context per path, so an exe launched even once without its manifest
+stays broken at that path — and copying the manifest in afterwards does not fix
+it. Since the app is linked `-H windowsgui`, the user sees nothing at all: no
+window, no error, no console. Any packaging step that copies the exe before the
+manifest, or drops it, ships a silently dead GUI, and the recovery (replace the
+exe or change its timestamp) is not something anyone would guess.
+
+Embedding the manifest as an `RT_MANIFEST` resource removes the failure mode
+rather than documenting it. `internal/winres` emits the COFF object directly —
+roughly a hundred lines against a stable, published format — so release builds
+need no third-party generator and no network access, which keeps this consistent
+with the repo's existing stance on build inputs. The manifest file stays the
+source of truth; `cmd/spoolsmith-gui/rsrc_windows_amd64.syso` is generated from it
+and committed, and `TestGeneratedResourceObjectMatchesManifest` fails if the two
+drift, since nothing in a normal build would otherwise regenerate it. The
+side-car is gone from `release.yml` and the README.
+
+Verified by running the rebuilt binary, not by reading the linker's output: alone
+in a fresh directory with no `.manifest` anywhere, it renders its window, 50
+automation elements and all five tabs on both launches, with empty stderr.
+
+**A test that looked like a harness problem was hiding a real result.** The
+standard-user ACL check had failed twice — `Start-Process -Credential` dies at
+`0xC0000142` from a non-interactive SSH session, and the scheduled-task variant
+returned `SCHED_S_TASK_HAS_NOT_RUN` because a standard user has no *Log on as a
+batch job* right by default. Granting that right temporarily (and restoring the
+exact original policy value afterwards) turned it into the real negative test it
+was meant to be: a genuine unprivileged token denied read, list, create, append,
+delete on the deployment state and refused `Remove-Printer` on the managed queue,
+with a positive control proving the worker actually ran.
+
+**One earlier "pass" was withdrawn.** The first Brother offline run blocked the
+printer with a firewall rule while all three firewall profiles were disabled, so
+the rule was inert and strict mode returned 0 where 3 was expected. Isolation was
+re-established and verified with a direct TCP 9100 probe before retesting. The
+failed result is kept in the record rather than overwritten.
+
+**Not verified, and not implied by any of the above:** the GUI wizard was only
+launched and rendered — no wizard interaction, editing, cancel, export or
+display-scaling case was driven. Recovery cases R1–R4, adoption/claim conflict,
+interrupted-install retry, and the full local `status` mismatch matrix are
+not-run. Nothing about real Intune tenant delivery is tested: the VM is not
+enrolled and no tenant was available. Issues #5 and #6 should not close on this
+record — #5 needs the `status` matrix, #6 needs the tenant session. No VM
+snapshot was taken before driver mutations, which should be corrected before the
+tenant run.
+
 ## 2026-09-14: prepare Windows 11 pilot and review remaining gaps
 
 Before the operator's VM became available, added an ordered native test runbook,

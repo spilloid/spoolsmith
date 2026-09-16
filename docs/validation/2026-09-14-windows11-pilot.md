@@ -1,7 +1,9 @@
 # Windows 11 VM pilot: offline provisioning and Intune endpoint lifecycle
 
-Status: **prepared; no VM tests executed yet**. This is the execution runbook for
-issues #5 and #6, paired with the [deployment tutorial](../intune-deployment.md),
+Status: **executed 2026-09-15 on a standalone VM; tenant cases still outstanding**.
+Results are recorded in [2026-09-15-windows11-results.md](2026-09-15-windows11-results.md).
+This is the execution runbook for issues #5 and #6, paired with the
+[deployment tutorial](../intune-deployment.md),
 [implementation reflection](../offline-intune-reflection.md), and
 [result template](windows11-results-template.md).
 

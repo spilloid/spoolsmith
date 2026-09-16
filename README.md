@@ -13,11 +13,11 @@ coverage are still pending, and no printed page has yet confirmed v0.4.0.
 
 ## Native Windows GUI
 
-Build the desktop app and keep its manifest beside it:
+Build the desktop app. Its application manifest is embedded in the binary, so
+the executable is self-contained and can be copied or renamed freely:
 
 ```powershell
 go build -ldflags="-H windowsgui" -o dist/spoolsmith-gui.exe ./cmd/spoolsmith-gui
-Copy-Item cmd/spoolsmith-gui/spoolsmith-gui.exe.manifest dist/
 ```
 
 The app opens on **Find a printer** and scans the network this PC is already on,
@@ -45,7 +45,6 @@ session, so run it locally rather than in CI:
 
 ```powershell
 go build -o dist/spoolsmith-gui.exe ./cmd/spoolsmith-gui
-Copy-Item cmd/spoolsmith-gui/spoolsmith-gui.exe.manifest dist/
 dotnet test test/gui/SpoolSmithGui.Tests
 ```
 
