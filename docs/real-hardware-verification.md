@@ -1,5 +1,10 @@
 # Real-hardware verification runbook
 
+**Current pilot, 2026-09-14:** For offline provisioning and Intune endpoint testing,
+start with the [Windows 11 VM runbook](validation/2026-09-14-windows11-pilot.md).
+The milestone notes below preserve earlier findings and release-specific commands;
+they do not certify the new offline/Intune implementation.
+
 **Update, 2026-09-06:** Brother HL-L2315D discovery, signed driver registration,
 SpoolSmith queue creation and repeat-add no-op behavior are verified. The operator
 sent a test print to Brother Home and observed it print successfully. HP verification

@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "target": "192.0.2.40",
+  "printer_name": "Example — Accounting Copier",
+  "driver_name": "Example OEM Driver (replace with registered name)",
+  "evidence": {
+    "ip": "192.0.2.40",
+    "provenance": "captured",
+    "http_title": "Example copier (illustrative placeholder, not a hardware capture)"
+  }
+}

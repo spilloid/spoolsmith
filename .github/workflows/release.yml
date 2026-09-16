@@ -53,7 +53,6 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force spoolsmith | Out-Null
           Copy-Item dist/spoolsmith.exe,dist/spoolsmith-gui.exe,README.md,LICENSE spoolsmith/ -Force
-          Copy-Item cmd/spoolsmith-gui/spoolsmith-gui.exe.manifest spoolsmith/ -Force
           Compress-Archive -Path spoolsmith -DestinationPath "${{ steps.meta.outputs.asset }}" -Force
           $hash = Get-FileHash "${{ steps.meta.outputs.asset }}" -Algorithm SHA256
           "$($hash.Hash.ToLowerInvariant())  ${{ steps.meta.outputs.asset }}" | Out-File "${{ steps.meta.outputs.asset }}.sha256" -Encoding ascii

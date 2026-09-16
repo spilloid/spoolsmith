@@ -196,7 +196,12 @@ func (p Profile) resolution(current evidence.Evidence) (catalog.ResolutionResult
 	if !matched {
 		return catalog.ResolutionResult{}, errIdentityUnavailable
 	}
+	return p.selectedResolution(), nil
+}
+
+// selectedResolution describes the operator's selection without asserting any live evidence.
+func (p Profile) selectedResolution() catalog.ResolutionResult {
 	family := catalog.Family{ID: "operator-profile", Manufacturer: "Operator selected"}
 	driver := catalog.DriverPackage{FamilyID: family.ID, Name: p.DriverName, WindowsDriverName: p.DriverName, Source: "Operator-selected installed Windows driver", Strategy: "existing-windows-driver"}
-	return catalog.ResolutionResult{NormalizedModel: p.PrinterName, Family: &family, Driver: &driver, Confidence: 0, Uncertain: []string{"driver compatibility is operator-selected; captured identity is not device authentication"}}, nil
+	return catalog.ResolutionResult{NormalizedModel: p.PrinterName, Family: &family, Driver: &driver, Confidence: 0, Uncertain: []string{"driver compatibility is operator-selected; captured identity is not device authentication"}}
 }

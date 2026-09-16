@@ -1,5 +1,98 @@
 # Dev Process Log
 
+## 2026-09-15: Windows 11 VM pilot executed; GUI manifest embedded
+
+Ran the 2026-09-14 runbook against the operator's Windows 11 Pro VM (build 26200)
+over SSH and RDP. Results, with per-case evidence paths, are in
+`docs/validation/2026-09-15-windows11-results.md`; raw outputs are under
+`dist/vm-evidence/2026-09-15/`.
+
+Three defects were found by running the thing rather than by reading it. Two were
+fixed earlier in the session (`92e7f5d`, `71bbb75`). The third is this commit.
+
+**The GUI's side-car manifest was a latent field defect, not a staging mistake.**
+The first RDP launch died with `InitCommonControlsEx failed` and no window. The
+obvious explanations were wrong: the side-car had been renamed to match the
+renamed executable, and a four-arm test at fresh paths showed renaming is
+harmless. What actually matters is ordering. Windows caches an executable's
+activation context per path, so an exe launched even once without its manifest
+stays broken at that path — and copying the manifest in afterwards does not fix
+it. Since the app is linked `-H windowsgui`, the user sees nothing at all: no
+window, no error, no console. Any packaging step that copies the exe before the
+manifest, or drops it, ships a silently dead GUI, and the recovery (replace the
+exe or change its timestamp) is not something anyone would guess.
+
+Embedding the manifest as an `RT_MANIFEST` resource removes the failure mode
+rather than documenting it. `internal/winres` emits the COFF object directly —
+roughly a hundred lines against a stable, published format — so release builds
+need no third-party generator and no network access, which keeps this consistent
+with the repo's existing stance on build inputs. The manifest file stays the
+source of truth; `cmd/spoolsmith-gui/rsrc_windows_amd64.syso` is generated from it
+and committed, and `TestGeneratedResourceObjectMatchesManifest` fails if the two
+drift, since nothing in a normal build would otherwise regenerate it. The
+side-car is gone from `release.yml` and the README.
+
+Verified by running the rebuilt binary, not by reading the linker's output: alone
+in a fresh directory with no `.manifest` anywhere, it renders its window, 50
+automation elements and all five tabs on both launches, with empty stderr.
+
+**A test that looked like a harness problem was hiding a real result.** The
+standard-user ACL check had failed twice — `Start-Process -Credential` dies at
+`0xC0000142` from a non-interactive SSH session, and the scheduled-task variant
+returned `SCHED_S_TASK_HAS_NOT_RUN` because a standard user has no *Log on as a
+batch job* right by default. Granting that right temporarily (and restoring the
+exact original policy value afterwards) turned it into the real negative test it
+was meant to be: a genuine unprivileged token denied read, list, create, append,
+delete on the deployment state and refused `Remove-Printer` on the managed queue,
+with a positive control proving the worker actually ran.
+
+**One earlier "pass" was withdrawn.** The first Brother offline run blocked the
+printer with a firewall rule while all three firewall profiles were disabled, so
+the rule was inert and strict mode returned 0 where 3 was expected. Isolation was
+re-established and verified with a direct TCP 9100 probe before retesting. The
+failed result is kept in the record rather than overwritten.
+
+**The local `status` mismatch matrix closed #5's last endpoint gap.** All seven
+`CheckStatus` checks were driven by building the exact queue/port state each one
+discriminates on, plus a compliant case and a case-only name difference: eight
+cases, every expected exit code and reason string. Two results are worth keeping
+rather than rounding off — a Windows LPR port carries no 9100 port number, so
+`protocol-not-raw` correctly returns two reasons rather than one, which a caller
+matching a single reason string would miss; and a queue differing only in case is
+compliant, confirming the `EqualFold` comparison is deliberate.
+
+**Not verified, and not implied by any of the above:** the GUI wizard was only
+launched and rendered — no wizard interaction, editing, cancel, export or
+display-scaling case was driven. Recovery cases R1–R4, adoption/claim conflict and
+interrupted-install retry are not-run. Nothing about real Intune tenant delivery
+is tested: the VM is not enrolled and no tenant was available. #5 is closeable on
+this record; **#6 is not**, and no amount of endpoint evidence substitutes for the
+tenant session. No VM snapshot was taken before driver mutations, which should be
+corrected before that run.
+
+The UIA-over-RDP harness this pilot needed is recorded company-side as
+corporate-strategy D-0044 (Playwright for web, UI Automation for Windows desktop),
+as operator direction and a one-repo candidate — not a standard, since that layer
+requires a pattern to recur in two repos independently.
+
+## 2026-09-14: prepare Windows 11 pilot and review remaining gaps
+
+Before the operator's VM became available, added an ordered native test runbook,
+an evidence/result template and an author reflection on implementation commit
+`20ab179`. The runbook keeps the existing pilot binary/hash fixed and separates
+SSH CLI, RDP GUI, SYSTEM endpoint, physical-print and Intune tenant results.
+
+Source review identified two concrete control-flow gaps to reproduce: early
+failures can precede deployment-log initialization, and a failed install that
+creates a port but no queue can leave that port after already-absent removal clears
+the deployment claim. Additional questions cover conservative removal prerequisites,
+the difference between per-command and whole-operation timeouts, and matching Go
+and PowerShell detection semantics. These are recorded in
+`docs/offline-intune-reflection.md`; they have not been marked fixed or VM-tested.
+
+This follow-up changes documentation only. The original pilot ZIP and binaries
+remain unchanged, so the next observations can be tied to the recorded build.
+
 ## 2026-09-12 (later, elevated): Step 4b executed, and the staging path runs for real
 
 The operator opened an elevated session and asked for whatever this environment could
@@ -766,3 +859,41 @@ real `WindowsDriverName`, staging a vendor driver package, and a real install/un
 Requires Administrator rights this session's shell does not currently have (the Administrators
 group token showed "deny only" — UAC has not elevated it) and a decision on how to obtain the real
 HP printer's evidence. Both raised to the operator rather than assumed past.
+
+## 2026-09-13: offline and Intune implementation for issues #5 and #6
+
+Implemented on `codex/offline-intune`, based on fetched main `b9846ed`, in a separate
+worktree to preserve the original checkout's unfinished clone/bundle changes.
+
+Offline profile add/configure bypasses collection explicitly and verifies local
+queue, registered driver, canonical managed port, address, RAW protocol and port
+9100 after installation. `status --profile` exposes the same local inventory checks.
+Live validation remains the default. Package and confirmation gates are retained.
+
+Added CLI and desktop packaging wizards, compatible Windows CLI/hash validation,
+review-before-export, optional invocation of Microsoft's Content Prep Tool, and
+reviewable SYSTEM lifecycle scripts. Persistent protected revision state supports
+repeat application, matching-queue adoption, conflict rejection, updates, interrupted
+attempts and cache-independent removal. Queue renames require explicit retirement;
+updates preserve old ports, and removal preserves drivers/shared ports.
+
+Validation and pilot limitations are recorded in `docs/intune-deployment.md`.
+Do not close either issue solely on mocked tests: the Windows and Intune acceptance
+criteria still need real pilot evidence.
+
+Local checks completed: Go build/vet and full test suite, Windows amd64 cross-build
+and vet, race tests for `internal/install` and `cmd/spoolsmith`, generated PowerShell
+syntax parsing, detection mismatch tests, and lifecycle script execution with mocked
+Windows boundaries. The lifecycle test exercises repeat installation, deployment
+ownership conflicts, same-revision change rejection, interrupted-update retry,
+downgrade rejection, and removal after source cache deletion. A separate native
+process test verifies JSON capture and preservation of nonzero CLI exit codes.
+
+The script tests caught an actual .NET `File.Replace` null-backup argument issue;
+metadata replacement now retains a previous copy. Explicit UTF-8 decoding/output
+also avoids Windows PowerShell's legacy code-page corruption of non-ASCII queue
+and driver names. PowerShell 7 on Linux validates script behavior; Windows
+PowerShell 5.1, real ACLs and the desktop wizard still require the documented pilot.
+
+The original main checkout was subsequently fast-forwarded to `b9846ed`; its local
+bundle work reapplied cleanly. A named pre-pull stash remains as a recovery copy.

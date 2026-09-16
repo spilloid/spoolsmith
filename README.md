@@ -13,11 +13,11 @@ coverage are still pending, and no printed page has yet confirmed v0.4.0.
 
 ## Native Windows GUI
 
-Build the desktop app and keep its manifest beside it:
+Build the desktop app. Its application manifest is embedded in the binary, so
+the executable is self-contained and can be copied or renamed freely:
 
 ```powershell
 go build -ldflags="-H windowsgui" -o dist/spoolsmith-gui.exe ./cmd/spoolsmith-gui
-Copy-Item cmd/spoolsmith-gui/spoolsmith-gui.exe.manifest dist/
 ```
 
 The app opens on **Find a printer** and scans the network this PC is already on,
@@ -45,7 +45,6 @@ session, so run it locally rather than in CI:
 
 ```powershell
 go build -o dist/spoolsmith-gui.exe ./cmd/spoolsmith-gui
-Copy-Item cmd/spoolsmith-gui/spoolsmith-gui.exe.manifest dist/
 dotnet test test/gui/SpoolSmithGui.Tests
 ```
 
@@ -270,3 +269,36 @@ what got fixed. It's not polished marketing copy; it's the real record, warts in
 ## License
 
 MIT — see [LICENSE](LICENSE).
+
+## Offline provisioning and Intune packaging (in source)
+
+Prevalidated profiles can provision a queue before the printer is reachable:
+
+```powershell
+spoolsmith add --profile .\profiles\accounting.json --offline --dry-run --json
+spoolsmith add --profile .\profiles\accounting.json --offline --yes --json
+spoolsmith configure --profile .\profiles\accounting.json --offline --yes --json
+spoolsmith status --profile .\profiles\accounting.json --json
+```
+
+`--offline` explicitly skips live identity checks and requires a valid saved
+profile; positional targets and forced-family overrides are rejected. It never
+falls back from a failed live probe and never downloads drivers. Existing
+confirmation, elevation, supported local-package verification and conflict checks
+remain in force. Offline success additionally verifies local queue/driver/RAW TCP
+9100 configuration. Neither success nor `status` proves reachability or printing.
+`status` is local-only: exit 0 means matching configuration, 3 means mismatch,
+2 means invalid inputs, and 1 means inventory/execution failure.
+
+The desktop **Tools → Build an Intune printer app** wizard and
+`spoolsmith intune wizard` export reviewable Win32 app content. Automation uses
+`spoolsmith intune build --help`. The packager requires a pinned compatible Windows
+x64 CLI, a prevalidated profile, and a supported local archive or an explicit
+separately managed driver prerequisite. It generates silent SYSTEM install/removal
+scripts, local-only detection, protected persistent deployment state and logs,
+and content-preparation instructions.
+
+See the [complete Intune tutorial and lifecycle checklist](docs/intune-deployment.md)
+and [illustrative example](examples/intune/README.md). Windows/SYSTEM, Company Portal,
+and Intune pilot verification remain pending; automated script tests are not tenant
+validation. Released v0.4.0 binaries do not contain these commands.

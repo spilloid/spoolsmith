@@ -261,6 +261,7 @@ func mutatePage(a *app) TabPage {
 
 func toolsPage(a *app) TabPage {
 	return TabPage{Title: "Tools", Layout: pagePadding(), Children: []Widget{
+		PushButton{Text: "Build an Intune printer app...", OnClicked: a.onIntuneWizard},
 		heading("Printer diagnostics"),
 		Label{Text: "Inspect device evidence, explore the driver catalog, or review recent activity."},
 		TabWidget{Pages: []TabPage{inspectPage(a), catalogPage(a), logPage(a)}},
