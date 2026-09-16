@@ -40,7 +40,7 @@ even where the surrounding behavior looks healthy.
 | Offline dry-run | SSH elevated | No queue/port mutation | Exit 0; queue and port counts unchanged after preview | `vm-offline-cases.stdout` | **pass** |
 | Offline first add / repeat / configure | SSH elevated | Local success, no duplicates | Exit 0/0/0; exactly one queue and one port afterwards | `vm-offline-cases.stdout` | **pass** |
 | Default strict mode while unreachable | SSH elevated | Fails without offline fallback | Exit 3 | `vm-offline-cases.stdout` | **pass** |
-| Local status mismatch matrix | SSH elevated | Correct absent/driver/address/protocol/port outcomes | Local `status` exit 0 against the installed queue; the full mismatch matrix was not exercised | `vm-offline-cases.stdout` | **partial** |
+| Local status mismatch matrix | SSH elevated, pilot CLI `8906a34e` | Correct absent/driver/address/protocol/port outcomes | All eight cases returned the expected exit code and the expected mismatch reasons — see below | `status-matrix.json`, `status-*.stdout.json` | **pass** |
 | Supported archive staging / invalid hash/signature | SSH elevated, real Brother archive | Valid staging or explicit rejection | Staging exit 0 with valid signature; tampered archive rejected, exit 1 | `vm-brother-offline.stdout` | **pass** |
 | Missing registered driver | SSH elevated | Clear prerequisite failure | Exit 4 | `vm-brother-offline.stdout` | **pass** |
 | No confirmation in unattended context | SSH elevated | Exit 5, no mutation/prompt | Exit 5 | `vm-offline-cases.stdout` | **pass** |
@@ -66,6 +66,33 @@ even where the surrounding behavior looks healthy.
 | Intune Required / standard-user Available | — | Real tenant delivery and endpoint result | No tenant available | — | **blocked** |
 | Company Portal uninstall / dependencies | — | Observed tenant behavior recorded | No tenant available | — | **blocked** |
 | Explicit Uninstall assignment / retirement | — | Queue removed; shared resources preserved | No tenant available | — | **blocked** |
+
+### Local `status` mismatch matrix
+
+`CheckStatus` makes seven independent checks and `status` returns 0 when compliant
+and `ExitUnresolved` (3) otherwise. Each check was driven by building the exact
+Windows queue/port state it discriminates on, against a labeled fixture profile
+(`192.0.2.40`, `Microsoft Print To PDF`). The unrelated Brother queue was
+asserted to survive the whole matrix.
+
+| Case | Queue/port state built | Exit | Mismatch reasons returned |
+| --- | --- | --- | --- |
+| `absent` | nothing installed | 3 | all seven reasons |
+| `compliant` | exactly what the profile describes | 0 | none |
+| `driver-differs` | right port, `Brother HL-L2315D series` driver | 3 | `driver differs` |
+| `port-name-differs` | right address/protocol/port, port not named `SpoolSmith-192.0.2.40` | 3 | `managed port is absent or differs` |
+| `address-differs` | managed port name, host address `192.0.2.99` | 3 | `target address differs` |
+| `protocol-not-raw` | LPR port instead of RAW | 3 | `port protocol is not RAW`, `port number is not 9100` |
+| `port-number-differs` | RAW on port 9101 | 3 | `port number is not 9100` |
+| `case-insensitive-name` | queue named `spoolsmith status MATRIX` | 0 | none |
+
+Two results worth stating rather than glossing. `protocol-not-raw` returns *two*
+reasons, not one: a Windows LPR port carries no 9100 port number, so the port-number
+check fires alongside the protocol check. That is correct behavior and not
+double-reporting — the two checks are independent — but a caller matching on a
+single reason string would miss it. And `case-insensitive-name` confirms the
+`EqualFold` name comparison is deliberate: a queue whose name differs only in case
+is treated as compliant, so queue names are matched case-insensitively end to end.
 
 ## Findings and retests
 
@@ -163,8 +190,9 @@ done by targeted removal instead, and the post-run inventory is recorded in
   evidence — preview, add, repeat, configure, strict-vs-offline behavior under
   *verified* isolation, unattended refusal, invalid-argument handling, a real
   captured Brother profile, signed-archive staging with a tampered-archive
-  rejection, and an operator-confirmed physical page. The local `status` mismatch
-  matrix is only partially exercised. No blocking failures remain open.
+  rejection, the full local `status` mismatch matrix across all seven checks, and
+  an operator-confirmed physical page. No blocking failures and no not-run cases
+  remain in #5's own scope.
 - **Issue #6 (Intune lifecycle):** every part that a standalone endpoint can
   prove now passes — SYSTEM install and detection, the detection negative matrix,
   revision update and downgrade refusal, the 32-bit entrypoint, protected-state
@@ -175,9 +203,10 @@ done by targeted removal instead, and the post-run inventory is recorded in
   tenant and remain untested.
 - **Remaining failures, blocked prerequisites and not-run cases:** three Intune
   tenant cases blocked; recovery cases R1–R4, adoption/claim-conflict, interrupted
-  install retry, and the GUI wizard interaction and scaling cases are not-run; the
-  `status` mismatch matrix is partial. F-1 through F-4 are fixed and retested; F-5
-  is a process gap to close before the tenant session.
+  install retry, and the GUI wizard interaction and scaling cases are not-run.
+  F-1 through F-4 are fixed and retested; F-5 is a process gap to close before the
+  tenant session.
 
-Neither issue should be closed on this record alone. #5 is close — it needs the
-`status` mismatch matrix. #6 needs the tenant session.
+**#5 is closeable on this record.** #6 is not: it needs the tenant session, and no
+amount of endpoint evidence substitutes for real Required/Available delivery,
+Company Portal behavior, and Uninstall-assignment retirement.

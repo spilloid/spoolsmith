@@ -52,15 +52,28 @@ the rule was inert and strict mode returned 0 where 3 was expected. Isolation wa
 re-established and verified with a direct TCP 9100 probe before retesting. The
 failed result is kept in the record rather than overwritten.
 
+**The local `status` mismatch matrix closed #5's last endpoint gap.** All seven
+`CheckStatus` checks were driven by building the exact queue/port state each one
+discriminates on, plus a compliant case and a case-only name difference: eight
+cases, every expected exit code and reason string. Two results are worth keeping
+rather than rounding off — a Windows LPR port carries no 9100 port number, so
+`protocol-not-raw` correctly returns two reasons rather than one, which a caller
+matching a single reason string would miss; and a queue differing only in case is
+compliant, confirming the `EqualFold` comparison is deliberate.
+
 **Not verified, and not implied by any of the above:** the GUI wizard was only
 launched and rendered — no wizard interaction, editing, cancel, export or
-display-scaling case was driven. Recovery cases R1–R4, adoption/claim conflict,
-interrupted-install retry, and the full local `status` mismatch matrix are
-not-run. Nothing about real Intune tenant delivery is tested: the VM is not
-enrolled and no tenant was available. Issues #5 and #6 should not close on this
-record — #5 needs the `status` matrix, #6 needs the tenant session. No VM
-snapshot was taken before driver mutations, which should be corrected before the
-tenant run.
+display-scaling case was driven. Recovery cases R1–R4, adoption/claim conflict and
+interrupted-install retry are not-run. Nothing about real Intune tenant delivery
+is tested: the VM is not enrolled and no tenant was available. #5 is closeable on
+this record; **#6 is not**, and no amount of endpoint evidence substitutes for the
+tenant session. No VM snapshot was taken before driver mutations, which should be
+corrected before that run.
+
+The UIA-over-RDP harness this pilot needed is recorded company-side as
+corporate-strategy D-0044 (Playwright for web, UI Automation for Windows desktop),
+as operator direction and a one-repo candidate — not a standard, since that layer
+requires a pattern to recur in two repos independently.
 
 ## 2026-09-14: prepare Windows 11 pilot and review remaining gaps
 
