@@ -14,7 +14,6 @@ import (
 	"github.com/spilloid/spoolsmith/internal/catalog"
 	"github.com/spilloid/spoolsmith/internal/inspect"
 	"github.com/spilloid/spoolsmith/internal/install"
-	"github.com/spilloid/spoolsmith/internal/intune"
 	"github.com/spilloid/spoolsmith/internal/probe"
 )
 
@@ -80,11 +79,6 @@ func run(ctx context.Context, args []string, input io.Reader, stdout, stderr io.
 	}
 
 	switch args[0] {
-	case "capabilities":
-		if len(args) != 1 {
-			return usageError(stdout, stderr, "capabilities", errors.New("capabilities accepts no arguments"))
-		}
-		return encodeSuccess(stdout, stderr, "capabilities", []string{intune.EndpointCapability})
 	case "drivers":
 		if len(args) != 1 {
 			return usageError(stdout, stderr, "drivers", errors.New("drivers accepts no arguments"))
@@ -113,8 +107,6 @@ func run(ctx context.Context, args []string, input io.Reader, stdout, stderr io.
 		return runBundle(args[1:], stdout, stderr)
 	case "status":
 		return runStatus(ctx, args[1:], stdout, stderr, app)
-	case "intune":
-		return runIntune(ctx, args[1:], input, stdout, stderr, app)
 	case "inspect":
 		if len(args) != 2 {
 			return usageError(stdout, stderr, "inspect", errors.New("inspect requires exactly one target"))
@@ -396,7 +388,6 @@ func printUsage(writer io.Writer) {
 	fmt.Fprintln(writer, "--dry-run/--what-if takes precedence over --yes and never prompts or mutates.")
 	fmt.Fprintln(writer, "--offline skips the live identity check; the plan says so before you confirm it.")
 }
-
 
 func isTerminal(file *os.File) bool {
 	info, err := file.Stat()
