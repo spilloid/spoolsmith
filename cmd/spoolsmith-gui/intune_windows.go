@@ -124,5 +124,5 @@ func (a *app) onIntuneWizard() {
 		showErr(a.mw, "Intune packaging", err)
 		return
 	}
-	dialog.Run()
+	a.runDialog(dialog)
 }

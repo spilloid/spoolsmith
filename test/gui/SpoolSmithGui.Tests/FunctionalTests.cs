@@ -167,6 +167,7 @@ public sealed class FunctionalTests : IDisposable
         Assert.True(FindButton(dialog, "Import all JSON...").IsEnabled);
         Assert.True(FindButton(dialog, "Export all JSON...").IsEnabled);
         FindButton(dialog, "Close").Invoke();
+        WaitUntil(() => !_fixture.MainWindow.ModalWindows.Any(), "Close did not dismiss saved setups.");
         Assert.False(Directory.Exists(_testDirectory));
     }
 
@@ -180,9 +181,27 @@ public sealed class FunctionalTests : IDisposable
         var dialog = OpenSavedSetups();
         Assert.Contains("Test office printer", Find(dialog, "saved-detail").AsTextBox().Text);
         FindButton(dialog, action).Invoke();
-        WaitUntil(() => !IsHidden("review-summary"), "Review did not open.");
+        try { WaitUntil(() => !IsHidden("review-summary"), "Review did not open."); }
+        catch { _fixture.MainWindow.CaptureToFile(Path.Combine(_fixture.RepoRoot,"dist","review-handoff-failure.png")); throw; }
         Assert.False(FindButton(_fixture.MainWindow, applyCaption).IsEnabled);
         Assert.True(FindButton(_fixture.MainWindow, "Preview changes").IsEnabled);
+    }
+
+    [StaFact]
+    public void Offline_profile_preview_reports_missing_driver_and_keeps_apply_disabled()
+    {
+        CreateSavedPrinter();
+        var dialog = OpenSavedSetups();
+        FindButton(dialog, "Set up this printer").Invoke();
+        WaitUntil(() => !IsHidden("mutate-output"), "Review did not open.");
+        Find(_fixture.MainWindow, "More options").AsCheckBox().Click();
+        Find(_fixture.MainWindow, "Do not contact the printer (its identity will not be checked)").AsCheckBox().Click();
+        FindButton(_fixture.MainWindow, "Preview changes").Invoke();
+        var output = Find(_fixture.MainWindow, "mutate-output").AsTextBox();
+        WaitForText(output, t => t.Contains("Unable to continue"), 60_000);
+        Assert.Contains("driver", output.Text, StringComparison.OrdinalIgnoreCase);
+        Assert.False(FindButton(_fixture.MainWindow, "Add printer...").IsEnabled);
+        Assert.True(FindButton(_fixture.MainWindow, "Full plan / JSON").IsEnabled);
     }
 
     private string CreateSavedPrinter()

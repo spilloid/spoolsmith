@@ -186,7 +186,7 @@ func (a *app) showSavedSetups(paths []string, message string) {
 	if len(current) > 0 {
 		refreshDetail()
 	}
-	dialog.Run()
+	a.runDialog(dialog)
 }
 
 // editSavedSetup edits one saved setup in place, keeping a backup. It reports
@@ -268,6 +268,6 @@ func (a *app) editSavedSetup(owner walk.Form, path string) bool {
 	if loadErr != nil {
 		status.SetText("This setup could not be read: " + loadErr.Error())
 	}
-	dialog.Run()
+	a.runDialog(dialog)
 	return saved
 }

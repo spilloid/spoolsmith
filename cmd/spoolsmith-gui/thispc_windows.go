@@ -228,7 +228,7 @@ func (a *app) onCopyQueue() {
 			*canceled = true
 		}
 	})
-	dialog.Run()
+	a.runDialog(dialog)
 }
 
 // copySuccessMessage tells the operator what they now have and what to do with
@@ -298,7 +298,7 @@ func (a *app) onRepointQueue() {
 		showErr(a.mw, "Change address", err)
 		return
 	}
-	dialog.Run()
+	a.runDialog(dialog)
 }
 
 func (a *app) onRemoveQueue() {

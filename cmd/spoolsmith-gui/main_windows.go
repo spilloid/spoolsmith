@@ -128,7 +128,7 @@ func (a *app) showDetails(title, text string) {
 		showErr(a.mw, title, err)
 		return
 	}
-	dialog.Run()
+	a.runDialog(dialog)
 }
 
 func (a *app) onPlanDetails() {
