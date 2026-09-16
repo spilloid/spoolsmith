@@ -31,3 +31,11 @@ func (unsupportedEnvironment) Run(context.Context, string) (string, error) {
 func (unsupportedEnvironment) LookupPrinter(context.Context, string) (PrinterConfiguration, error) {
 	return PrinterConfiguration{}, errWindowsOnly
 }
+
+func (unsupportedEnvironment) LookupPort(context.Context, string) (PortConfiguration, error) {
+	return PortConfiguration{}, errWindowsOnly
+}
+
+func (unsupportedEnvironment) ExportDriver(context.Context, string, string) (DriverExport, error) {
+	return DriverExport{}, errWindowsOnly
+}

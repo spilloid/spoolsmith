@@ -78,3 +78,27 @@ func (windowsEnvironment) DriverNames(ctx context.Context) ([]string, error) {
 	}
 	return names, nil
 }
+
+func (windowsEnvironment) LookupPort(ctx context.Context, portName string) (PortConfiguration, error) {
+	command, err := lookupPortCommand(portName)
+	if err != nil {
+		return PortConfiguration{}, err
+	}
+	output, err := runPowerShell(ctx, command)
+	if err != nil {
+		return PortConfiguration{}, fmt.Errorf("install: read printer port: %w: %s", err, strings.TrimSpace(output))
+	}
+	return decodePortConfiguration(output)
+}
+
+func (windowsEnvironment) ExportDriver(ctx context.Context, driverName, destDir string) (DriverExport, error) {
+	command, err := exportDriverCommand(driverName, destDir)
+	if err != nil {
+		return DriverExport{}, err
+	}
+	output, err := runPowerShell(ctx, command)
+	if err != nil {
+		return DriverExport{}, fmt.Errorf("install: export driver: %w: %s", err, strings.TrimSpace(output))
+	}
+	return decodeDriverExport(output)
+}

@@ -95,6 +95,12 @@ func run(ctx context.Context, args []string, input io.Reader, stdout, stderr io.
 		return runDiscover(ctx, args[1:], stdout, stderr, app)
 	case "profile":
 		return runProfile(ctx, args[1:], stdout, stderr, app)
+	case "clone":
+		return runClone(ctx, args[1:], stdout, stderr, app)
+	case "apply":
+		return runApply(ctx, args[1:], input, stdout, stderr, app)
+	case "bundle":
+		return runBundle(args[1:], stdout, stderr)
 	case "inspect":
 		if len(args) != 2 {
 			return usageError(stdout, stderr, "inspect", errors.New("inspect requires exactly one target"))
@@ -342,6 +348,9 @@ func printUsage(writer io.Writer) {
 	fmt.Fprintln(writer, "SpoolSmith: discover, save, and map network printers")
 	fmt.Fprintln(writer, "       spoolsmith drivers (list exact registered Windows driver names)")
 	fmt.Fprintln(writer, "usage: spoolsmith discover <IPv4-CIDR> (/24 through /32)")
+	fmt.Fprintln(writer, "       spoolsmith clone <installed-queue-name> <bundle-file> [--include-driver] [--note <text>]")
+	fmt.Fprintln(writer, "       spoolsmith apply <bundle-file> [--dry-run] [--plan-hash <fingerprint>] [--yes|--non-interactive|--json] [--update]")
+	fmt.Fprintln(writer, "       spoolsmith bundle inspect <bundle-file>")
 	fmt.Fprintln(writer, "       spoolsmith profile capture <target> <file> --name <queue> --driver <installed-driver-name>")
 	fmt.Fprintln(writer, "       spoolsmith profile edit <file> [--name <queue>] [--driver <name>] [--target <ip>]")
 	fmt.Fprintln(writer, "       spoolsmith profile edit <file> [--package <recipe-id> --archive <local-file> | --clear-package]")

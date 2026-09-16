@@ -31,6 +31,7 @@ type Plan struct {
 	ForcedOverride bool                  `json:"forced_override"`
 	UpdateExisting bool                  `json:"update_existing"`
 	DriverPackage  *PackageSelection     `json:"driver_package,omitempty"`
+	BundleDriver   *BundleDriver         `json:"bundle_driver,omitempty"`
 }
 
 // Result records the plan and every command attempted.
@@ -150,12 +151,20 @@ func Preflight(ctx context.Context, env Environment, plan Plan) (PreflightResult
 		return result, fmt.Errorf("install: driver presence check failed: %w; guidance: %v", err, ErrDriverNotPresent)
 	}
 	result.DriverPresent = present
-	if !present && plan.DriverPackage == nil {
+	if !present && plan.DriverPackage == nil && plan.BundleDriver == nil {
 		return result, ErrDriverNotPresent
 	}
 	if plan.DriverPackage != nil {
 		if _, err := plan.DriverPackage.record(plan.DriverName); err != nil {
 			return result, err
+		}
+	}
+	if plan.BundleDriver != nil {
+		if err := plan.BundleDriver.Validate(); err != nil {
+			return result, err
+		}
+		if plan.BundleDriver.WindowsDriverName != plan.DriverName {
+			return result, fmt.Errorf("install: bundle payload provides driver %q but the plan maps %q", plan.BundleDriver.WindowsDriverName, plan.DriverName)
 		}
 	}
 	return result, nil

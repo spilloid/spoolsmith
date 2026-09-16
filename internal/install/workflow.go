@@ -42,6 +42,13 @@ type InstallOptions struct {
 	JSON           bool
 	NonInteractive bool
 	DryRun         bool
+	// BundleDriver, when set, stages a driver payload SpoolSmith has already
+	// extracted and hash-verified from a bundle, if the driver is missing.
+	BundleDriver *BundleDriver
+	// ConfirmPlanHash names the exact plan the operator reviewed. It confirms
+	// that one plan and nothing else: if the plan computed on this machine
+	// differs at all, the operation stops instead of mutating.
+	ConfirmPlanHash string
 }
 
 // UninstallOptions contains the policy-relevant inputs for one uninstall attempt.
@@ -59,16 +66,20 @@ type UninstallOptions struct {
 
 // Outcome is the machine-readable result of an install or uninstall workflow.
 type Outcome struct {
-	Operation  string           `json:"operation"`
-	Status     string           `json:"status"`
-	DryRun     bool             `json:"dry_run"`
-	Confirmed  bool             `json:"confirmed"`
-	Resolution string           `json:"resolution,omitempty"`
-	Uncertain  []string         `json:"uncertain,omitempty"`
-	Plan       *Plan            `json:"plan,omitempty"`
-	Preflight  *PreflightResult `json:"preflight,omitempty"`
-	Result     *Result          `json:"result,omitempty"`
-	Error      string           `json:"error,omitempty"`
+	Operation  string   `json:"operation"`
+	Status     string   `json:"status"`
+	DryRun     bool     `json:"dry_run"`
+	Confirmed  bool     `json:"confirmed"`
+	Resolution string   `json:"resolution,omitempty"`
+	Uncertain  []string `json:"uncertain,omitempty"`
+	Plan       *Plan    `json:"plan,omitempty"`
+	// PlanHash names the exact plan above. Reviewing one plan by hand and
+	// then passing its hash to --plan-hash is how a reviewed setup is rolled
+	// out across a fleet without accepting whatever each machine computes.
+	PlanHash  string           `json:"plan_hash,omitempty"`
+	Preflight *PreflightResult `json:"preflight,omitempty"`
+	Result    *Result          `json:"result,omitempty"`
+	Error     string           `json:"error,omitempty"`
 }
 
 // Workflow owns detection, catalog selection, preflight, and confirmation so
@@ -204,7 +215,30 @@ func (w Workflow) RunInstall(ctx context.Context, env Environment, input io.Read
 		}
 		plan.Commands = append([]string{command}, plan.Commands...)
 	}
+	if options.BundleDriver != nil {
+		if plan.DriverPackage != nil {
+			return failOutcome(outcome, errors.New("install: a bundle driver payload and a vendor package recipe cannot both stage the same driver"), ExitUsageError)
+		}
+		payload := *options.BundleDriver
+		if err := payload.Validate(); err != nil {
+			return failOutcome(outcome, err, ExitUsageError)
+		}
+		if payload.WindowsDriverName != plan.DriverName {
+			return failOutcome(outcome, fmt.Errorf("install: bundle payload provides driver %q but the profile maps %q", payload.WindowsDriverName, plan.DriverName), ExitUsageError)
+		}
+		plan.BundleDriver = &payload
+		plan.Driver.Strategy = "bundle-payload-if-missing"
+		plan.Driver.Source = bundleDriverSource(payload)
+		command, bundleErr := bundleDriverCommand(payload)
+		if bundleErr != nil {
+			return failOutcome(outcome, bundleErr, ExitUsageError)
+		}
+		plan.Commands = append([]string{command}, plan.Commands...)
+	}
 	outcome.Plan = &plan
+	if fingerprint, hashErr := FingerprintPlan(plan); hashErr == nil {
+		outcome.PlanHash = fingerprint
+	}
 	writeInstallPlan(interactive, plan, options.Compact)
 	if options.ExpectedPlan != nil && !reflect.DeepEqual(*options.ExpectedPlan, plan) {
 		return failOutcome(outcome, errors.New("install: plan changed since preview; review a new preview before proceeding"), ExitNotConfirmed)
@@ -222,6 +256,20 @@ func (w Workflow) RunInstall(ctx context.Context, env Environment, input io.Read
 	}
 
 	confirmed := options.Yes
+	if options.ConfirmPlanHash != "" {
+		matched, hashErr := planHashMatches(plan, options.ConfirmPlanHash)
+		if hashErr != nil {
+			return failOutcome(outcome, hashErr, ExitGeneralError)
+		}
+		if !matched {
+			actual, _ := FingerprintPlan(plan)
+			outcome.Status = "not-confirmed"
+			outcome.Error = fmt.Sprintf("install: this machine's plan is %s, not the reviewed plan %s; review the difference before applying it here", actual, options.ConfirmPlanHash)
+			return outcome, ExitNotConfirmed
+		}
+		fmt.Fprintf(interactive, "Plan matches the reviewed fingerprint %s.\n", options.ConfirmPlanHash)
+		confirmed = true
+	}
 	if !confirmed {
 		if options.NonInteractive || options.JSON || !inputIsTerminal {
 			outcome.Status = "not-confirmed"
@@ -445,6 +493,10 @@ func writeInstallPlan(writer io.Writer, plan Plan, compact bool) {
 		fmt.Fprintf(writer, "  Driver package: %s\n  Local archive: %s\n  Expected SHA-256: %s\n  Vendor source: %s\n", plan.DriverPackage.ID, plan.DriverPackage.Archive, record.SHA256, record.SourceURL)
 		fmt.Fprintln(writer, "  Reuse registered driver; if missing, verify signatures/hash, extract, stage INF and register. Staging files are retained in the Windows temp directory.")
 	}
+	if plan.BundleDriver != nil {
+		fmt.Fprintf(writer, "  Bundle driver payload: %s\n  Files: %d (%d bytes), staged only if the driver is missing\n  Payload digest: %s\n", plan.BundleDriver.WindowsDriverName, plan.BundleDriver.FileCount, plan.BundleDriver.TotalBytes, plan.BundleDriver.PayloadDigest)
+		fmt.Fprintln(writer, "  Payload bytes were verified against the bundle manifest. Catalog signature is checked, and Windows enforces driver signing when pnputil stages the INF. This is not a vendor-package hash check.")
+	}
 	if plan.ForcedOverride {
 		fmt.Fprintln(writer, "  Warning: manually selected mapping; not an automatic high-confidence driver match.")
 	}
@@ -514,4 +566,20 @@ func shownValue(value string) string {
 		return "(not specified)"
 	}
 	return value
+}
+
+// planHashMatches reports whether plan is exactly the reviewed plan.
+func planHashMatches(plan Plan, expected string) (bool, error) {
+	actual, err := FingerprintPlan(plan)
+	if err != nil {
+		return false, err
+	}
+	return strings.EqualFold(actual, strings.TrimSpace(expected)), nil
+}
+
+func bundleDriverSource(payload BundleDriver) string {
+	if strings.TrimSpace(payload.SourceHost) != "" {
+		return fmt.Sprintf("Driver files exported from the Windows driver store on %s", payload.SourceHost)
+	}
+	return "Driver files exported from a Windows driver store"
 }
