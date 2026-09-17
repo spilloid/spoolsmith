@@ -73,4 +73,5 @@ These follow v0.6.0 and are not in its existing ZIP:
   Documentation distinguishes one-PC tests from two-PC validation and released
   workflows from held Intune work.
 
-See the [quality review](validation/2026-09-17-quality-review.md) for checks and evidence.
+See the [quality review](validation/2026-09-17-quality-review.md) and the
+[follow-up VM hardware QC](validation/2026-09-17-vm-hardware-qc.md) for checks and evidence.

@@ -79,8 +79,11 @@ the next PC. An LPR queue, a non-9100 port, a port naming a host rather than an 
 
 ## Native Windows GUI
 
-Build the desktop app. Its application manifest is embedded in the binary, so
-the executable is self-contained and can be copied or renamed freely:
+Download and extract the [Windows release ZIP](https://github.com/spilloid/spoolsmith/releases/latest),
+then open `spoolsmith-gui.exe`. No Go installation is needed. Its application
+manifest is embedded, so the executable can be copied or renamed freely.
+
+For developers building the desktop from source:
 
 ```powershell
 go build -ldflags="-H windowsgui" -o dist/spoolsmith-gui.exe ./cmd/spoolsmith-gui
@@ -118,19 +121,20 @@ spoolsmith profile import-all printer-setups.json imported-profiles
 
 ### Desktop tests
 
-`test/gui` drives the built executable with FlaUI. It needs a real desktop
-session, so run it locally rather than in CI:
+`test/gui` drives the built executable with FlaUI. It needs a desktop session;
+run it locally or through the manual **Desktop validation** workflow:
 
 ```powershell
 go build -o dist/spoolsmith-gui.exe ./cmd/spoolsmith-gui
 dotnet test test/gui/SpoolSmithGui.Tests
 ```
 
-No test confirms an install or changes a Windows printer. Two intermittent
-failures are known and unresolved: a launched app occasionally exits before the
-tests can attach to it, and a control occasionally still reports itself
-offscreen after its tab is selected. These failures need investigation when they recur; the suite is compiled by CI
-and can be run through the manual Desktop validation workflow. It does not gate CI.
+No test confirms an install or changes a Windows printer. The latest
+[hosted Windows run](https://github.com/spilloid/spoolsmith/actions/runs/35181393861)
+passed 28/28 checks. Earlier runs exposed launch/attachment timing and offscreen
+control lookups; investigate any recurrence using the captured screenshots and
+TRX evidence. Regular CI compiles this suite; desktop execution is a separate
+manual workflow rather than a required CI gate.
 
 `SPOOLSMITH_CAPTURE_SITE_SHOTS=1` additionally regenerates the product site's
 screenshots from the running app.
