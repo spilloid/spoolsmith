@@ -171,6 +171,20 @@ public sealed class FunctionalTests : IDisposable
         Assert.False(Directory.Exists(_testDirectory));
     }
 
+    [StaFact]
+    public void Invalid_saved_setup_cannot_be_edited_or_applied()
+    {
+        var path = CreateSavedPrinter();
+        var invalid = File.ReadAllText(path).Replace("\"version\": 1", "\"unknown_future_field\": true, \"version\": 1");
+        File.WriteAllText(path, invalid);
+        var dialog = OpenSavedSetups();
+        Assert.Contains("cannot be used", Find(dialog, "saved-detail").AsTextBox().Text);
+        foreach (var caption in new[] { "Set up this printer", "Update to match", "Check status", "Remove...", "Edit..." })
+            Assert.False(FindButton(dialog, caption).IsEnabled);
+        FindButton(dialog, "Close").Invoke();
+        Assert.Equal(invalid, File.ReadAllText(path));
+    }
+
     [StaTheory]
     [InlineData("Set up this printer", "Add printer...")]
     [InlineData("Update to match", "Update printer...")]

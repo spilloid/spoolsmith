@@ -3,7 +3,20 @@
 Someone needs a printer. Someone else, two desks over, already has it working. This is the
 shortest safe path between those two facts.
 
-The examples below use the CLI. Since v0.6.0, the desktop also offers these workflows through This PC, Add a printer and Tools.
+## Using the desktop app
+
+Download and extract the [Windows ZIP](https://github.com/spilloid/spoolsmith/releases/latest).
+No build tools are needed. Open `spoolsmith-gui.exe`:
+
+1. On the source PC, use **This PC → Copy to a file** for a supported queue.
+   Run the app as administrator if including driver files.
+2. Move the resulting `.ssb` file to the destination PC.
+3. Open the app as administrator there, then **Add a printer → Open a printer file**.
+4. **Preview changes**, review the queue/address/driver plan, and confirm.
+
+**More options** offers offline mode and updating an existing queue.
+**This PC → Change address** reviews an address change; **Tools → Inspect**
+verifies and displays a bundle manifest. The CLI examples follow below.
 
 ## The short version
 
@@ -86,9 +99,9 @@ same way this one did.
 
 ### What gets captured
 
-SpoolSmith probes the printer itself at copy time and stores its identity — HTTP title, PJL
-identity, SNMP description — in the bundle. This is what lets `apply` confirm on the other PC
-that the address still answers as the same device.
+SpoolSmith probes the printer itself at copy time and stores model evidence — HTTP title, PJL
+identity, SNMP description — in the bundle. `apply` compares reported model evidence
+with that capture. This is a consistency check, not authentication of a unique device.
 
 If the printer is asleep, the first probe can come back with nothing useful. SpoolSmith retries
 once before giving up, because a printer that answers thinly on first contact and fully a few
@@ -111,7 +124,8 @@ Bundle: accounting.ssb
   All payload files match the manifest's hashes.
 ```
 
-This touches neither the network nor the PC. It checks the bundle's integrity, not the printer.
+This reads and verifies the local bundle without contacting the printer or changing
+Windows printer configuration. It checks file integrity, not printer reachability.
 
 ## Step 4 — apply it on the other PC
 
@@ -137,8 +151,7 @@ matching settings are reported unchanged rather than rebuilt.
 spoolsmith apply accounting.ssb --offline
 ```
 
-`--offline` skips the live identity check — the one that confirms the address answers as the
-device that was captured. The plan says so before you confirm it:
+`--offline` skips the live model-evidence comparison with the capture. The plan says so before you confirm it:
 
 ```
   OFFLINE: live identity is not checked. Verify local queue, driver and RAW TCP 9100 endpoint
@@ -212,19 +225,15 @@ On Windows 11 build 26200, against a real Brother HL-L2315D:
   Windows Hardware Compatibility Publisher), staged it with `pnputil /add-driver` as
   `oem16.inf`, registered it, and created the queue.
 
-Still unverified: a live `repoint` mutation (only its preview has been run), and no test page
-has been printed through a bundle-staged driver.
+These source and destination scenarios ran on **one PC**, with the absent-driver
+state simulated by removing its driver. Still unverified: transfer between two
+separate PCs, a live `repoint` mutation (only its preview has been run), and physical
+printing through a bundle-staged driver. See the [dated validation record](validation/2026-09-15-copy-workflow.md).
 
 ## Current limitations
 
-The v0.6.0 desktop mirrors this workflow: **This PC → Copy to a file** on the source,
-then **Add a printer → Open a printer file** on the destination. Review, preview and
-confirm the plan. **More options** offers offline mode and updating an existing queue.
-**This PC → Change address** reviews an address change; **Tools → Inspect** verifies
-and displays a bundle manifest. The CLI examples above remain supported.
-
 - `uninstall --purge-driver` can leave a driver registered that nothing uses any more. Windows
   removes queues asynchronously, so the check guarding driver removal can still see the queue
-  that was just deleted. If you then want the driver genuinely gone, restart the spooler first:
-  until you do, Windows reports it as in use and both `Remove-PrinterDriver` and
-  `pnputil /delete-driver` refuse.
+  that was just deleted. The validation session needed a spooler restart before
+  Windows accepted driver removal. A restart affects other printing on the PC;
+  this is a known cleanup limitation, not an automatic step in SpoolSmith.

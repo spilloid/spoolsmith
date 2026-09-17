@@ -14,3 +14,22 @@
 @media(max-width:1000px){.shot-grid{gap:20px}.shot-grid h3{font-size:15px}}
 @media(max-width:760px){.app-section{padding-block:56px}.shot-grid{grid-template-columns:1fr;gap:34px;margin-top:34px}.app-section h2 br{display:none}}
 .shot a{display:block;border-radius:9px}.shot a:hover img{border-color:var(--orange)}
+
+/* Product guidance and accessible layouts, including narrow viewports. */
+.release-link{display:inline-block;margin-top:10px;font-size:12px;color:var(--muted);text-underline-offset:4px}
+.file-grid,.guide-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:22px}
+.file-grid article,.guide-grid>a{padding:28px;background:#fffef9;border:1px solid var(--line);border-radius:10px}
+.file-grid p,.guide-grid p{font-size:14px;color:var(--muted);margin-bottom:0}
+.file-kind{display:inline-block;font:13px Consolas,monospace;background:var(--pale);padding:9px 12px;border-radius:5px}
+.files-section{border-top:1px solid var(--line)}.files-section h2{margin-bottom:32px}
+.guide-grid>a{text-decoration:none;transition:border-color .15s,background .15s}.guide-grid>a:hover{border-color:var(--orange);background:#f1f3e9}.guide-grid h3{font-size:19px}.guide-grid h3 span{float:right}
+.guides-section{border-top:1px solid var(--line)}.faq-section{padding-top:0;max-width:900px}
+.faq-section details{border-bottom:1px solid var(--line);padding:0 4px}.faq-section summary{padding:22px 0;font-weight:600;cursor:pointer}.faq-section details p{color:var(--muted);margin:0 0 24px;max-width:740px}
+.setup-list{padding-left:24px;line-height:1.75;font-size:15px;color:var(--muted)}.setup-list li{padding:0 0 14px 8px}.setup-list strong{color:var(--ink)}
+.cli-details{border-top:1px solid var(--line);padding-top:18px;margin-top:22px}.cli-details summary{cursor:pointer;font-size:14px;font-weight:600}
+summary:focus-visible{outline:3px solid var(--orange);outline-offset:4px}
+.tabs{gap:16px;flex-wrap:wrap}.tabs button{min-height:44px}.hero-meta{font-size:12px}.small-label,.step-number{font-size:11px}
+.app-section>.wrap>.shot{max-width:820px;margin-inline:auto}.app-section>.wrap>.shot img{box-shadow:0 20px 48px #163d3818}
+@media(max-width:900px){.file-grid,.guide-grid{gap:14px}.file-grid article,.guide-grid>a{padding:22px}}
+@media(max-width:760px){.file-grid,.guide-grid{grid-template-columns:1fr}.faq-section{padding-top:0}.header{height:auto;min-height:90px;flex-wrap:wrap;gap:16px;padding-block:20px}nav{flex-wrap:wrap;gap:18px}nav a{padding-block:6px}.hero-meta{font-size:12px}.tabs{gap:4px 18px}.tabs button{font-size:13px}.hero{padding-top:36px}}
+@media(max-width:380px){nav a:first-child{display:inline}.saved-card div>span{font-size:11px}.saved-card strong{font-size:13px}.saved-card{transform:none}}

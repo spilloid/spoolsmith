@@ -1,20 +1,25 @@
-# Deploy one printer with Intune
+# Intune packaging — unreleased validation guide
 
-SpoolSmith can export a local Win32 printer app using the desktop wizard
-(**Tools → Build an Intune printer app**) or `spoolsmith intune wizard`.
-The exported scripts run silently as SYSTEM and keep their removal inputs in
-protected machine storage. Packaging does not authenticate to a tenant, upload
-an app, assign groups, download a driver, or modify the administrator's printers.
+**This is a design and pilot guide, not a supported v0.6.0 workflow.** The desktop
+wizard and `spoolsmith intune` commands are disabled in the current entrypoints.
+Rebuilding the current source alone does not enable them. The steps below describe
+the internal implementation and require a deliberately prepared pilot build with
+those entrypoints enabled; there is no released end-user enablement switch.
 
-This feature is implemented in source. **Windows/SYSTEM and Intune pilot results
-are still pending.** The automated PowerShell tests exercise generated scripts
-with substituted Windows inventory and privilege boundaries; they do not validate
-NTFS ACL behavior, an OEM driver, Company Portal, or a tenant deployment.
+The internal packager exports local Win32 printer app content. Generated scripts
+run as SYSTEM and keep removal inputs in protected machine storage. Packaging does
+not authenticate to a tenant, upload an app, assign groups or download drivers.
 
-For the next native test session, use the [Windows 11 VM runbook](validation/2026-09-14-windows11-pilot.md)
-and [result template](validation/windows11-results-template.md). The
-[pre-pilot reflection](offline-intune-reflection.md) records known diagnostic and
-partial-install cleanup gaps, plus the Windows boundaries still needing evidence.
+[Windows/SYSTEM validation on September 15](validation/2026-09-15-windows11-results.md)
+covered installation, local detection, protected state, standard-user denials,
+revision updates and cache-independent removal. Several lifecycle cases remain
+unrun. **Real Intune tenant delivery and Company Portal validation are still pending.**
+Automated script tests are supplementary and are not tenant evidence.
+
+Use the [Windows pilot runbook](validation/2026-09-14-windows11-pilot.md) and actual
+[results](validation/2026-09-15-windows11-results.md) to identify the remaining cases.
+The [pre-pilot reflection](offline-intune-reflection.md) records earlier concerns;
+use the dated results for their current validation status.
 
 ## Prepare a validated profile and binary
 
@@ -33,11 +38,10 @@ See Microsoft's [Win32 prerequisites and setup](https://learn.microsoft.com/en-u
    supported by this packaging path. Both the archive hash and Windows signature
    checks remain mandatory when staging the supported archive. Keeping a driver
    registered does not prove it is compatible with the printer; validate that first.
-3. Build the CLI and optional desktop app from this source. **No published release
-   contains the endpoint commands yet** — they were deliberately held out of the
-   v0.5.0 command table pending a real tenant pilot, and v0.4.0 predates them. You
-   must build from source to follow this guide. The packager rejects an older or
-   incompatible executable.
+3. Prepare an explicitly enabled pilot build of the CLI and optional desktop app.
+   **No published release contains the Intune endpoint commands.** The normal build
+   commands below only compile the selected source; they do not enable the feature.
+   Do not package a release binary as if it implemented the held endpoint commands.
 
 ```powershell
 go build -o spoolsmith.exe ./cmd/spoolsmith

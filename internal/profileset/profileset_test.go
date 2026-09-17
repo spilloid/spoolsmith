@@ -97,3 +97,31 @@ func TestCollisionIsCheckedBeforeWritingAnyProfile(t *testing.T) {
 		t.Fatal("changed existing file")
 	}
 }
+
+func TestExportCannotPolluteSourceFolder(t *testing.T) {
+	source := t.TempDir()
+	if err := install.SaveProfile(filepath.Join(source, "office.json"), sample()); err != nil {
+		t.Fatal(err)
+	}
+	output := filepath.Join(source, "all.json")
+	if _, err := Export(source, output); err == nil || !strings.Contains(err.Error(), "outside") {
+		t.Fatalf("expected actionable folder error, got %v", err)
+	}
+	if _, err := os.Stat(output); !os.IsNotExist(err) {
+		t.Fatalf("collection was created: %v", err)
+	}
+	if n, err := Export(source, filepath.Join(t.TempDir(), "all.json")); err != nil || n != 1 {
+		t.Fatalf("source must remain exportable: %d %v", n, err)
+	}
+}
+
+func TestExportRejectsSourceDirectoryAlias(t *testing.T) {
+	source := t.TempDir()
+	alias := filepath.Join(t.TempDir(), "alias")
+	if err := os.Symlink(source, alias); err != nil {
+		t.Skipf("directory symlinks unavailable: %v", err)
+	}
+	if _, err := Export(source, filepath.Join(alias, "all.json")); err == nil || !strings.Contains(err.Error(), "outside") {
+		t.Fatalf("expected source-directory alias to be rejected, got %v", err)
+	}
+}

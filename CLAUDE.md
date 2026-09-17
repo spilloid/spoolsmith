@@ -2,6 +2,14 @@
 
 ## Project Mission
 
+**Operator update, 2026-09-17:** v0.6.0 is released with native desktop workflow
+parity, printer copy/apply, offline profiles and bulk JSON transfer. The operator
+requested a post-release quality, UX and product-site pass. Use `README.md`,
+`docs/roadmap.md` and dated `docs/validation/` records for current behavior and gaps;
+the milestone-one scope below is historical. Keep reviewed-plan confirmation and
+local driver trust checks. Intune entrypoints remain disabled; automatic driver
+downloads remain future work.
+
 **Operator update, 2026-09-06:** The operator asked Astra to prioritize daily use:
 known-IP mapping, discovery, and reusable per-printer JSON. See
 `docs/daily-use-spec.md`. Explicit operator profiles now extend queue mapping beyond

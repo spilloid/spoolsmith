@@ -28,7 +28,7 @@ func (a *app) onOpenSavedSetup() {
 	a.showSavedSetups(savedSetupPaths(a.profilesDirectory()), "")
 }
 
-// savedSetupPaths lists the readable setups in a folder, newest name order.
+// savedSetupPaths lists JSON candidates in a folder, in filename order.
 func savedSetupPaths(dir string) []string {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -79,7 +79,11 @@ func (a *app) showSavedSetups(paths []string, message string) {
 	refreshDetail := func() {
 		path, ok := selected()
 		if !ok {
-			detail.SetText("Choose a saved setup.")
+			if len(current) == 0 {
+				detail.SetText("No saved setups in this folder yet.\r\n\r\nImport a JSON collection, open another folder, or save a printer from Add a printer.")
+			} else {
+				detail.SetText("Choose a saved setup.")
+			}
 			for _, button := range []*walk.PushButton{setupBtn, updateBtn, editBtn, statusBtn, removeBtn} {
 				button.SetEnabled(false)
 			}
@@ -90,7 +94,7 @@ func (a *app) showSavedSetups(paths []string, message string) {
 			detail.SetText("This setup cannot be used:\r\n\r\n" + err.Error())
 			setupBtn.SetEnabled(false)
 			updateBtn.SetEnabled(false)
-			editBtn.SetEnabled(true)
+			editBtn.SetEnabled(false)
 			statusBtn.SetEnabled(false)
 			removeBtn.SetEnabled(false)
 			return
@@ -164,6 +168,9 @@ func (a *app) showSavedSetups(paths []string, message string) {
 						current = savedSetupPaths(picker.FilePath)
 						list.SetModel(labels())
 						status.SetText("Folder: " + picker.FilePath)
+						if len(current) > 0 {
+							list.SetCurrentIndex(0)
+						}
 						refreshDetail()
 					}
 				}},
@@ -180,12 +187,8 @@ func (a *app) showSavedSetups(paths []string, message string) {
 	list.SetModel(labels())
 	if len(current) > 0 {
 		list.SetCurrentIndex(0)
-	} else {
-		detail.SetText("No saved setups in this folder yet.\r\n\r\nSet up a printer from the network first, or open another folder.")
 	}
-	if len(current) > 0 {
-		refreshDetail()
-	}
+	refreshDetail()
 	a.runDialog(dialog)
 }
 
@@ -198,6 +201,10 @@ func (a *app) showSavedSetups(paths []string, message string) {
 // impossible instead of guarding against it.
 func (a *app) editSavedSetup(owner walk.Form, path string) bool {
 	profile, loadErr := install.LoadProfile(path)
+	if loadErr != nil {
+		showErr(owner, "Cannot edit setup", fmt.Errorf("this setup could not be read; fix the JSON or capture a new setup before editing: %w", loadErr))
+		return false
+	}
 	var dialog *walk.Dialog
 	var nameEdit, driverEdit, targetEdit, packageEdit, archiveEdit *walk.LineEdit
 	var status *walk.Label
@@ -205,7 +212,7 @@ func (a *app) editSavedSetup(owner walk.Form, path string) bool {
 	saved := false
 
 	packageID, archive := "", ""
-	if loadErr == nil && profile.DriverPackage != nil {
+	if profile.DriverPackage != nil {
 		packageID, archive = profile.DriverPackage.ID, profile.DriverPackage.Archive
 	}
 
@@ -264,9 +271,6 @@ func (a *app) editSavedSetup(owner walk.Form, path string) bool {
 	if err != nil {
 		showErr(owner, "Edit setup", err)
 		return false
-	}
-	if loadErr != nil {
-		status.SetText("This setup could not be read: " + loadErr.Error())
 	}
 	a.runDialog(dialog)
 	return saved

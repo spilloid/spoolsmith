@@ -48,11 +48,11 @@ func (c Collection) validate() error {
 		if err := e.Profile.Validate(); err != nil {
 			return fmt.Errorf("%s: %w", e.File, err)
 		}
-		data, err := json.Marshal(e.Profile)
+		data, err := json.MarshalIndent(e.Profile, "", "  ")
 		if err != nil {
 			return err
 		}
-		if len(data) > 1<<20 {
+		if len(data)+1 > 1<<20 {
 			return fmt.Errorf("%s: profile exceeds 1 MiB", e.File)
 		}
 	}
@@ -62,6 +62,20 @@ func (c Collection) validate() error {
 // Export collects every top-level profile, including evidence and package references.
 // It refuses invalid profiles and never replaces an existing export.
 func Export(directory, path string) (int, error) {
+	// A collection is not a single profile. Writing it among the profiles would
+	// poison both the saved-setup list and every subsequent export. SameFile
+	// also covers case aliases on Windows and symlinked directories.
+	source, err := os.Stat(directory)
+	if err != nil {
+		return 0, err
+	}
+	destination, err := os.Stat(filepath.Dir(path))
+	if err != nil {
+		return 0, err
+	}
+	if os.SameFile(source, destination) {
+		return 0, fmt.Errorf("saved setups: choose an export destination outside the saved-setup folder")
+	}
 	entries, err := os.ReadDir(directory)
 	if err != nil {
 		return 0, err

@@ -288,7 +288,7 @@ spoolsmith install 192.168.1.50
 spoolsmith install 192.168.1.50 --dry-run     # see the plan, touch nothing
 spoolsmith install 192.168.1.50 --force-family hp-laserjet-m4xx
 
-# Reverses exactly what install set up
+# Remove the named queue; retain ports and drivers still used by other queues
 spoolsmith uninstall "HP LaserJet Pro M404dn"
 
 # What this PC already has, and which queues can be copied elsewhere
@@ -314,12 +314,14 @@ Read this before pointing SpoolSmith at a printer you actually depend on:
 - **Automatic driver naming is verified only for the Brother HL-L2315D.** Other models
   need a profile with an explicitly selected, compatible Windows driver.
 - **Profiles map a driver to a RAW TCP 9100 queue.** The reviewed Brother local-archive
-  recipe can stage a missing driver; other drivers must already be registered.
+  recipe and copied bundles with driver payloads can stage a missing driver. Otherwise,
+  the compatible driver must already be registered.
   IPP-only drivers/printers and LPR-only printers require different queue strategies;
   the current install plan uses the Windows standard TCP/IP port with its RAW default.
-- **Discovery requires an explicit IPv4 CIDR** (`/24` through `/32`); it does not yet
-  discover across VLANs or implement multicast discovery. Candidates are not certified printers.
-- **The copy workflow is verified end to end on Windows 11 (build 26200).** Confirmed against
+- **CLI discovery requires an explicit IPv4 CIDR** (`/24` through `/32`). The desktop
+  can derive the local subnet or accept a single IP. Discovery does not automatically
+  cross VLANs or implement multicast discovery. Candidates are not certified printers.
+- **Copy and apply were tested on one Windows 11 PC (build 26200).** Confirmed against
   real hardware: listing queues; `copy --include-driver` exporting a 115-file, 25.9 MB Brother
   package; bundle write, re-read and hash verification; `apply --dry-run` matching the live
   printer's identity to the capture; `apply` running idempotently; a reviewed plan fingerprint
@@ -327,8 +329,10 @@ Read this before pointing SpoolSmith at a printer you actually depend on:
   driver deregistered *and* its driver-store package deleted, `apply` verified the payload's
   catalog signature (Microsoft Windows Hardware Compatibility Publisher), staged it with
   `pnputil /add-driver` as `oem16.inf`, registered it, and created the queue.
-  **Still unverified:** a live `repoint` mutation (only its preview was run), and no test print
-  has been sent through a bundle-staged driver.
+  **Still unverified:** transfer between two separate PCs, a live `repoint` mutation
+  (only its preview was run), and physical printing through a bundle-staged driver.
+  The absent-driver target above was simulated on the same PC, not a second machine.
+  See the [copy validation record](docs/validation/2026-09-15-copy-workflow.md).
 - **`uninstall --purge-driver` can retain a driver that is actually unused.** Windows removes a
   queue asynchronously, so the in-use check that guards driver removal can still see the queue
   that was just deleted and keep the driver. Observed on real hardware. Removing such a driver
@@ -340,8 +344,10 @@ Read this before pointing SpoolSmith at a printer you actually depend on:
   a bundle as trusted exactly as much as the machine it came from.
 - **Live discovery, add and repeated add are verified with a Brother HL-L2315D.**
   Real Windows queue/port reads confirmed the mapping and repeat-add no-op behavior.
-  The operator also observed a successful physical test print. Removal/configuration
-  tests use PowerShell cmdlet doubles; live removal remains unverified.
+  The operator also observed a successful physical test print. Native Windows offline
+  add/configure, removal and shared-resource protection have also been exercised;
+  see the [Windows pilot results](docs/validation/2026-09-15-windows11-results.md).
+  Automated tests supplement that record; they do not prove additional hardware support.
 - Matching mappings are reused. Conflicts fail closed, and shared ports/drivers are
   retained on removal. This is repeatable reconciliation, not a transaction: a process
   failure can leave an unused port, which a subsequent add will safely reuse.
@@ -374,7 +380,7 @@ what got fixed. It's not polished marketing copy; it's the real record, warts in
 
 MIT — see [LICENSE](LICENSE).
 
-## Offline provisioning and Intune packaging (in source)
+## Offline provisioning (released)
 
 Prevalidated profiles can provision a queue before the printer is reachable:
 
@@ -394,23 +400,19 @@ remain in force. Offline success additionally verifies local queue/driver/RAW TC
 `status` is local-only: exit 0 means matching configuration, 3 means mismatch,
 2 means invalid inputs, and 1 means inventory/execution failure.
 
-The desktop **Tools → Build an Intune printer app** wizard and
-`spoolsmith intune wizard` export reviewable Win32 app content. Automation uses
-`spoolsmith intune build --help`. The packager requires a pinned compatible Windows
-x64 CLI, a prevalidated profile, and a supported local archive or an explicit
-separately managed driver prerequisite. It generates silent SYSTEM install/removal
-scripts, local-only detection, protected persistent deployment state and logs,
-and content-preparation instructions.
+## Intune packaging (unreleased)
 
-See the [complete Intune tutorial and lifecycle checklist](docs/intune-deployment.md)
-and [illustrative example](examples/intune/README.md). Windows/SYSTEM, Company Portal,
-and Intune pilot verification remain pending; automated script tests are not tenant
-validation.
+**Intune packaging is disabled in v0.6.0 and on the current command table.**
+The internal implementation and tests remain in source, but rebuilding alone does
+not enable the wizard or endpoint commands. Offline provisioning and local status
+above are released and do not require Intune.
 
-**The Intune commands are not in the v0.6.0 release.** `intune wizard` and `intune build` are
-present in source and covered by tests, but are deliberately off the shipped command table until
-the packaging has been piloted against a real tenant. The internal implementation and
-tests remain in source; rebuilding alone does not enable the disabled command. The
-read-only `capabilities` probe does remain, because the packager identifies a compatible CLI by
-finding that marker string inside the executable. The offline provisioning commands above
-(`--offline`, `status`) *are* released.
+The internal packager is designed to export reviewable Win32 app content with
+silent SYSTEM scripts, local-only detection and protected deployment state.
+[Native Windows/SYSTEM tests](docs/validation/2026-09-15-windows11-results.md)
+proved several endpoint paths; tenant delivery, Company Portal and remaining
+lifecycle cases still need a pilot before this can ship.
+
+The [Intune design and validation guide](docs/intune-deployment.md) and
+[illustrative example](examples/intune/README.md) describe that unreleased work.
+See the [remaining-work roadmap](docs/roadmap.md) for priorities beyond Intune.

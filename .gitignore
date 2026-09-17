@@ -40,3 +40,6 @@ test/gui/**/obj/
 
 # Local compiled application bundles
 /dist/
+
+# Product-site browser checks
+/test/site/node_modules/
