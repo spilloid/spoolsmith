@@ -34,8 +34,21 @@ main after the v0.6.0 tag; the existing release ZIP has not been replaced.
 - Axe automated WCAG 2 A/AA and 2.1 AA checks: zero violations at all four widths.
   This does not replace manual assistive-technology testing.
 - Browser check source and reproduction instructions: [`test/site`](../../test/site).
-- Native Windows desktop, hosted CI and live Pages checks: results recorded below
-  after the reviewed changes are pushed.
+- [Pages deployment](https://github.com/spilloid/spoolsmith/actions/runs/35181383830)
+  passed for commit `8da463c`. The same browser checks also passed against the
+  [live site](https://spilloid.github.io/spoolsmith/), including clipboard access.
+  The versioned Windows ZIP link returned HTTP 200 after redirects; all repository
+  documentation links resolve to existing files.
+- [Hosted Linux and Windows CI](https://github.com/spilloid/spoolsmith/actions/runs/35181384443)
+  passed for `8da463c`, including build, vet, native Go/PowerShell tests and desktop
+  test compilation.
+- [Native Windows desktop run](https://github.com/spilloid/spoolsmith/actions/runs/35181393861)
+  passed **28/28**, with zero skipped tests. This includes the invalid-profile
+  regression, existing review handoffs, minimum-size layout and missing-driver
+  refusal. The workflow retains screenshots and TRX evidence.
+- The operator restarted the separate Windows VM's SSH service during this pass.
+  A fresh connection reached the server but its account rejected the available
+  public key, so this did not add VM or physical-printer validation evidence.
 
 No new physical printer, two-PC, live address-change, high-DPI or Intune tenant
 validation was performed. The [roadmap](../roadmap.md) separates those outstanding
