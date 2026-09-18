@@ -225,8 +225,14 @@ public sealed class FunctionalTests : IDisposable
         _fixture.SelectTab("Tools");
         FindButton(_fixture.MainWindow, "Build an Intune printer app...").Invoke();
         Window? dialog = null;
-        try { WaitUntil(() => (dialog = _fixture.MainWindow.ModalWindows.Concat(_fixture.App.GetAllTopLevelWindows(_fixture.Automation))
-            .FirstOrDefault(w => w.Title == "Build an Intune printer app")) != null, "Intune wizard did not open."); }
+        try
+        {
+            WaitUntil(() => (dialog = _fixture.MainWindow.ModalWindows.Concat(_fixture.App.GetAllTopLevelWindows(_fixture.Automation))
+                .FirstOrDefault(w => w.Title == "Build an Intune printer app")) != null, "Intune wizard did not open.");
+            // The dialog's owned Window can resolve before its first page's
+            // controls are queryable via UIA; wait for one before handing back.
+            FindVisibleIntuneControl(dialog!, "intune-profile");
+        }
         catch { _fixture.MainWindow.CaptureToFile(Path.Combine(_fixture.RepoRoot,"dist","intune-wizard-failure.png")); throw; }
         return dialog!;
     }
@@ -238,7 +244,22 @@ public sealed class FunctionalTests : IDisposable
         Assert.True(FindButton(_fixture.MainWindow, "Build an Intune printer app...").IsEnabled);
 
         var dialog = OpenIntuneWizard();
-        Assert.False(Find(dialog, "intune-profile").IsOffscreen);
+        FindVisibleIntuneControl(dialog, "intune-profile");
+        var advanced = FindVisibleIntuneControl(dialog, "Advanced settings (updates, metadata and policy)").AsCheckBox();
+        Assert.Equal<bool?>(false, advanced.IsChecked);
+        AssertIntuneAdvancedHidden(dialog);
+
+        // Absence while collapsed is valid UIA behavior, but absence after
+        // expanding is a bug. Exercise both directions, including retained data.
+        dialog.SetForeground();
+        advanced.Click();
+        foreach (var field in IntuneAdvancedFields)
+            Assert.True(FindVisibleIntuneControl(dialog, field).IsEnabled);
+        SetText(FindVisibleIntuneControl(dialog, "intune-id").AsTextBox(), "retained-id");
+        advanced.Click();
+        AssertIntuneAdvancedHidden(dialog);
+        advanced.Click();
+        Assert.Equal("retained-id", FindVisibleIntuneControl(dialog, "intune-id").AsTextBox().Text);
         FindButton(dialog, "Close").Invoke();
         WaitUntil(() => !_fixture.MainWindow.ModalWindows.Any(), "Close did not dismiss the Intune wizard.");
     }
@@ -265,24 +286,47 @@ public sealed class FunctionalTests : IDisposable
             SetText(Find(dialog, "intune-binary").AsTextBox(), _fixture.CliExePath);
             // The bundled example profile carries no local driver archive.
             Find(dialog, "Driver is managed separately and will be registered before installation").AsCheckBox().Click();
-            FindButton(dialog, "Calculate hash").Invoke();
-            WaitUntil(() =>
-            {
-                var text = Find(dialog, "intune-binary-sha256").AsTextBox().Text ?? "";
-                return text.Length == 64 && text.All(Uri.IsHexDigit);
-            }, "SHA-256 was not calculated.");
-            FindButton(dialog, "Next: Deployment").Invoke();
-
-            SetText(Find(dialog, "intune-id").AsTextBox(), "gui-wizard-test");
-            SetText(Find(dialog, "intune-revision").AsTextBox(), "1");
-            SetText(Find(dialog, "intune-display-name").AsTextBox(), "GUI wizard test");
-            SetText(Find(dialog, "intune-location").AsTextBox(), "Test");
-            SetText(Find(dialog, "intune-description").AsTextBox(), "FlaUI regression test export.");
+            WaitForText(Find(dialog, "intune-display-name").AsTextBox(),
+                t => t == "Example — Accounting Copier");
+            Assert.False(string.IsNullOrWhiteSpace(Find(dialog, "intune-output").AsTextBox().Text));
+            // The common path needs no metadata, hash calculation or extra page.
             SetText(Find(dialog, "intune-output").AsTextBox(), outputDir);
             FindButton(dialog, "Validate and preview package").Invoke();
 
-            var preview = Find(dialog, "intune-preview").AsTextBox();
-            WaitForText(preview, t => t.Contains("gui-wizard-test", StringComparison.Ordinal));
+            var preview = FindVisibleIntuneControl(dialog, "intune-preview").AsTextBox();
+            WaitForText(preview, t => t.Contains("example-accounting-copier-", StringComparison.Ordinal));
+            var previewText = preview.Text!;
+            using (var manifest = System.Text.Json.JsonDocument.Parse(previewText[previewText.IndexOf('{')..]))
+            {
+                Assert.Equal(1, manifest.RootElement.GetProperty("revision").GetInt32());
+                Assert.False(manifest.RootElement.GetProperty("offline").GetBoolean());
+                Assert.False(manifest.RootElement.GetProperty("adopt_matching_queue").GetBoolean());
+                var expectedHash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(_fixture.CliExePath))).ToLowerInvariant();
+                Assert.Equal(expectedHash, manifest.RootElement.GetProperty("binary_sha256").GetString());
+            }
+            Assert.False(Directory.Exists(outputDir), "preview wrote files before confirmation");
+            // Returning to settings must invalidate approval, even without edits.
+            FindButton(dialog, "Back to settings").Invoke();
+            FindVisibleIntuneControl(dialog, "intune-profile");
+            // Do not query a button under a programmatically hidden TabPage.
+            // Reopen review WITHOUT validating: this must not restore approval.
+            SelectIntuneReviewPage(dialog);
+            Assert.False(FindButton(dialog, "Export reviewed package").IsEnabled);
+            Assert.False(Directory.Exists(outputDir), "returning to review exported an unconfirmed package");
+            FindButton(dialog, "Back to settings").Invoke();
+            FindVisibleIntuneControl(dialog, "Advanced settings (updates, metadata and policy)").AsCheckBox().Click();
+            SetText(FindVisibleIntuneControl(dialog, "intune-id").AsTextBox(), "gui-wizard-test");
+            SetText(FindVisibleIntuneControl(dialog, "intune-revision").AsTextBox(), "2");
+            SetText(FindVisibleIntuneControl(dialog, "intune-location").AsTextBox(), "West");
+            SetText(FindVisibleIntuneControl(dialog, "intune-description").AsTextBox(), "Updated metadata");
+            SetText(Find(dialog, "intune-display-name").AsTextBox(), "GUI wizard test");
+            SelectIntuneReviewPage(dialog);
+            Assert.False(FindButton(dialog, "Export reviewed package").IsEnabled);
+            FindButton(dialog, "Back to settings").Invoke();
+            FindButton(dialog, "Validate and preview package").Invoke();
+            // Reacquire after navigation; an old UIA wrapper need not survive hiding.
+            preview = FindVisibleIntuneControl(dialog, "intune-preview").AsTextBox();
+            WaitForText(preview, t => t.Contains("GUI wizard test", StringComparison.Ordinal));
             Assert.True(FindButton(dialog, "Export reviewed package").IsEnabled);
             FindButton(dialog, "Export reviewed package").Invoke();
 
@@ -302,11 +346,60 @@ public sealed class FunctionalTests : IDisposable
                 Assert.True(File.Exists(Path.Combine(outputDir, expected)), $"expected exported {expected}");
             }
             Assert.False(File.Exists(Path.Combine(outputDir, "driver.exe")), "unexpected driver.exe: the prerequisite path bundles no driver");
+            using var exported = System.Text.Json.JsonDocument.Parse(File.ReadAllText(Path.Combine(outputDir, "deployment.json")));
+            Assert.Equal("gui-wizard-test", exported.RootElement.GetProperty("id").GetString());
+            Assert.Equal(2, exported.RootElement.GetProperty("revision").GetInt32());
+            Assert.Equal("West", exported.RootElement.GetProperty("location").GetString());
+            Assert.Equal("Updated metadata", exported.RootElement.GetProperty("description").GetString());
         }
         finally
         {
             if (Directory.Exists(outputDir)) Directory.Delete(outputDir, recursive: true);
         }
+    }
+
+    private static readonly string[] IntuneAdvancedFields =
+    {
+        "intune-id", "intune-revision", "intune-location", "intune-description", "intune-binary-sha256",
+        "Provision offline: skip live identity validation",
+        "Allow adoption of an existing, exactly matching unmanaged queue"
+    };
+
+    private static void AssertIntuneAdvancedHidden(Window dialog)
+    {
+        // Walk eagerly creates native HWNDs, but UIA2 may omit their subtree
+        // after ShowWindow(SW_HIDE). Missing and offscreen both mean hidden.
+        // The opening test separately requires every field to appear on expand.
+        // https://learn.microsoft.com/en-us/dotnet/api/system.windows.automation.automationelement.automationelementinformation.isoffscreen
+        WaitUntil(() => IntuneAdvancedFields.All(name =>
+        {
+            var element = dialog.FindFirstDescendant(cf => cf.ByName(name));
+            return element == null || element.IsOffscreen;
+        }), "Advanced settings were not collapsed.");
+    }
+
+    private static AutomationElement FindVisibleIntuneControl(Window dialog, string name)
+    {
+        AutomationElement? element = null;
+        WaitUntil(() =>
+        {
+            element = dialog.FindFirstDescendant(cf => cf.ByName(name));
+            return element != null && !element.IsOffscreen;
+        }, $"Intune control '{name}' did not become visible.");
+        return element!;
+    }
+
+    private static void SelectIntuneReviewPage(Window dialog)
+    {
+        // As in AppFixture.SelectTab, use a genuine click: SelectionItemPattern
+        // does not send the TCN_SELCHANGE that Walk needs to swap visible pages.
+        var tab = dialog.FindFirstDescendant(cf => cf.ByControlType(ControlType.TabItem)
+            .And(cf.ByName("2. Review and export")))
+            ?? throw new InvalidOperationException("Intune review tab was not found.");
+        dialog.SetForeground();
+        dialog.Focus();
+        tab.Click();
+        FindVisibleIntuneControl(dialog, "intune-preview");
     }
 
     private string CreateSavedPrinter()

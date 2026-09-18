@@ -10,8 +10,9 @@ the Intune admin center — see "Prepare and upload" and "Required and Company
 Portal" below. Tenant sign-in and automatic upload/assignment are a distinct,
 broader feature that isn't planned; see the [roadmap](roadmap.md). The desktop
 GUI offers the same wizard (Tools tab → "Build an Intune printer app..."), for
-anyone who'd rather not use the CLI — see
-[its validation record](validation/2026-09-17-gui-intune-wizard.md).
+anyone who'd rather not use the CLI — validated on real Windows hardware in
+[the UX-simplification record](validation/2026-09-18-gui-intune-ux-simplification.md)
+(building on [the original dialog's validation](validation/2026-09-17-gui-intune-wizard.md)).
 
 [Windows/SYSTEM validation on September 15](validation/2026-09-15-windows11-results.md)
 covered installation, local detection, protected state, standard-user denials,
@@ -49,50 +50,95 @@ See Microsoft's [Win32 prerequisites and setup](https://learn.microsoft.com/en-u
 ```powershell
 go build -o spoolsmith.exe ./cmd/spoolsmith
 .\spoolsmith.exe capabilities
-(Get-FileHash .\spoolsmith.exe -Algorithm SHA256).Hash
 ```
 
-Record the binary hash as the reviewed build pin. Pinning prevents accidental
+SpoolSmith calculates the selected binary’s SHA-256 automatically and shows it
+in the review manifest. You can supply an approved hash with `--binary-sha256`
+or in advanced settings; a mismatch is refused. Pinning prevents accidental
 payload changes between preview and export; it is not a publisher signature.
-Use only binaries and driver payloads approved by your organization.
+Use only binaries and driver payloads approved by your organization. The Windows
+x64 PE, Go CLI build identity and endpoint capability checks still run, and the
+CLI and any driver archive are rechecked against their pins during export.
 
 ## Run the wizard
 
-`intune wizard` is interactive and asks for the same things either way:
+The interactive CLI and desktop GUI use the same defaults:
 
-1. Select the profile and CLI; enter or calculate the binary hash and review it.
-   Select the separately managed driver prerequisite only when the profile has
-   no bundled archive.
-2. Set a stable ID such as `indy-accounting`, a positive revision, display name,
-   location, description, and a new output directory. Choose strict live validation
-   or explicitly choose offline provisioning. Allow adoption only if you intend
-   to manage an existing queue whose full configuration matches.
-3. Review commands, hashes, filenames, target, driver and policy. Type `export`
-   to create the package.
+1. Choose the validated profile and approved CLI executable. The app name comes
+   from the profile’s queue name; a description includes its name and address.
+   Revision starts at 1. A stable deployment ID is suggested from the queue name,
+   and the binary hash is calculated automatically. If the profile has no local
+   archive, explicitly accept that the driver will be registered separately.
+2. Review the destination and manifest, including the ID, commands, hashes,
+   filenames, target, driver and policy. Type `export` in the CLI or click
+   **Export reviewed package** in the GUI to create the local package.
 
 ```powershell
 .\spoolsmith.exe intune wizard
 ```
 
-(The desktop GUI's Tools tab has the same wizard — "Build an Intune printer
-app..." — for the same three steps through dialog pages instead of prompts.)
+The desktop GUI’s Tools tab → **Build an Intune printer app...** now has two
+pages: **Package settings** and **Review and export**. The common path needs only
+file selection, the driver prerequisite choice if applicable, and review/export.
+App name and destination are editable on the first page. **Advanced settings**
+contains ID, revision, optional location, description, an approved hash override,
+offline provisioning and adoption. Returning to settings or editing any package
+input invalidates the previous preview; validate again before exporting.
+The CLI wizard offers the same advanced settings when requested.
 
-For repeatable packaging, use explicit flags. `--dry-run` validates inputs and
-prints the manifest without exporting files or running Microsoft's tool:
+Live identity validation and no adoption remain the defaults. Offline provisioning
+and adoption of an exactly matching unmanaged queue require explicit choices.
+Offline skips live identity checks at installation; printing still needs network
+connectivity. A failed strict probe never falls back to offline mode.
+
+The suggested ID combines a readable queue-name slug with a short hash of the
+exact queue name, preserving distinctions between punctuation, Unicode and long
+names. It does not depend on profile filename, address, driver or app display
+name. **For an existing deployment, reuse its ID (including any previously chosen
+custom ID) and increase the revision for configuration changes.** The tool does
+not look up deployed revisions. Location is left blank because profiles do not
+contain that information.
+
+The suggested destination is an unused `<id>-r<revision>` directory beside the
+profile. If occupied, `-2`, `-3`, etc. are appended. These suffixes distinguish
+export folders; they do not increment deployment revisions. Suggestions create
+nothing. Export creates exactly the reviewed directory and refuses it if another
+process creates it first. An explicit output path must also be new, with an
+existing parent directory.
+
+For scripted packaging, `intune build` keeps its explicit flag overrides. Only
+`--profile` and `--binary` are required for a profile with a supported archive;
+this example accepts the separately managed driver prerequisite. Start with
+`--dry-run` to review the manifest and suggested destination without creating
+files or running Microsoft’s tool:
 
 ```powershell
 .\spoolsmith.exe intune build `
   --profile .\profiles\accounting.json `
-  --binary .\spoolsmith.exe --binary-sha256 '<reviewed SHA-256>' `
-  --id indy-accounting --revision 1 `
-  --name 'Indianapolis — Accounting Copier' --location Indianapolis `
-  --description 'Accounting department copier' `
-  --driver-prerequisite --offline --output .\accounting-r1 --dry-run
+  --binary .\spoolsmith.exe --driver-prerequisite --dry-run
 ```
 
-Remove `--dry-run` to export. Omit `--driver-prerequisite` when the profile includes
-an approved local archive. Omit `--offline` to require live identity checks.
-A failed strict probe never falls back to offline mode.
+After review, repeat without `--dry-run` to export. For automation that separates
+preview and export into different invocations, pass the reviewed
+`--binary-sha256` and `--output` to keep the same binary pin and destination.
+Use the interactive wizard to retain the prepared package and pins in memory
+between review and confirmation. `build` retains its noninteractive export
+behavior; it does not prompt.
+
+Override defaults when needed, especially when updating an existing deployment:
+
+```powershell
+.\spoolsmith.exe intune build `
+  --profile .\profiles\accounting.json `
+  --binary .\spoolsmith.exe --binary-sha256 '<approved SHA-256>' `
+  --id indy-accounting --revision 2 --name 'Accounting Copier' `
+  --location Indianapolis --description 'Accounting department copier' `
+  --driver-prerequisite --offline --output .\accounting-r2 --dry-run
+```
+
+Omit `--driver-prerequisite` when the profile includes an approved local archive.
+Explicit metadata overrides are preserved; `--description=` leaves the
+optional description empty.
 
 The export contains `profile.json`, `deployment.json`, `spoolsmith.exe`,
 `install.ps1`, `uninstall.ps1`, `runtime.ps1`, `detect.ps1`, and `README.txt`,
@@ -106,7 +152,7 @@ Download Microsoft's current [Win32 Content Prep Tool](https://github.com/micros
 and keep it outside the source bundle directory. Run:
 
 ```powershell
-.\IntuneWinAppUtil.exe -c .\accounting-r1 -s install.ps1 -o .\intunewin -q
+.\IntuneWinAppUtil.exe -c "<exported-folder>" -s install.ps1 -o .\intunewin -q
 ```
 
 Alternatively pass `--content-prep-tool <path>` and

@@ -107,6 +107,12 @@ func Prepare(o Options) (*Prepared, error) {
 		return nil, errors.New("choose a local payload or a separately managed driver prerequisite, not both")
 	}
 	binaryHash := strings.ToLower(o.BinarySHA256)
+	if binaryHash == "" {
+		binaryHash, err = HashBinary(o.BinaryPath)
+		if err != nil {
+			return nil, err
+		}
+	}
 	if b, e := hex.DecodeString(binaryHash); e != nil || len(b) != sha256.Size {
 		return nil, errors.New("provide the reviewed Windows CLI binary SHA-256")
 	}
@@ -245,24 +251,39 @@ func checkCapability(path string) error {
 	}
 	return errors.New("CLI lacks offline/status endpoint support; build the current source before packaging")
 }
-func verifyFile(path, expected string) error {
+
+// HashBinary computes a local payload pin for review. Prepare additionally
+// verifies the PE architecture, Go command path and endpoint capability marker.
+func HashBinary(path string) (string, error) {
 	f, e := os.Open(path)
 	if e != nil {
-		return e
+		return "", e
 	}
 	defer f.Close()
 	info, e := f.Stat()
 	if e != nil {
-		return e
+		return "", e
 	}
 	if !info.Mode().IsRegular() || info.Size() > 2<<30 {
-		return errors.New("expected a regular payload no larger than 2 GiB")
+		return "", errors.New("expected a regular payload no larger than 2 GiB")
 	}
 	h := sha256.New()
-	if _, e = io.Copy(h, f); e != nil {
-		return e
+	n, e := io.Copy(h, io.LimitReader(f, (2<<30)+1))
+	if e != nil {
+		return "", e
 	}
-	if hex.EncodeToString(h.Sum(nil)) != strings.ToLower(expected) {
+	if n > 2<<30 {
+		return "", errors.New("expected a payload no larger than 2 GiB")
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+func verifyFile(path, expected string) error {
+	actual, err := HashBinary(path)
+	if err != nil {
+		return err
+	}
+	if actual != strings.ToLower(expected) {
 		return fmt.Errorf("SHA-256 mismatch: %s", path)
 	}
 	return nil

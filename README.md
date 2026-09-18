@@ -419,26 +419,39 @@ SpoolSmith draws everywhere else (see [How it's built to
 behave](#how-its-built-to-behave)).
 
 ```powershell
-spoolsmith intune build --profile printer-setups\accounting.json ^
-  --binary spoolsmith.exe --binary-sha256 <reviewed-hash> ^
-  --id indy-accounting --revision 1 --name "Accounting Copier" ^
-  --driver-prerequisite --output dist\indy-accounting
+spoolsmith intune build --profile printer-setups\accounting.json `
+  --binary spoolsmith.exe --driver-prerequisite --dry-run
 ```
 
-`--dry-run` previews the manifest (commands, file list, hashes) without writing
-anything. `--content-prep-tool`/`--content-prep-output` additionally run
-Microsoft's own `IntuneWinAppUtil.exe` locally to produce the `.intunewin` file;
-without them, `README.txt` in the export names the exact command to run it
-yourself. `intune wizard` walks the same steps interactively, and the desktop
-GUI's Tools tab offers the same wizard for those who'd rather not use the CLI.
-The pinned CLI binary must be built from this source and include the
-`intune-endpoint-v1` capability marker (`spoolsmith capabilities`) — an older or
-GUI binary is refused.
+The profile supplies the app name, description and suggested deployment ID;
+revision defaults to 1. The CLI hash is calculated automatically. An unused
+export folder beside the profile is suggested, so no folder name needs to be
+invented. Override these with `--name`, `--description`, `--id`, `--revision`,
+`--binary-sha256` or `--output`. For updates, keep the existing deployment ID
+and increase its revision. Location is optional. Driver prerequisites, offline
+provisioning and adoption still require explicit choices.
+
+`--dry-run` previews the manifest and destination without writing files. After
+review, repeat without it to export; supply the reviewed `--binary-sha256` and
+`--output` when you need to fix those across separate invocations. For an
+interactive review and separate export confirmation, use `intune wizard` or
+the desktop GUI’s Tools tab → **Build an Intune printer app...**. The GUI has two
+pages: settings and review/export, with optional metadata and policy under
+**Advanced settings**. Both wizards retain the reviewed payload pins until export.
+
+`--content-prep-tool`/`--content-prep-output` additionally run Microsoft’s own
+`IntuneWinAppUtil.exe` locally to produce the `.intunewin` file; without them,
+`README.txt` in the export names the exact command to run it yourself.
+The CLI must be a Windows x64 SpoolSmith build with the `intune-endpoint-v1`
+capability marker (`spoolsmith capabilities`); older, unrelated and GUI binaries
+are refused. Payload hashes are pinned and rechecked at export.
 
 [Native Windows/SYSTEM tests](docs/validation/2026-09-15-windows11-results.md)
 validated install, local detection, protected state, standard-user denials,
-revision updates and removal end to end. [GUI wizard
-validation](docs/validation/2026-09-17-gui-intune-wizard.md) covers the desktop
-path specifically. The [design and validation guide](docs/intune-deployment.md)
+revision updates and removal end to end. The desktop wizard's simplified
+two-page flow is validated on real Windows hardware in
+[the UX-simplification record](docs/validation/2026-09-18-gui-intune-ux-simplification.md),
+building on [the original dialog's validation](docs/validation/2026-09-17-gui-intune-wizard.md).
+The [design and validation guide](docs/intune-deployment.md)
 and [illustrative example](examples/intune/README.md) cover the full workflow
 and lifecycle rules. See the [roadmap](docs/roadmap.md) for what's still open.
