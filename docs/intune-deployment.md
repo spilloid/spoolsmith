@@ -9,7 +9,9 @@ Win32 app in Intune, uploading the package, and assigning it stay manual steps i
 the Intune admin center — see "Prepare and upload" and "Required and Company
 Portal" below. Tenant sign-in and automatic upload/assignment are a distinct,
 broader feature that isn't planned; see the [roadmap](roadmap.md). The desktop
-GUI's wizard button exists in source but stays disabled for now — use the CLI.
+GUI offers the same wizard (Tools tab → "Build an Intune printer app..."), for
+anyone who'd rather not use the CLI — see
+[its validation record](validation/2026-09-17-gui-intune-wizard.md).
 
 [Windows/SYSTEM validation on September 15](validation/2026-09-15-windows11-results.md)
 covered installation, local detection, protected state, standard-user denials,
@@ -72,8 +74,8 @@ Use only binaries and driver payloads approved by your organization.
 .\spoolsmith.exe intune wizard
 ```
 
-(A desktop GUI wizard exists in source behind a disabled button — not yet the
-supported path; use the CLI above.)
+(The desktop GUI's Tools tab has the same wizard — "Build an Intune printer
+app..." — for the same three steps through dialog pages instead of prompts.)
 
 For repeatable packaging, use explicit flags. `--dry-run` validates inputs and
 prints the manifest without exporting files or running Microsoft's tool:

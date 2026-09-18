@@ -37,5 +37,6 @@ writing; it does not change Windows printer configuration. Carry archives separa
 with the same relative directory layout. A collection is limited to 1,000 profiles and
 16 MiB; individual profiles retain the 1 MiB limit.
 
-Intune packaging is deliberately disabled in both shipped front ends until tenant
-validation. A local configuration check does not verify reachability or physical output.
+Intune packaging (local-only Win32 app export) is available from both the CLI
+and the desktop GUI; see [Intune packaging](../README.md#intune-packaging). A
+local configuration check does not verify reachability or physical output.

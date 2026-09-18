@@ -65,10 +65,10 @@ func (a *app) onIntuneWizard() {
 		}, Pages: []TabPage{
 			{Title: "1. Profile and driver", Layout: VBox{Spacing: 10}, Children: []Widget{
 				Label{Text: "Select a profile captured and validated by an administrator. Only Windows x64 is supported."},
-				Composite{Layout: HBox{}, Children: []Widget{LineEdit{AssignTo: &profile, CueBanner: "Profile JSON file"}, PushButton{Text: "Browse profile...", OnClicked: func() { browse(&profile, "JSON files (*.json)|*.json") }}}},
-				Composite{Layout: HBox{}, Children: []Widget{LineEdit{AssignTo: &binary, CueBanner: "SpoolSmith CLI .exe with offline and status support"}, PushButton{Text: "Browse CLI...", OnClicked: func() { browse(&binary, "Windows executable (*.exe)|*.exe") }}}},
+				Composite{Layout: HBox{}, Children: []Widget{LineEdit{AssignTo: &profile, CueBanner: "Profile JSON file", Accessibility: name("intune-profile")}, PushButton{Text: "Browse profile...", OnClicked: func() { browse(&profile, "JSON files (*.json)|*.json") }}}},
+				Composite{Layout: HBox{}, Children: []Widget{LineEdit{AssignTo: &binary, CueBanner: "SpoolSmith CLI .exe with offline and status support", Accessibility: name("intune-binary")}, PushButton{Text: "Browse CLI...", OnClicked: func() { browse(&binary, "Windows executable (*.exe)|*.exe") }}}},
 				Label{Text: "Review this binary's SHA-256 before export; v0.4.0 lacks the required commands."},
-				Composite{Layout: HBox{}, Children: []Widget{LineEdit{AssignTo: &pin, CueBanner: "Approved CLI SHA-256"}, PushButton{Text: "Calculate hash", OnClicked: func() {
+				Composite{Layout: HBox{}, Children: []Widget{LineEdit{AssignTo: &pin, CueBanner: "Approved CLI SHA-256", Accessibility: name("intune-binary-sha256")}, PushButton{Text: "Calculate hash", OnClicked: func() {
 					f, e := os.Open(binary.Text())
 					if e != nil {
 						showErr(dialog, "Binary hash", e)
@@ -88,12 +88,12 @@ func (a *app) onIntuneWizard() {
 			}},
 			{Title: "2. Deployment", Layout: VBox{Spacing: 8}, Children: []Widget{
 				Composite{Layout: Grid{Columns: 2, Spacing: 8}, Children: []Widget{
-					Label{Text: "Stable deployment ID:"}, LineEdit{AssignTo: &id, CueBanner: "accounting-copier"},
-					Label{Text: "Revision:"}, LineEdit{AssignTo: &revision, Text: "1"},
-					Label{Text: "App display name:"}, LineEdit{AssignTo: &display},
-					Label{Text: "Location:"}, LineEdit{AssignTo: &location},
-					Label{Text: "Description:"}, LineEdit{AssignTo: &description},
-					Label{Text: "New export folder:"}, LineEdit{AssignTo: &output, CueBanner: "C:\\Packages\\accounting-r1"},
+					Label{Text: "Stable deployment ID:"}, LineEdit{AssignTo: &id, CueBanner: "accounting-copier", Accessibility: name("intune-id")},
+					Label{Text: "Revision:"}, LineEdit{AssignTo: &revision, Text: "1", Accessibility: name("intune-revision")},
+					Label{Text: "App display name:"}, LineEdit{AssignTo: &display, Accessibility: name("intune-display-name")},
+					Label{Text: "Location:"}, LineEdit{AssignTo: &location, Accessibility: name("intune-location")},
+					Label{Text: "Description:"}, LineEdit{AssignTo: &description, Accessibility: name("intune-description")},
+					Label{Text: "New export folder:"}, LineEdit{AssignTo: &output, CueBanner: "C:\\Packages\\accounting-r1", Accessibility: name("intune-output")},
 				}},
 				CheckBox{AssignTo: &offline, Text: "Provision offline: skip live identity validation"},
 				Label{Text: "Default: verify live identity. Offline uses the prevalidated profile; printing still needs network connectivity."},
@@ -103,7 +103,7 @@ func (a *app) onIntuneWizard() {
 			}},
 			{Title: "3. Review and export", Layout: VBox{Spacing: 8}, Children: []Widget{
 				Label{Text: "Review the commands, payload hashes and policy. Export creates local files."},
-				TextEdit{AssignTo: &preview, ReadOnly: true, VScroll: true, HScroll: true},
+				TextEdit{AssignTo: &preview, ReadOnly: true, VScroll: true, HScroll: true, Accessibility: name("intune-preview")},
 				Label{Text: "After export, README.txt guides content preparation and Intune setup. Pilot on Windows before broad deployment."},
 				PushButton{AssignTo: &exportButton, Text: "Export reviewed package", Enabled: false, OnClicked: func() {
 					if prepared == nil {

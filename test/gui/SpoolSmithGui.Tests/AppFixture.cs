@@ -20,6 +20,7 @@ public sealed class AppFixture : IDisposable
     public UIA2Automation Automation { get; }
     public Window MainWindow { get; }
     public string RepoRoot { get; }
+    public string CliExePath { get; }
 
     /// <summary>
     /// Tests launch without the startup scan so they start deterministically.
@@ -42,6 +43,15 @@ public sealed class AppFixture : IDisposable
                 "(go build -o dist/spoolsmith-gui.exe ./cmd/spoolsmith-gui) or set " +
                 "the SPOOLSMITH_GUI_EXE environment variable to its path.",
                 exePath);
+        }
+
+        // Only the Intune wizard test needs the CLI binary; resolved here (not
+        // required to exist) so every other test keeps working without it.
+        CliExePath = Path.Combine(RepoRoot, "dist", "spoolsmith.exe");
+        var cliFromEnv = Environment.GetEnvironmentVariable("SPOOLSMITH_CLI_EXE");
+        if (!string.IsNullOrWhiteSpace(cliFromEnv))
+        {
+            CliExePath = cliFromEnv;
         }
 
         var startInfo = new ProcessStartInfo(exePath)

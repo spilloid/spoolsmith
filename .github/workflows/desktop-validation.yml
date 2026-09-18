@@ -17,6 +17,8 @@ jobs:
           dotnet-version: '8.0.x'
       - name: Build desktop
         run: go build -o dist/spoolsmith-gui.exe ./cmd/spoolsmith-gui
+      - name: Build CLI
+        run: go build -o dist/spoolsmith.exe ./cmd/spoolsmith
       - name: Exercise desktop and capture screens
         env:
           SPOOLSMITH_CAPTURE_SITE_SHOTS: '1'

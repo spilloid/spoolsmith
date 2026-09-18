@@ -7,7 +7,8 @@ with a real validated profile before running an endpoint install.
 
 The [Intune packaging guide](../../docs/intune-deployment.md) and the [README's
 Intune section](../../README.md#intune-packaging) describe generating a complete
-sample bundle with `spoolsmith intune build` or `intune wizard`. Select the
+sample bundle with `spoolsmith intune build` or `intune wizard` (CLI or desktop
+GUI). Select the
 separately managed driver prerequisite for this example — it has no bundled
 archive. Payloads and binaries are deliberately excluded from source control;
 the generator produces only the scripts and manifest from a CLI binary and

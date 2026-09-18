@@ -251,8 +251,8 @@ func toolsPage(a *app) TabPage {
 		Label{Text: "Inspect device evidence, explore the driver catalog, or review recent activity."},
 		TabWidget{Pages: []TabPage{inspectPage(a), catalogPage(a), logPage(a)}},
 		Composite{Layout: row(), Children: []Widget{
-			PushButton{AssignTo: &a.intuneBtn, Text: "Build an Intune printer app...", Enabled: false, OnClicked: a.onIntuneWizard},
-			Label{Text: "Coming soon — not yet tested against a real Intune tenant."},
+			PushButton{AssignTo: &a.intuneBtn, Text: "Build an Intune printer app...", OnClicked: a.onIntuneWizard},
+			Label{Text: "Packages install/uninstall/detect scripts and a README locally — no tenant sign-in, no printer changes. Same packaging as the CLI's intune build/wizard."},
 			HSpacer{},
 		}},
 	}}

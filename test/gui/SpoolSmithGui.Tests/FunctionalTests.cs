@@ -220,6 +220,95 @@ public sealed class FunctionalTests : IDisposable
         Assert.True(FindButton(_fixture.MainWindow, "Full plan / JSON").IsEnabled);
     }
 
+    private Window OpenIntuneWizard()
+    {
+        _fixture.SelectTab("Tools");
+        FindButton(_fixture.MainWindow, "Build an Intune printer app...").Invoke();
+        Window? dialog = null;
+        try { WaitUntil(() => (dialog = _fixture.MainWindow.ModalWindows.Concat(_fixture.App.GetAllTopLevelWindows(_fixture.Automation))
+            .FirstOrDefault(w => w.Title == "Build an Intune printer app")) != null, "Intune wizard did not open."); }
+        catch { _fixture.MainWindow.CaptureToFile(Path.Combine(_fixture.RepoRoot,"dist","intune-wizard-failure.png")); throw; }
+        return dialog!;
+    }
+
+    [StaFact]
+    public void Intune_wizard_button_is_enabled_and_opens_dialog()
+    {
+        _fixture.SelectTab("Tools");
+        Assert.True(FindButton(_fixture.MainWindow, "Build an Intune printer app...").IsEnabled);
+
+        var dialog = OpenIntuneWizard();
+        Assert.False(Find(dialog, "intune-profile").IsOffscreen);
+        FindButton(dialog, "Close").Invoke();
+        WaitUntil(() => !_fixture.MainWindow.ModalWindows.Any(), "Close did not dismiss the Intune wizard.");
+    }
+
+    /// <summary>
+    /// Drives the wizard's full happy path end to end: local profile and CLI
+    /// binary in, reviewed package out. Prepare/Export never contact a printer
+    /// or a tenant (see internal/intune's package doc comment), so this stays
+    /// within the suite's no-real-mutation constraint despite writing files.
+    /// </summary>
+    [StaFact]
+    public void Intune_wizard_exports_a_local_only_package()
+    {
+        Assert.True(File.Exists(_fixture.CliExePath),
+            $"expected the Windows CLI binary at {_fixture.CliExePath} (build with: go build -o dist/spoolsmith.exe ./cmd/spoolsmith, or set SPOOLSMITH_CLI_EXE)");
+        var profilePath = Path.Combine(_fixture.RepoRoot, "examples", "intune", "accounting.json");
+        Assert.True(File.Exists(profilePath), $"expected example profile at {profilePath}");
+        var outputDir = Path.Combine(Path.GetTempPath(), "spoolsmith-intune-test-" + Guid.NewGuid().ToString("N"));
+
+        var dialog = OpenIntuneWizard();
+        try
+        {
+            SetText(Find(dialog, "intune-profile").AsTextBox(), profilePath);
+            SetText(Find(dialog, "intune-binary").AsTextBox(), _fixture.CliExePath);
+            // The bundled example profile carries no local driver archive.
+            Find(dialog, "Driver is managed separately and will be registered before installation").AsCheckBox().Click();
+            FindButton(dialog, "Calculate hash").Invoke();
+            WaitUntil(() =>
+            {
+                var text = Find(dialog, "intune-binary-sha256").AsTextBox().Text ?? "";
+                return text.Length == 64 && text.All(Uri.IsHexDigit);
+            }, "SHA-256 was not calculated.");
+            FindButton(dialog, "Next: Deployment").Invoke();
+
+            SetText(Find(dialog, "intune-id").AsTextBox(), "gui-wizard-test");
+            SetText(Find(dialog, "intune-revision").AsTextBox(), "1");
+            SetText(Find(dialog, "intune-display-name").AsTextBox(), "GUI wizard test");
+            SetText(Find(dialog, "intune-location").AsTextBox(), "Test");
+            SetText(Find(dialog, "intune-description").AsTextBox(), "FlaUI regression test export.");
+            SetText(Find(dialog, "intune-output").AsTextBox(), outputDir);
+            FindButton(dialog, "Validate and preview package").Invoke();
+
+            var preview = Find(dialog, "intune-preview").AsTextBox();
+            WaitForText(preview, t => t.Contains("gui-wizard-test", StringComparison.Ordinal));
+            Assert.True(FindButton(dialog, "Export reviewed package").IsEnabled);
+            FindButton(dialog, "Export reviewed package").Invoke();
+
+            Window? confirm = null;
+            try { WaitUntil(() => (confirm = _fixture.MainWindow.ModalWindows.Concat(_fixture.App.GetAllTopLevelWindows(_fixture.Automation))
+                .FirstOrDefault(w => w.Title == "Package exported")) != null, "Export confirmation did not appear."); }
+            catch { _fixture.MainWindow.CaptureToFile(Path.Combine(_fixture.RepoRoot,"dist","intune-export-failure.png")); throw; }
+            FindButton(confirm!, "OK").Invoke();
+            WaitUntil(() => !(_fixture.MainWindow.ModalWindows.Concat(_fixture.App.GetAllTopLevelWindows(_fixture.Automation)).Any(w => w.Title == "Package exported")),
+                "Export confirmation did not close.");
+
+            FindButton(dialog, "Close").Invoke();
+            WaitUntil(() => !_fixture.MainWindow.ModalWindows.Any(), "Close did not dismiss the Intune wizard.");
+
+            foreach (var expected in new[] { "install.ps1", "uninstall.ps1", "detect.ps1", "runtime.ps1", "README.txt", "profile.json", "deployment.json", "spoolsmith.exe" })
+            {
+                Assert.True(File.Exists(Path.Combine(outputDir, expected)), $"expected exported {expected}");
+            }
+            Assert.False(File.Exists(Path.Combine(outputDir, "driver.exe")), "unexpected driver.exe: the prerequisite path bundles no driver");
+        }
+        finally
+        {
+            if (Directory.Exists(outputDir)) Directory.Delete(outputDir, recursive: true);
+        }
+    }
+
     private string CreateSavedPrinter()
     {
         Directory.CreateDirectory(_testDirectory);
