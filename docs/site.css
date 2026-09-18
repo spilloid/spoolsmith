@@ -23,6 +23,7 @@
 .file-kind{display:inline-block;font:13px Consolas,monospace;background:var(--pale);padding:9px 12px;border-radius:5px}
 .files-section{border-top:1px solid var(--line)}.files-section h2{margin-bottom:32px}
 .guide-grid>a{text-decoration:none;transition:border-color .15s,background .15s}.guide-grid>a:hover{border-color:var(--orange);background:#f1f3e9}.guide-grid h3{font-size:19px}.guide-grid h3 span{float:right}
+.guide-grid{grid-template-columns:repeat(auto-fit,minmax(240px,1fr))}
 .guides-section{border-top:1px solid var(--line)}.faq-section{padding-top:0;max-width:900px}
 .faq-section details{border-bottom:1px solid var(--line);padding:0 4px}.faq-section summary{padding:22px 0;font-weight:600;cursor:pointer}.faq-section details p{color:var(--muted);margin:0 0 24px;max-width:740px}
 .setup-list{padding-left:24px;line-height:1.75;font-size:15px;color:var(--muted)}.setup-list li{padding:0 0 14px 8px}.setup-list strong{color:var(--ink)}
