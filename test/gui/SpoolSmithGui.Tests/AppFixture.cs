@@ -178,8 +178,9 @@ public sealed class AppFixture : IDisposable
     /// Selects a tab by its visible title and returns that tab's content
     /// element. Selecting first matters: an inactive walk TabPage's children
     /// are actually hidden (walk's TabWidget calls page.SetVisible(false) on
-    /// deselect — see tabwidget.go's onSelChange), so their controls report
-    /// IsOffscreen until their page is actually shown.
+    /// deselect — see tabwidget.go's onSelChange). UIA may expose their controls
+    /// as IsOffscreen or omit the hidden subtree entirely. Select the page and
+    /// reacquire its visible controls before inspecting their state.
     ///
     /// Deliberately uses a real synthetic Click(), not UI Automation's
     /// SelectionItemPattern: walk's own source shows SelectCurrentIndex sends
