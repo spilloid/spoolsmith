@@ -80,8 +80,8 @@ func run(ctx context.Context, args []string, input io.Reader, stdout, stderr io.
 	}
 
 	switch args[0] {
-	// capabilities stays on the command table even though `intune` itself is
-	// held out of this release: the packager identifies a compatible CLI by
+	// capabilities stays on the command table so it always names this build's
+	// own intune-endpoint support: the packager identifies a compatible CLI by
 	// scanning the executable for this marker string, so removing the only
 	// reference to it also removes it from the compiled binary, and every
 	// build-from-source packaging run would reject its own fresh CLI.
@@ -116,6 +116,8 @@ func run(ctx context.Context, args []string, input io.Reader, stdout, stderr io.
 		return runApply(ctx, args[1:], input, stdout, stderr, app)
 	case "bundle":
 		return runBundle(args[1:], stdout, stderr)
+	case "intune":
+		return runIntune(ctx, args[1:], input, stdout, stderr, app)
 	case "status":
 		return runStatus(ctx, args[1:], stdout, stderr, app)
 	case "inspect":
@@ -397,6 +399,15 @@ func printUsage(writer io.Writer) {
 	fmt.Fprintln(writer, "  spoolsmith remove --profile <file> [--dry-run] [--json]")
 	fmt.Fprintln(writer, "  spoolsmith install <ip> [--force-family <id>] [--dry-run|--what-if] [--yes|--non-interactive|--json]")
 	fmt.Fprintln(writer, "  spoolsmith uninstall <printer-name> [--purge-driver] [--dry-run|--what-if] [--yes|--non-interactive|--json]")
+	fmt.Fprintln(writer, "")
+	fmt.Fprintln(writer, "Package a validated profile for Intune (local only; never contacts a tenant)")
+	fmt.Fprintln(writer, "  spoolsmith intune wizard                   interactive, one export directory at a time")
+	fmt.Fprintln(writer, "  spoolsmith intune build --profile <file> --binary <exe> --binary-sha256 <hash>")
+	fmt.Fprintln(writer, "                          --id <id> --revision <n> --name <text> --output <dir> [--dry-run]")
+	fmt.Fprintln(writer, "  Produces install.ps1/uninstall.ps1/detect.ps1 and a README with the exact commands")
+	fmt.Fprintln(writer, "  to paste into Intune's Win32 app. Add --content-prep-tool/--content-prep-output to")
+	fmt.Fprintln(writer, "  also run Microsoft's own IntuneWinAppUtil.exe. Uploading and assigning the app in")
+	fmt.Fprintln(writer, "  Intune remains a manual step; this does not sign in to a tenant.")
 	fmt.Fprintln(writer, "")
 	fmt.Fprintln(writer, "--dry-run/--what-if takes precedence over --yes and never prompts or mutates.")
 	fmt.Fprintln(writer, "--offline skips the live identity check; the plan says so before you confirm it.")

@@ -404,19 +404,35 @@ remain in force. Offline success additionally verifies local queue/driver/RAW TC
 `status` is local-only: exit 0 means matching configuration, 3 means mismatch,
 2 means invalid inputs, and 1 means inventory/execution failure.
 
-## Intune packaging (unreleased)
+## Intune packaging
 
-**Intune packaging is disabled in v0.6.0 and on the current command table.**
-The internal implementation and tests remain in source, but rebuilding alone does
-not enable the wizard or endpoint commands. Offline provisioning and local status
-above are released and do not require Intune.
+`spoolsmith intune` exports a reviewable Win32 app package for a validated profile:
+silent SYSTEM install/uninstall/detect scripts, a protected local deployment
+record, and a README with the exact install command, uninstall command and
+detection rule to paste into Intune. It never signs in to a tenant, uploads
+anything, creates a group, or assigns an app — those steps stay manual, in the
+Intune admin center, the same "no credentials, no unattended behavior" line
+SpoolSmith draws everywhere else (see [How it's built to
+behave](#how-its-built-to-behave)).
 
-The internal packager is designed to export reviewable Win32 app content with
-silent SYSTEM scripts, local-only detection and protected deployment state.
+```powershell
+spoolsmith intune build --profile printer-setups\accounting.json ^
+  --binary spoolsmith.exe --binary-sha256 <reviewed-hash> ^
+  --id indy-accounting --revision 1 --name "Accounting Copier" ^
+  --driver-prerequisite --output dist\indy-accounting
+```
+
+`--dry-run` previews the manifest (commands, file list, hashes) without writing
+anything. `--content-prep-tool`/`--content-prep-output` additionally run
+Microsoft's own `IntuneWinAppUtil.exe` locally to produce the `.intunewin` file;
+without them, `README.txt` in the export names the exact command to run it
+yourself. `intune wizard` walks the same steps interactively. The pinned CLI
+binary must be built from this source and include the `intune-endpoint-v1`
+capability marker (`spoolsmith capabilities`) — an older or GUI binary is refused.
+
 [Native Windows/SYSTEM tests](docs/validation/2026-09-15-windows11-results.md)
-proved several endpoint paths; tenant delivery, Company Portal and remaining
-lifecycle cases still need a pilot before this can ship.
-
-The [Intune design and validation guide](docs/intune-deployment.md) and
-[illustrative example](examples/intune/README.md) describe that unreleased work.
-See the [remaining-work roadmap](docs/roadmap.md) for priorities beyond Intune.
+validated install, local detection, protected state, standard-user denials,
+revision updates and removal end to end. The [design and validation
+guide](docs/intune-deployment.md) and [illustrative
+example](examples/intune/README.md) cover the full workflow and lifecycle rules.
+See the [roadmap](docs/roadmap.md) for what's still open.

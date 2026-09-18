@@ -2,13 +2,22 @@
 
 ## Project Mission
 
+**Operator update, 2026-09-17 (later same day):** the operator scoped Intune
+packaging as: local generation of the Win32 app content (install/uninstall/detect
+scripts, README with exact commands) is supported product surface, released via
+`spoolsmith intune build`/`wizard` on the CLI. Tenant sign-in and automatic
+upload/group-creation/assignment are explicitly **not** planned — "we're a printer
+deployment enabler," not a tenant-management tool — and stay out of scope unless a
+future decision changes that. The desktop GUI wizard stays disabled for now (CLI
+only). See `docs/roadmap.md` and `docs/intune-deployment.md` for the current
+supported workflow and what's still manual.
+
 **Operator update, 2026-09-17:** v0.6.0 is released with native desktop workflow
 parity, printer copy/apply, offline profiles and bulk JSON transfer. The operator
 requested a post-release quality, UX and product-site pass. Use `README.md`,
 `docs/roadmap.md` and dated `docs/validation/` records for current behavior and gaps;
 the milestone-one scope below is historical. Keep reviewed-plan confirmation and
-local driver trust checks. Intune entrypoints remain disabled; automatic driver
-downloads remain future work.
+local driver trust checks. Automatic driver downloads remain future work.
 
 **Operator update, 2026-09-06:** The operator asked Astra to prioritize daily use:
 known-IP mapping, discovery, and reusable per-printer JSON. See

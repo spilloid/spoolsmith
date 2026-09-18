@@ -53,13 +53,23 @@ recipes and macOS/Linux support are not implemented. Automatic OEM driver downlo
 would require a separately designed source/trust policy. These are expansion work,
 not conditions for using the supported RAW TCP 9100 workflow.
 
-## Intune remains held
+## Intune: packaging is supported; tenant automation is not planned
 
-The internal implementation has partial native Windows/SYSTEM evidence, but no
-real tenant/Company Portal pilot. Entry points remain disabled. See the
-[actual pilot results](validation/2026-09-15-windows11-results.md) for unrun lifecycle
-cases and the [unreleased guide](intune-deployment.md) for the planned workflow.
-Rebuilding source alone does not enable the feature.
+`spoolsmith intune build`/`wizard` is now a supported CLI command: it exports a
+reviewable Win32 app package with the exact install/uninstall commands and
+detection rule, entirely locally — no tenant sign-in, upload, group creation or
+assignment. Uploading and assigning the package in Intune stays a manual step;
+see [the packaging guide](intune-deployment.md). The desktop GUI's wizard button
+exists in source but stays disabled — CLI only for now.
+
+Deliberately **not** planned: signing in to an M365/Intune tenant and
+automatically uploading, creating groups, or assigning the app. SpoolSmith is a
+printer deployment enabler, not a tenant-management tool — that scope stays out
+unless a future decision says otherwise.
+
+Still open: a real tenant/Company Portal pilot (see the [unrun lifecycle
+cases](validation/2026-09-15-windows11-results.md)) validating the manual upload
+path above, which isn't required to use packaging today.
 
 ## Post-release fixes on main
 

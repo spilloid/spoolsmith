@@ -1,19 +1,22 @@
-# Intune packaging — unreleased validation guide
+# Intune packaging
 
-**This is a design and pilot guide, not a supported v0.6.0 workflow.** The desktop
-wizard and `spoolsmith intune` commands are disabled in the current entrypoints.
-Rebuilding the current source alone does not enable them. The steps below describe
-the internal implementation and require a deliberately prepared pilot build with
-those entrypoints enabled; there is no released end-user enablement switch.
-
-The internal packager exports local Win32 printer app content. Generated scripts
-run as SYSTEM and keep removal inputs in protected machine storage. Packaging does
-not authenticate to a tenant, upload an app, assign groups or download drivers.
+`spoolsmith intune wizard`/`intune build` are supported: they export a reviewable
+Win32 app package — install/uninstall/detect scripts, a protected local deployment
+record, and the exact commands and detection rule to paste into Intune. This is,
+deliberately, as far as SpoolSmith goes: it never authenticates to a tenant,
+uploads an app, creates or assigns a group, or downloads a driver. Creating the
+Win32 app in Intune, uploading the package, and assigning it stay manual steps in
+the Intune admin center — see "Prepare and upload" and "Required and Company
+Portal" below. Tenant sign-in and automatic upload/assignment are a distinct,
+broader feature that isn't planned; see the [roadmap](roadmap.md). The desktop
+GUI's wizard button exists in source but stays disabled for now — use the CLI.
 
 [Windows/SYSTEM validation on September 15](validation/2026-09-15-windows11-results.md)
 covered installation, local detection, protected state, standard-user denials,
-revision updates and cache-independent removal. Several lifecycle cases remain
-unrun. **Real Intune tenant delivery and Company Portal validation are still pending.**
+revision updates and cache-independent removal — everything SpoolSmith itself
+does. Several lifecycle cases remain unrun. **Real Intune tenant delivery and
+Company Portal validation** (the manual steps a human performs afterward) **are
+still pending** and not required to ship the packaging step above.
 Automated script tests are supplementary and are not tenant evidence.
 
 Use the [Windows pilot runbook](validation/2026-09-14-windows11-pilot.md) and actual
@@ -38,14 +41,11 @@ See Microsoft's [Win32 prerequisites and setup](https://learn.microsoft.com/en-u
    supported by this packaging path. Both the archive hash and Windows signature
    checks remain mandatory when staging the supported archive. Keeping a driver
    registered does not prove it is compatible with the printer; validate that first.
-3. Prepare an explicitly enabled pilot build of the CLI and optional desktop app.
-   **No published release contains the Intune endpoint commands.** The normal build
-   commands below only compile the selected source; they do not enable the feature.
-   Do not package a release binary as if it implemented the held endpoint commands.
+3. Build the CLI. `spoolsmith capabilities` must report `intune-endpoint-v1`; an
+   older release binary or the GUI executable is refused by `intune build`/`wizard`.
 
 ```powershell
 go build -o spoolsmith.exe ./cmd/spoolsmith
-go build -ldflags '-H windowsgui' -o spoolsmith-gui.exe ./cmd/spoolsmith-gui
 .\spoolsmith.exe capabilities
 (Get-FileHash .\spoolsmith.exe -Algorithm SHA256).Hash
 ```
@@ -56,7 +56,7 @@ Use only binaries and driver payloads approved by your organization.
 
 ## Run the wizard
 
-The desktop wizard has three steps:
+`intune wizard` is interactive and asks for the same things either way:
 
 1. Select the profile and CLI; enter or calculate the binary hash and review it.
    Select the separately managed driver prerequisite only when the profile has
@@ -65,13 +65,15 @@ The desktop wizard has three steps:
    location, description, and a new output directory. Choose strict live validation
    or explicitly choose offline provisioning. Allow adoption only if you intend
    to manage an existing queue whose full configuration matches.
-3. Review commands, hashes, filenames, target, driver and policy. Export the package.
-
-The terminal wizard asks for the same information:
+3. Review commands, hashes, filenames, target, driver and policy. Type `export`
+   to create the package.
 
 ```powershell
 .\spoolsmith.exe intune wizard
 ```
+
+(A desktop GUI wizard exists in source behind a disabled button — not yet the
+supported path; use the CLI above.)
 
 For repeatable packaging, use explicit flags. `--dry-run` validates inputs and
 prints the manifest without exporting files or running Microsoft's tool:

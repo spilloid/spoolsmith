@@ -173,6 +173,32 @@ func TestUsageAndGeneralErrorsStillWriteJSON(t *testing.T) {
 	}
 }
 
+func TestIntuneIsDispatchedNotUnknown(t *testing.T) {
+	// intune.go's logic is covered directly in internal/intune; this only guards
+	// against main's command switch losing the case again and the command
+	// silently falling back to "unknown command".
+	tests := []struct {
+		name string
+		args []string
+		code int
+	}{
+		{name: "no subcommand", args: []string{"intune"}, code: int(install.ExitUsageError)},
+		{name: "unknown subcommand", args: []string{"intune", "upload"}, code: int(install.ExitUsageError)},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			got := run(context.Background(), tt.args, strings.NewReader(""), &stdout, &stderr, testApplication())
+			if got != tt.code {
+				t.Fatalf("run() code = %d, want %d", got, tt.code)
+			}
+			if strings.Contains(stderr.String(), "unknown command") {
+				t.Fatalf("intune fell through to the unknown-command branch: %s", stderr.String())
+			}
+		})
+	}
+}
+
 func testApplication() application {
 	family := catalog.Family{ID: "test-family", Manufacturer: "Test", Aliases: []string{"Test Model"}}
 	driver := catalog.DriverPackage{
