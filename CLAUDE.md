@@ -2,15 +2,22 @@
 
 ## Project Mission
 
+**Operator update, 2026-09-17 (v0.7.0 track):** the desktop GUI's Intune wizard
+("Build an Intune printer app..." on the Tools tab) is now enabled — it calls the
+same `internal/intune` `Prepare`/`Export` the CLI's `intune build`/`wizard` uses,
+so it's the same local-only packaging surface, not new scope. Real Windows
+validation is in `docs/validation/2026-09-17-gui-intune-wizard.md`. Tenant
+sign-in and automatic upload/group-creation/assignment remain explicitly **not**
+planned for either surface.
+
 **Operator update, 2026-09-17 (later same day):** the operator scoped Intune
 packaging as: local generation of the Win32 app content (install/uninstall/detect
 scripts, README with exact commands) is supported product surface, released via
 `spoolsmith intune build`/`wizard` on the CLI. Tenant sign-in and automatic
 upload/group-creation/assignment are explicitly **not** planned — "we're a printer
 deployment enabler," not a tenant-management tool — and stay out of scope unless a
-future decision changes that. The desktop GUI wizard stays disabled for now (CLI
-only). See `docs/roadmap.md` and `docs/intune-deployment.md` for the current
-supported workflow and what's still manual.
+future decision changes that. See `docs/roadmap.md` and `docs/intune-deployment.md`
+for the current supported workflow and what's still manual.
 
 **Operator update, 2026-09-17:** v0.6.0 is released with native desktop workflow
 parity, printer copy/apply, offline profiles and bulk JSON transfer. The operator

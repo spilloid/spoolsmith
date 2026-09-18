@@ -99,6 +99,8 @@ installed driver and **Save and review**, or use **Review catalog setup** for ca
 resolution. **Open a printer file** reads a copied `.ssb`; **More options** on its
 review offers offline setup and updating an existing queue. **Tools → Inspect** can
 also verify a bundle and show its complete manifest without contacting the printer.
+**Tools → Build an Intune printer app...** packages a reviewed profile into a
+local, reviewable Win32 app bundle — see [Intune packaging](#intune-packaging).
 
 **Open a saved setup** lists reusable profiles. Set up, update, remove, edit with a
 backup, or **Check status** against local Windows configuration. Status does not
@@ -126,6 +128,7 @@ run it locally or through the manual **Desktop validation** workflow:
 
 ```powershell
 go build -o dist/spoolsmith-gui.exe ./cmd/spoolsmith-gui
+go build -o dist/spoolsmith.exe ./cmd/spoolsmith
 dotnet test test/gui/SpoolSmithGui.Tests
 ```
 
@@ -426,13 +429,16 @@ spoolsmith intune build --profile printer-setups\accounting.json ^
 anything. `--content-prep-tool`/`--content-prep-output` additionally run
 Microsoft's own `IntuneWinAppUtil.exe` locally to produce the `.intunewin` file;
 without them, `README.txt` in the export names the exact command to run it
-yourself. `intune wizard` walks the same steps interactively. The pinned CLI
-binary must be built from this source and include the `intune-endpoint-v1`
-capability marker (`spoolsmith capabilities`) — an older or GUI binary is refused.
+yourself. `intune wizard` walks the same steps interactively, and the desktop
+GUI's Tools tab offers the same wizard for those who'd rather not use the CLI.
+The pinned CLI binary must be built from this source and include the
+`intune-endpoint-v1` capability marker (`spoolsmith capabilities`) — an older or
+GUI binary is refused.
 
 [Native Windows/SYSTEM tests](docs/validation/2026-09-15-windows11-results.md)
 validated install, local detection, protected state, standard-user denials,
-revision updates and removal end to end. The [design and validation
-guide](docs/intune-deployment.md) and [illustrative
-example](examples/intune/README.md) cover the full workflow and lifecycle rules.
-See the [roadmap](docs/roadmap.md) for what's still open.
+revision updates and removal end to end. [GUI wizard
+validation](docs/validation/2026-09-17-gui-intune-wizard.md) covers the desktop
+path specifically. The [design and validation guide](docs/intune-deployment.md)
+and [illustrative example](examples/intune/README.md) cover the full workflow
+and lifecycle rules. See the [roadmap](docs/roadmap.md) for what's still open.

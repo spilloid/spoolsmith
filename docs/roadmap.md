@@ -55,12 +55,13 @@ not conditions for using the supported RAW TCP 9100 workflow.
 
 ## Intune: packaging is supported; tenant automation is not planned
 
-`spoolsmith intune build`/`wizard` is now a supported CLI command: it exports a
-reviewable Win32 app package with the exact install/uninstall commands and
-detection rule, entirely locally — no tenant sign-in, upload, group creation or
-assignment. Uploading and assigning the package in Intune stays a manual step;
-see [the packaging guide](intune-deployment.md). The desktop GUI's wizard button
-exists in source but stays disabled — CLI only for now.
+`spoolsmith intune build`/`wizard` is a supported CLI command, and the desktop
+GUI offers the same wizard (Tools tab → "Build an Intune printer app..."). Both
+export a reviewable Win32 app package with the exact install/uninstall commands
+and detection rule, entirely locally — no tenant sign-in, upload, group creation
+or assignment. Uploading and assigning the package in Intune stays a manual
+step; see [the packaging guide](intune-deployment.md). GUI validation:
+[2026-09-17-gui-intune-wizard.md](validation/2026-09-17-gui-intune-wizard.md).
 
 Deliberately **not** planned: signing in to an M365/Intune tenant and
 automatically uploading, creating groups, or assigning the app. SpoolSmith is a
