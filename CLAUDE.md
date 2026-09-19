@@ -161,6 +161,11 @@ is written, also check whether the GUI changed since the last release and, if so
 This was missed for two releases in a row (v0.7.0 shipped Intune with no screenshot; v0.7.1's own
 site-update commit didn't add one either) before being caught and fixed in v0.7.3.
 
+Releases are Authenticode-signed by the release workflow, which fails rather than publishing
+unsigned binaries — see `docs/code-signing.md`. After a release publishes, download the actual
+asset and confirm `Get-AuthenticodeSignature` reports `Valid` on both EXEs. CI verifies what it
+built; this verifies what users actually get.
+
 ## Commands
 
 ```sh

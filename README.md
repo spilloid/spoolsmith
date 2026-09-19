@@ -296,6 +296,20 @@ Grab the latest Windows build from [Releases](https://github.com/spilloid/spools
 The release ZIP has two standalone binaries, `spoolsmith.exe` (CLI) and `spoolsmith-gui.exe`
 (desktop app) — no installer, no dependencies, no need for both if you only want one.
 
+Both binaries are Authenticode-signed. SpoolSmith runs elevated and writes to the driver store,
+so it's worth confirming you got what we published before running it — Windows can do this with
+nothing installed:
+
+```powershell
+Get-AuthenticodeSignature .\spoolsmith.exe | Format-List Status, SignerCertificate
+
+# And the ZIP against its published .sha256 sidecar
+(Get-FileHash spoolsmith-*-windows-amd64.zip -Algorithm SHA256).Hash.ToLower()
+```
+
+`Status` must read `Valid`. Details, and how releases are signed, are in
+[docs/code-signing.md](docs/code-signing.md).
+
 Building from source needs Go 1.24+:
 
 ```sh

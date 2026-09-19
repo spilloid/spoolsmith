@@ -13,11 +13,19 @@ on:
 
 permissions:
   contents: write
+  # Required for the OIDC federated credential the signing step authenticates with.
+  id-token: write
 
 jobs:
   build:
     name: Build release (${{ matrix.goos }}-${{ matrix.goarch }})
     runs-on: windows-latest
+    # The OIDC subject for a job in an environment is
+    # repo:spilloid/spoolsmith:environment:release whatever triggered it, so one
+    # federated credential covers both a published release (which runs as the tag)
+    # and a manual workflow_dispatch (which runs as main). Branch- and tag-scoped
+    # credentials each miss one of those.
+    environment: release
     strategy:
       fail-fast: false
       matrix:
@@ -34,18 +42,56 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: "1.24.x"
-      - name: Build and package tagged release
+
+      # Fails before anything is built rather than part-way through, and refuses
+      # to fall back to an unsigned release if signing is misconfigured.
+      - name: Check release tag and signing configuration
         id: meta
         shell: pwsh
         env:
           RELEASE_TAG: ${{ inputs.tag || github.event.release.tag_name }}
+          SIGNING_ENDPOINT: ${{ vars.SIGNING_ENDPOINT }}
+          SIGNING_ACCOUNT: ${{ vars.SIGNING_ACCOUNT }}
+          SIGNING_PROFILE: ${{ vars.SIGNING_PROFILE }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
         run: |
           $tag = $env:RELEASE_TAG
           if ($tag -notmatch '^v[0-9]+\.[0-9]+\.[0-9]+$') { throw 'Invalid release tag' }
           if ((Get-Content VERSION -Raw).Trim() -ne $tag) { throw 'VERSION does not match the tag' }
-          ./scripts/build-release.ps1 -Tag $tag
+          $missing = @('SIGNING_ENDPOINT', 'SIGNING_ACCOUNT', 'SIGNING_PROFILE',
+                       'AZURE_CLIENT_ID', 'AZURE_TENANT_ID', 'AZURE_SUBSCRIPTION_ID') |
+            Where-Object { [string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($_)) }
+          if ($missing) {
+            throw "Code signing is not configured; missing: $($missing -join ', '). " +
+                  'Set them under Settings > Environments > release, or run scripts/setup-signing.ps1. ' +
+                  'Setup steps are in docs/code-signing.md. Releases are never published unsigned.'
+          }
           "tag=$tag" >> $env:GITHUB_OUTPUT
           "asset=dist/spoolsmith-$tag-windows-amd64.zip" >> $env:GITHUB_OUTPUT
+
+      # Split from packaging so the binaries can be signed before they go in the
+      # zip — the published SHA-256 has to cover the signed artifact.
+      - name: Build binaries
+        shell: pwsh
+        run: ./scripts/build-release.ps1 -Tag ${{ steps.meta.outputs.tag }} -Stage build
+
+      - name: Sign and verify binaries
+        uses: ./.github/actions/sign-release
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          endpoint: ${{ vars.SIGNING_ENDPOINT }}
+          account: ${{ vars.SIGNING_ACCOUNT }}
+          profile: ${{ vars.SIGNING_PROFILE }}
+          expected-subject: ${{ vars.SIGNING_EXPECTED_SUBJECT }}
+
+      - name: Package signed release
+        shell: pwsh
+        run: ./scripts/build-release.ps1 -Tag ${{ steps.meta.outputs.tag }} -Stage package
+
       - name: Upload release asset
         uses: actions/github-script@v7
         env:
