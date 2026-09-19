@@ -54,6 +54,11 @@ function Invoke-Native {
 }
 function Invoke-AzJson { param([string[]]$Arguments) (Invoke-Native az ($Arguments + @('-o', 'json')) | Out-String) | ConvertFrom-Json }
 function Step { param([string]$Text) Write-Host "`n== $Text" }
+function Assert-GitHubAccess {
+    if ($env:GH_TOKEN -or $env:GITHUB_TOKEN) { return }
+    & gh auth status *> $null
+    if ($LASTEXITCODE -ne 0) { throw 'Not signed in to GitHub: run `gh auth login`, or set GH_TOKEN to a token with repo scope.' }
+}
 
 Step 'Azure context'
 $account = Invoke-AzJson @('account', 'show')
@@ -89,17 +94,31 @@ if ($principals.Count -ge 1) { $principal = $principals[0]; Write-Host 'already 
 else { $principal = Invoke-AzJson @('ad', 'sp', 'create', '--id', $app.appId); Write-Host 'created' }
 
 Step "Federated credential for environment '$Environment'"
-$subjectClaim = "repo:${Repo}:environment:$Environment"
-$existing = @(Invoke-AzJson @('ad', 'app', 'federated-credential', 'list', '--id', $app.id))
-if ($existing | Where-Object subject -eq $subjectClaim) { Write-Host 'already exists' }
+Assert-GitHubAccess
+# GitHub can put the numeric owner and repository IDs in the OIDC subject
+# ("immutable subject claims"), and this repository has that on. Ask GitHub for
+# the exact prefix it will present rather than assuming repo:<owner>/<repo>, or
+# Azure rejects every login with AADSTS700213. The ID form is the safer one: a
+# renamed, deleted or re-created repository cannot inherit this trust.
+$customization = Invoke-Native gh @('api', "repos/$Repo/actions/oidc/customization/sub") | Out-String | ConvertFrom-Json
+$prefix = if ($customization.sub_claim_prefix) { $customization.sub_claim_prefix } else { "repo:$Repo" }
+$subjectClaim = "${prefix}:environment:$Environment"
+$credentialName = "github-$Environment"
+$current = @(Invoke-AzJson @('ad', 'app', 'federated-credential', 'list', '--id', $app.id)) | Where-Object name -eq $credentialName
+if ($current -and $current.subject -eq $subjectClaim) { Write-Host "already exists, trusts $subjectClaim" }
 else {
     $file = Join-Path ([IO.Path]::GetTempPath()) "$([guid]::NewGuid()).json"
     try {
-        @{ name = "github-$Environment"; issuer = 'https://token.actions.githubusercontent.com'; subject = $subjectClaim; audiences = @('api://AzureADTokenExchange') } |
+        @{ name = $credentialName; issuer = 'https://token.actions.githubusercontent.com'; subject = $subjectClaim; audiences = @('api://AzureADTokenExchange') } |
             ConvertTo-Json | Set-Content $file -Encoding utf8
-        Invoke-Native az @('ad', 'app', 'federated-credential', 'create', '--id', $app.id, '--parameters', "@$file") | Out-Null
+        if ($current) {
+            Invoke-Native az @('ad', 'app', 'federated-credential', 'update', '--id', $app.id, '--federated-credential-id', $credentialName, '--parameters', "@$file") | Out-Null
+            Write-Host "updated, now trusts $subjectClaim (was $($current.subject))"
+        } else {
+            Invoke-Native az @('ad', 'app', 'federated-credential', 'create', '--id', $app.id, '--parameters', "@$file") | Out-Null
+            Write-Host "created, trusts $subjectClaim"
+        }
     } finally { Remove-Item $file -ErrorAction SilentlyContinue }
-    Write-Host "created, trusts $subjectClaim"
 }
 
 Step "Role '$signerRole' on the certificate profile"
@@ -111,10 +130,6 @@ else {
 }
 
 Step "GitHub environment '$Environment' on $Repo"
-if (-not $env:GH_TOKEN -and -not $env:GITHUB_TOKEN) {
-    & gh auth status *> $null
-    if ($LASTEXITCODE -ne 0) { throw 'Not signed in to GitHub: run `gh auth login`, or set GH_TOKEN to a token with repo scope.' }
-}
 Invoke-Native gh @('api', '--method', 'PUT', "repos/$Repo/environments/$Environment") | Out-Null
 $variables = [ordered]@{
     SIGNING_ENDPOINT         = $endpoint

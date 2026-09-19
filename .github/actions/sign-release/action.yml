@@ -53,15 +53,19 @@ runs:
         # countersignature the release stops verifying almost immediately.
         timestamp-rfc3161: http://timestamp.acs.microsoft.com
         timestamp-digest: SHA256
-        # Go straight to the federated token azure/login put in the environment
-        # instead of walking the other DefaultAzureCredential sources first.
-        exclude-environment-credential: false
-        exclude-workload-identity-credential: false
+        # azure/login leaves an Azure CLI session authenticated through the OIDC
+        # federated credential; it does not export AZURE_* variables or a token
+        # file. So the Azure CLI credential is the only one that can succeed here,
+        # and the environment and workload-identity credentials are excluded so a
+        # failure names the real problem instead of listing sources that were
+        # never configured.
+        exclude-environment-credential: true
+        exclude-workload-identity-credential: true
         exclude-managed-identity-credential: true
         exclude-shared-token-cache-credential: true
         exclude-visual-studio-credential: true
         exclude-visual-studio-code-credential: true
-        exclude-azure-cli-credential: true
+        exclude-azure-cli-credential: false
         exclude-azure-powershell-credential: true
         exclude-azure-developer-cli-credential: true
         exclude-interactive-browser-credential: true
