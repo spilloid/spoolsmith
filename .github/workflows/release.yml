@@ -20,6 +20,12 @@ jobs:
   build:
     name: Build release (${{ matrix.goos }}-${{ matrix.goarch }})
     runs-on: windows-latest
+    # The OIDC subject for a job in an environment is
+    # repo:spilloid/spoolsmith:environment:release whatever triggered it, so one
+    # federated credential covers both a published release (which runs as the tag)
+    # and a manual workflow_dispatch (which runs as main). Branch- and tag-scoped
+    # credentials each miss one of those.
+    environment: release
     strategy:
       fail-fast: false
       matrix:

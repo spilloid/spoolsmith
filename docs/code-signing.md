@@ -47,12 +47,16 @@ matters:
    secret is ever stored:
    - Entity type: *GitHub Actions deploying Azure resources*
    - Organization `spilloid`, repository `spoolsmith`
-   - Entity: *Branch* → `main`, or *Tag*, or — tightest, and what matches this workflow —
-     *Environment* if you add a protected `release` environment (see
-     [Hardening](#hardening-worth-doing)).
+   - Entity: **Environment** → `release`. The release job declares `environment: release`,
+     so its OIDC subject is `repo:spilloid/spoolsmith:environment:release` regardless of what
+     triggered it. Do not use *Branch* or *Tag* here: a published release runs as the new tag
+     (a Branch credential misses it, and a Tag credential would need a new entry every
+     release), while a manual `workflow_dispatch` runs as `main` (a Tag credential misses that).
 
-   A federated credential is scoped to that repo and ref. A leaked client secret is not, which
-   is why this pipeline uses OIDC instead.
+   A federated credential is scoped to that repo and environment. A leaked client secret is
+   not, which is why this pipeline uses OIDC instead. GitHub creates the `release`
+   environment the first time a workflow references it; see
+   [Hardening](#hardening-worth-doing) to add required reviewers.
 
 ## GitHub repository configuration
 
@@ -164,7 +168,7 @@ on users' machines about three days later — the worst possible failure shape t
 | Symptom | Cause |
 | --- | --- |
 | `403 Forbidden`, or `SignerSign()` failed | Endpoint region does not match the account's region, or the identity is missing the **Certificate Profile Signer** role |
-| `AADSTS700213` / no matching federated credential | The federated credential's repo, ref or entity type does not match the workflow's trigger. A tag-triggered release needs a Tag (or Environment) credential, not a Branch one |
+| `AADSTS700213` / no matching federated credential | The credential's subject does not match the job's. It must be exactly `repo:spilloid/spoolsmith:environment:release` (entity type Environment, name `release`); Branch and Tag credentials do not match this job |
 | Certificate profile cannot be created | Identity validation is still pending or was rejected |
 | dlib load error from SignTool | SignTool older than 10.0.22621, or an x86/x64 mismatch between SignTool and the dlib |
 | Signature valid, publisher wrong | Signed by a different certificate profile — set `SIGNING_EXPECTED_SUBJECT` so CI catches this |
@@ -176,11 +180,10 @@ instant switch.
 
 ## Hardening worth doing
 
-- **Protected environment.** Add a `release` environment with required reviewers, scope the
-  signing secrets to it, add `environment: release` to the release job, and switch the federated
-  credential to the Environment entity type. Signing then requires a human approval, and the
-  credential cannot be used from any other ref. Left out of the default workflow only because
-  referencing an environment that does not exist yet would break the release job.
+- **Require approval to sign.** The release job already runs in the `release` environment, so
+  under Settings → Environments → `release` you can add required reviewers and move the signing
+  variables and secrets from the repository into the environment. Signing then waits for a
+  human, and the credential is unusable from any workflow that is not in that environment.
 - **Rotation and offboarding.** There is no private key to rotate. Revoking access means
   removing the role assignment or deleting the federated credential; do that when someone with
   subscription access leaves.
