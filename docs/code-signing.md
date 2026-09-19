@@ -191,8 +191,22 @@ issued by `CN=Microsoft ID Verified CS EOC CA 04`, signed by `CN=Joseph Spillers
 countersignature from `Microsoft Public RSA Time Stamping Authority`. The certificate itself
 lives three days, which is why the timestamp is what keeps a release verifiable.
 
-**Not done.** No release has been published or tagged, and nothing signed here is distributed.
-The dry run's binaries were a private workflow artifact.
+**First signed release, v1.0.0.** Published the same day, first as a *prerelease* so GitHub did
+not mark it Latest while it was unchecked. The release workflow ran from the tag and uploaded
+`spoolsmith-v1.0.0-windows-amd64.zip` and its `.sha256`. The published assets were then
+downloaded from the public URL, unauthenticated, and checked as a user would:
+
+- the zip's SHA-256 matched the published sidecar;
+- both executables reported `Valid`, signed by `CN=Joseph Spillers`, with the Microsoft
+  time-stamp countersignature;
+- the product icon was present at 16, 32, 48 and 256px, and the CLI carried the `v1.0.0` stamp.
+
+Only then was the release promoted to Latest. Doing it in that order is worth keeping for the
+next release: a failure between publish and verify leaves a prerelease to fix and re-run with
+`workflow_dispatch`, not a broken "Latest" that `releases/latest` sends everyone to.
+
+The CLI has no `--version` flag; the stamp is visible only in bundle metadata. That is a gap,
+not part of this change.
 
 ## Signing by hand
 
