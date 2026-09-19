@@ -24,64 +24,94 @@ Artifact Signing issues short-lived certificates (three days) from a Microsoft-m
 no HSM or PFX for anyone to steal. The three-day validity is why every signature must be
 RFC 3161 timestamped — see [Timestamping](#timestamping-is-not-optional) below.
 
-## One-time Azure setup
+## Setup
 
-Do this once, in an Azure subscription you control. Portal steps are in Microsoft's
-[quickstart](https://learn.microsoft.com/azure/artifact-signing/quickstart); the sequence that
-matters:
+Two things cannot be scripted and gate everything else. Do them in the Azure portal, once:
 
-1. **Register the resource provider** `Microsoft.CodeSigning` on the subscription.
-2. **Create an Artifact Signing account.** Note its region — the endpoint must match it exactly
+1. **Register the resource provider** `Microsoft.CodeSigning` on the subscription, and
+   **create an Artifact Signing account**. Note its region: the endpoint must match it exactly
    (see the [endpoint table](https://learn.microsoft.com/azure/artifact-signing/how-to-signing-integrations)).
-   For East US that is `https://eus.codesigning.azure.net`.
-3. **Complete identity validation.** This is the slow step and it gates everything else: it is a
-   real identity check against business (or individual) documentation and takes days, not
-   minutes. Start it before you plan a release. Public-trust organization validation requires a
-   verifiable business identity; read the current requirements before committing to a date.
-4. **Create a certificate profile** of type Public Trust once validation succeeds. Its subject
-   is what users will see as the publisher.
-5. **Grant the signing role.** Assign **Artifact Signing Certificate Profile Signer** on the
-   certificate profile (or the account) to the identity CI will use — step 6. Owner/Contributor
-   on the subscription does *not* imply it; signing fails without this specific role.
-6. **Create an app registration** for GitHub Actions and add a **federated credential** so no
-   secret is ever stored:
-   - Entity type: *GitHub Actions deploying Azure resources*
-   - Organization `spilloid`, repository `spoolsmith`
-   - Entity: **Environment** → `release`. The release job declares `environment: release`,
-     so its OIDC subject is `repo:spilloid/spoolsmith:environment:release` regardless of what
-     triggered it. Do not use *Branch* or *Tag* here: a published release runs as the new tag
-     (a Branch credential misses it, and a Tag credential would need a new entry every
-     release), while a manual `workflow_dispatch` runs as `main` (a Tag credential misses that).
+   East US is `https://eus.codesigning.azure.net`.
+2. **Complete identity validation and create a Public Trust certificate profile.** Validation
+   is a real document check and takes days, not minutes, so start it before you plan a
+   release. The profile's subject is what users see as the publisher. Microsoft's
+   [quickstart](https://learn.microsoft.com/azure/artifact-signing/quickstart) walks through
+   both.
 
-   A federated credential is scoped to that repo and environment. A leaked client secret is
-   not, which is why this pipeline uses OIDC instead. GitHub creates the `release`
-   environment the first time a workflow references it; see
-   [Hardening](#hardening-worth-doing) to add required reviewers.
+Everything after that is one idempotent script:
 
-## GitHub repository configuration
+```powershell
+az login
+./scripts/setup-signing.ps1 -AccountName jdspille -ResourceGroup RG0 -ProfileName primary-profile
+```
 
-Under **Settings → Secrets and variables → Actions**.
+It needs `az login` as someone who can create app registrations and assign roles, and GitHub
+access to the repository as an admin (`gh auth login`, or a `GH_TOKEN` with `repo` scope). It
+refuses to continue unless the certificate profile is `Active`, checks before it creates each
+thing, and changes nothing on a second run. It:
 
-Variables (not secret — the account and profile names are visible in the signed binary anyway):
+1. Creates an **app registration and service principal**, `spoolsmith-release-signing`.
+2. Adds a **federated credential** so no secret is ever stored. It trusts exactly one subject,
+   `<GitHub's subject prefix>:environment:release`. See [The OIDC subject](#the-oidc-subject).
+3. Grants **Artifact Signing Certificate Profile Signer** on the certificate profile only, not
+   the account and not the subscription. Owner or Contributor does *not* imply this role;
+   signing fails without it.
+4. Creates the `release` **GitHub environment** and sets its variables and secrets.
 
-| Variable | Example | Meaning |
+### The OIDC subject
+
+The release job declares `environment: release`, so the subject GitHub presents to Azure is
+fixed by the environment whatever triggered the run. That matters: a published release runs as
+the new tag, while a manual `workflow_dispatch` runs as `main`, so a Branch credential misses
+the first and a Tag credential misses the second (and would need a new entry every release).
+
+This repository has GitHub's **immutable subject claims** on, so the subject embeds numeric
+IDs, not names:
+
+```
+repo:spilloid@19334728/spoolsmith@1356635288:environment:release
+```
+
+That is the safer form, since a renamed, deleted or re-created repository cannot inherit the
+trust, and it is why the script asks GitHub for the prefix
+(`gh api repos/<repo>/actions/oidc/customization/sub`) instead of assuming
+`repo:spilloid/spoolsmith`. A credential written with the name form fails with `AADSTS700213`.
+
+## GitHub configuration
+
+Everything is scoped to the **`release` environment** (Settings → Environments → release), so
+only a job that declares that environment can read it. `setup-signing.ps1` sets all of it.
+
+| Variable | Value here | Meaning |
 | --- | --- | --- |
 | `SIGNING_ENDPOINT` | `https://eus.codesigning.azure.net` | Must match the account's region |
-| `SIGNING_ACCOUNT` | `spilloid-signing` | Artifact Signing account name |
-| `SIGNING_PROFILE` | `spoolsmith-public` | Certificate profile name |
-| `SIGNING_EXPECTED_SUBJECT` | `O=Spilloid` | Optional. Substring the signer subject must contain |
-
-Secrets (identifiers rather than credentials, but conventionally kept as secrets):
+| `SIGNING_ACCOUNT` | `jdspille` | Artifact Signing account name |
+| `SIGNING_PROFILE` | `primary-profile` | Certificate profile name |
+| `SIGNING_EXPECTED_SUBJECT` | `CN=Joseph Spillers` | Substring the signer subject must contain |
 
 | Secret | Where it comes from |
 | --- | --- |
-| `AZURE_CLIENT_ID` | App registration → Application (client) ID |
-| `AZURE_TENANT_ID` | App registration → Directory (tenant) ID |
+| `AZURE_CLIENT_ID` | The app registration's application (client) ID |
+| `AZURE_TENANT_ID` | The directory (tenant) ID |
 | `AZURE_SUBSCRIPTION_ID` | The subscription holding the signing account |
 
-Set `SIGNING_EXPECTED_SUBJECT` once you know the real subject string. It is the check that
-catches a build signed by the wrong certificate profile — a signature that is perfectly valid
-and still wrong.
+`SIGNING_EXPECTED_SUBJECT` catches a build signed by the wrong certificate profile, which is a
+signature that is perfectly valid and still wrong. The script fills it from the profile's
+common name.
+
+**Deployment branches.** The environment only accepts jobs running on `main` or a `v*` tag.
+Without that, any branch anyone with write access can push could run in the environment and
+sign as this identity; a throwaway branch did exactly that during setup, then was refused once
+the restriction was on ("Branch is not allowed to deploy to release due to environment
+protection rules"). A published release runs as its `vX.Y.Z` tag and a manual run as `main`,
+so both still work.
+
+```sh
+gh api --method PUT repos/spilloid/spoolsmith/environments/release \
+  --input <(echo '{"deployment_branch_policy":{"protected_branches":false,"custom_branch_policies":true}}')
+gh api --method POST repos/spilloid/spoolsmith/environments/release/deployment-branch-policies -f name=main -f type=branch
+gh api --method POST repos/spilloid/spoolsmith/environments/release/deployment-branch-policies -f name='v*' -f type=tag
+```
 
 ## How the release pipeline uses it
 
@@ -92,16 +122,77 @@ and still wrong.
    building, so a misconfigured repo never reaches the point of quietly publishing unsigned
    binaries.
 2. **Build binaries** — `scripts/build-release.ps1 -Stage build`.
-3. **Azure login** — OIDC federated credential, no stored secret.
-4. **Sign binaries** — `azure/artifact-signing-action@v2` over `dist\*.exe`.
-5. **Verify signatures** — `scripts/verify-signature.ps1`; fails the release if anything is
-   unsigned, untimestamped, or signed by an unexpected subject.
-6. **Package signed release** — `scripts/build-release.ps1 -Stage package`.
-7. **Upload release asset** — unchanged.
+3. **Sign and verify binaries** — the `.github/actions/sign-release` composite action: Azure
+   login over OIDC, `azure/artifact-signing-action@v2` over `dist\*.exe`, then
+   `scripts/verify-signature.ps1`, which fails the release if anything is unsigned,
+   untimestamped, or signed by an unexpected subject.
+4. **Package signed release** — `scripts/build-release.ps1 -Stage package`.
+5. **Upload release asset** — unchanged.
 
 The build/package split exists because the published SHA-256 must cover the *signed* zip.
 Signing after packaging would leave the signature outside the hashed artifact and the hash
 describing binaries nobody shipped.
+
+The signing action authenticates through `DefaultAzureCredential`. `azure/login` leaves an
+**Azure CLI session**; it does not export `AZURE_*` variables or a token file. So the CLI
+credential is the only one that can work, and the action enables it and excludes the rest.
+Leaving only the environment and workload-identity credentials on fails after a successful
+login with "EnvironmentCredential authentication unavailable".
+
+## Checking signing without releasing
+
+`.github/workflows/signing-check.yml` builds the real binaries, signs them through the same
+composite action a release uses, verifies them, and keeps them as a one-day workflow artifact.
+It publishes nothing. Run it after changing signing configuration and before tagging:
+
+```sh
+gh workflow run signing-check.yml --ref main
+gh run download <run-id> -n signed-binaries      # then run scripts/verify-signature.ps1 on them
+```
+
+GitHub only dispatches a workflow that exists on the default branch, so it becomes runnable
+once this lands on `main`. It has to run from `main` or a `v*` tag, per the deployment
+restriction above.
+
+## Setup record
+
+What was actually done to bring signing up for `spilloid/spoolsmith`, on 2026-09-19, and what
+went wrong on the way. The account, profile and identity validation already existed.
+
+**Found.** Subscription `Azure subscription 1`, provider `Microsoft.CodeSigning` registered,
+signing account `jdspille` (Basic, East US, `RG0`), certificate profile `primary-profile`
+(Public Trust, Active) issuing certificates for
+`CN=Joseph Spillers, O=Joseph Spillers, L=Indianapolis, S=in, C=US`. No app registration
+existed yet.
+
+**Done, by `scripts/setup-signing.ps1`.** App registration and service principal
+`spoolsmith-release-signing`; a federated credential; the Signer role on `primary-profile`
+only; the `release` environment with four variables and three secrets. Then the deployment
+restriction to `main` and `v*` tags, applied by hand with the `gh api` calls above.
+
+**How it was run.** `az` and `gh` were installed with `winget`. Azure access came from an
+interactive `az login --use-device-code`. GitHub access reused the OAuth token Git Credential
+Manager already held (`git credential fill`), passed to `gh` through `GH_TOKEN` for that one
+process and never written down.
+
+**Faults found by a dry run, before any release.** A read-through could not have found either:
+
+1. *`AADSTS700213`, no matching federated identity record.* The credential trusted
+   `repo:spilloid/spoolsmith:environment:release`, but GitHub presented the ID-based subject
+   (see [The OIDC subject](#the-oidc-subject)). The script now reads the prefix from GitHub and
+   updates a credential that trusts the wrong subject.
+2. *`EnvironmentCredential authentication unavailable`, after a successful login.* The signing
+   action had the wrong `DefaultAzureCredential` sources enabled (see
+   [How the release pipeline uses it](#how-the-release-pipeline-uses-it)).
+
+**Proved.** After both fixes the signing check signed `spoolsmith.exe` and `spoolsmith-gui.exe`.
+The artifact was downloaded and checked on a separate Windows machine: both report `Valid`,
+issued by `CN=Microsoft ID Verified CS EOC CA 04`, signed by `CN=Joseph Spillers`, with a
+countersignature from `Microsoft Public RSA Time Stamping Authority`. The certificate itself
+lives three days, which is why the timestamp is what keeps a release verifiable.
+
+**Not done.** No release has been published or tagged, and nothing signed here is distributed.
+The dry run's binaries were a private workflow artifact.
 
 ## Signing by hand
 
@@ -119,8 +210,8 @@ too old for the dlib).
 ```powershell
 az login                                    # DefaultAzureCredential picks this up
 $env:SPOOLSMITH_SIGN_ENDPOINT = 'https://eus.codesigning.azure.net'
-$env:SPOOLSMITH_SIGN_ACCOUNT  = 'spilloid-signing'
-$env:SPOOLSMITH_SIGN_PROFILE  = 'spoolsmith-public'
+$env:SPOOLSMITH_SIGN_ACCOUNT  = 'jdspille'
+$env:SPOOLSMITH_SIGN_PROFILE  = 'primary-profile'
 
 ./scripts/build-release.ps1 -Tag v1.0.0 -Sign
 ```
@@ -168,7 +259,9 @@ on users' machines about three days later — the worst possible failure shape t
 | Symptom | Cause |
 | --- | --- |
 | `403 Forbidden`, or `SignerSign()` failed | Endpoint region does not match the account's region, or the identity is missing the **Certificate Profile Signer** role |
-| `AADSTS700213` / no matching federated credential | The credential's subject does not match the job's. It must be exactly `repo:spilloid/spoolsmith:environment:release` (entity type Environment, name `release`); Branch and Tag credentials do not match this job |
+| `AADSTS700213` / no matching federated credential | The credential's subject does not match the one GitHub presents. The failing log prints it as `subject claim`; compare it with [The OIDC subject](#the-oidc-subject). Re-running `scripts/setup-signing.ps1` corrects it. The name form, Branch and Tag credentials do not match this job |
+| `EnvironmentCredential authentication unavailable` after a successful login | The signing action has the wrong credential source enabled; it needs the Azure CLI credential |
+| Job fails instantly with "not allowed to deploy to release" | The run is on a branch or tag the environment's deployment restriction does not allow (`main` and `v*` only) |
 | Certificate profile cannot be created | Identity validation is still pending or was rejected |
 | dlib load error from SignTool | SignTool older than 10.0.22621, or an x86/x64 mismatch between SignTool and the dlib |
 | Signature valid, publisher wrong | Signed by a different certificate profile — set `SIGNING_EXPECTED_SUBJECT` so CI catches this |
@@ -180,10 +273,11 @@ instant switch.
 
 ## Hardening worth doing
 
-- **Require approval to sign.** The release job already runs in the `release` environment, so
-  under Settings → Environments → `release` you can add required reviewers and move the signing
-  variables and secrets from the repository into the environment. Signing then waits for a
-  human, and the credential is unusable from any workflow that is not in that environment.
+- **Require approval to sign.** The signing values are already environment-scoped and the
+  environment is restricted to `main` and `v*` tags. Under Settings → Environments → `release`
+  you can also add **required reviewers**, so every signing run waits for a human. Left off
+  because it makes each release, and each signing check, wait on a click; turn it on if more
+  than one person can push to `main`.
 - **Rotation and offboarding.** There is no private key to rotate. Revoking access means
   removing the role assignment or deleting the federated credential; do that when someone with
   subscription access leaves.

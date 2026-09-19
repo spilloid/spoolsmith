@@ -65,7 +65,7 @@ jobs:
             Where-Object { [string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($_)) }
           if ($missing) {
             throw "Code signing is not configured; missing: $($missing -join ', '). " +
-                  'Set them under Settings > Secrets and variables > Actions. ' +
+                  'Set them under Settings > Environments > release, or run scripts/setup-signing.ps1. ' +
                   'Setup steps are in docs/code-signing.md. Releases are never published unsigned.'
           }
           "tag=$tag" >> $env:GITHUB_OUTPUT
@@ -77,46 +77,16 @@ jobs:
         shell: pwsh
         run: ./scripts/build-release.ps1 -Tag ${{ steps.meta.outputs.tag }} -Stage build
 
-      - name: Azure login
-        uses: azure/login@v3
+      - name: Sign and verify binaries
+        uses: ./.github/actions/sign-release
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-
-      - name: Sign binaries
-        uses: azure/artifact-signing-action@v2
-        with:
           endpoint: ${{ vars.SIGNING_ENDPOINT }}
-          signing-account-name: ${{ vars.SIGNING_ACCOUNT }}
-          certificate-profile-name: ${{ vars.SIGNING_PROFILE }}
-          files-folder: ${{ github.workspace }}\dist
-          files-folder-filter: exe
-          file-digest: SHA256
-          # Signing certificates are valid for three days; without this
-          # countersignature the release stops verifying almost immediately.
-          timestamp-rfc3161: http://timestamp.acs.microsoft.com
-          timestamp-digest: SHA256
-          # Go straight to the federated token azure/login put in the environment
-          # instead of walking the other DefaultAzureCredential sources first.
-          exclude-environment-credential: false
-          exclude-workload-identity-credential: false
-          exclude-managed-identity-credential: true
-          exclude-shared-token-cache-credential: true
-          exclude-visual-studio-credential: true
-          exclude-visual-studio-code-credential: true
-          exclude-azure-cli-credential: true
-          exclude-azure-powershell-credential: true
-          exclude-azure-developer-cli-credential: true
-          exclude-interactive-browser-credential: true
-
-      # Fails the release if a binary came back unsigned or without a timestamp,
-      # rather than discovering it once users cannot launch the download.
-      - name: Verify signatures
-        shell: pwsh
-        env:
-          EXPECTED_SUBJECT: ${{ vars.SIGNING_EXPECTED_SUBJECT }}
-        run: ./scripts/verify-signature.ps1 -Files dist/spoolsmith.exe, dist/spoolsmith-gui.exe -ExpectedSubject $env:EXPECTED_SUBJECT
+          account: ${{ vars.SIGNING_ACCOUNT }}
+          profile: ${{ vars.SIGNING_PROFILE }}
+          expected-subject: ${{ vars.SIGNING_EXPECTED_SUBJECT }}
 
       - name: Package signed release
         shell: pwsh
