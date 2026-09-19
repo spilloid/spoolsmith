@@ -147,6 +147,20 @@ regardless of what calls it. SpoolSmith does not depend on NetViz existing; it g
 fingerprinting evidence independently and must remain fully useful from its own CLI with zero
 NetViz integration wired up.
 
+## Release checklist
+
+A release is not just a version bump. Every time `VERSION` moves and a `releases/vX.Y.Z.md`
+is written, also check whether the GUI changed since the last release and, if so:
+- Refresh `docs/img/*.png` for any screen that changed (button/label text, layout, new controls)
+  — `SiteScreenshots.cs`'s `Capture_site_screenshots` test does this live against the real app
+  (`SPOOLSMITH_CAPTURE_SITE_SHOTS=1 dotnet test --filter FullyQualifiedName~SiteScreenshots`,
+  real Windows only). A feature that's real but never screenshotted (Intune packaging shipped in
+  v0.7.0, first screenshotted in v0.7.3) is exactly the gap this step exists to catch.
+- Check `docs/index.html`'s gallery and copy against what the screenshots actually show now —
+  a stale caption next to a fresh screenshot is its own kind of drift.
+This was missed for two releases in a row (v0.7.0 shipped Intune with no screenshot; v0.7.1's own
+site-update commit didn't add one either) before being caught and fixed in v0.7.3.
+
 ## Commands
 
 ```sh
