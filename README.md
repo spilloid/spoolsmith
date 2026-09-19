@@ -1,5 +1,7 @@
 # SpoolSmith
 
+<p align="center"><img src="assets/icon/spoolsmith.png" alt="SpoolSmith: an anvil forging a printer" width="160"></p>
+
 SpoolSmith discovers network printers, saves reusable printer profiles, copies a working
 printer setup from one PC to another, and maps Windows queues using locally installed
 drivers after you review the plan. A small family catalog also provides automatic
