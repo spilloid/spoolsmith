@@ -370,7 +370,7 @@ func workflowEnvironment(elevated, driverPresent bool) *fakeEnvironment {
 		driverPresent: driverPresent,
 		configuration: PrinterConfiguration{
 			PrinterName: "Test Printer",
-			PortName:    "SpoolSmith-192.0.2.10",
+			PortName:    "RAW9100-192.0.2.10",
 			DriverName:  "Verified Windows Driver",
 		},
 	}

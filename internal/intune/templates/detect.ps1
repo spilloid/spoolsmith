@@ -30,7 +30,7 @@ try {
     $q=@(Get-Printer -ErrorAction Stop | Where-Object { $_.Name -eq $expected.printer_name })
     if ($q.Count -ne 1 -or $q[0].DriverName -ne $expected.driver_name) { exit 1 }
     $expectedIP=[Net.IPAddress]::Parse($expected.target)
-    if ($q[0].PortName -ne ('SpoolSmith-' + $expectedIP.ToString())) { exit 1 }
+    if ($q[0].PortName -ne ('RAW9100-' + $expectedIP.ToString())) { exit 1 }
     $d=@(Get-PrinterDriver -ErrorAction Stop | Where-Object { $_.Name -eq $q[0].DriverName })
     $p=@(Get-PrinterPort -ErrorAction Stop | Where-Object { $_.Name -eq $q[0].PortName })
     if ($d.Count -eq 0 -or $p.Count -ne 1 -or $p[0].Protocol -ne 1 -or $p[0].PortNumber -ne 9100) { exit 1 }

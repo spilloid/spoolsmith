@@ -66,8 +66,8 @@ func TestPowerShellConflictsFailBeforeCreatingPort(t *testing.T) {
 	plan := mustPlan(t)
 	for _, setup := range []string{
 		`$global:printers=@([PSCustomObject]@{Name='HP LaserJet Pro M404dn';DriverName='Other driver';PortName='other'})`,
-		`$global:ports=@([PSCustomObject]@{Name='SpoolSmith-192.0.2.10';PrinterHostAddress='192.0.2.99';PortNumber=9100;Protocol=1})`,
-		`$global:ports=@([PSCustomObject]@{Name='SpoolSmith-192.0.2.10';PrinterHostAddress='192.0.2.10';PortNumber=515;Protocol=2})`,
+		`$global:ports=@([PSCustomObject]@{Name='RAW9100-192.0.2.10';PrinterHostAddress='192.0.2.99';PortNumber=9100;Protocol=1})`,
+		`$global:ports=@([PSCustomObject]@{Name='RAW9100-192.0.2.10';PrinterHostAddress='192.0.2.10';PortNumber=515;Protocol=2})`,
 	} {
 		script := printerHarness + setup + `; function Add-PrinterPort { throw 'UNEXPECTED MUTATION' }; ` + strings.Join(plan.Commands, "; ")
 		output, err := runPowerShell(context.Background(), script)
@@ -85,7 +85,7 @@ func TestPowerShellConfigureAndSharedPort(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	setup := `$global:printers=@([PSCustomObject]@{Name='HP LaserJet Pro M404dn';DriverName='Old driver';PortName='old'},[PSCustomObject]@{Name='Shared queue';DriverName='Other driver';PortName='SpoolSmith-192.0.2.10'}); `
+	setup := `$global:printers=@([PSCustomObject]@{Name='HP LaserJet Pro M404dn';DriverName='Old driver';PortName='old'},[PSCustomObject]@{Name='Shared queue';DriverName='Other driver';PortName='RAW9100-192.0.2.10'}); `
 	output, err := runPowerShell(context.Background(), printerHarness+setup+strings.Join(plan.Commands, "; ")+"; "+strings.Join(plan.Commands, "; ")+"; "+strings.Join(remove.Commands, "; ")+`; if ($global:updated -ne 1 -or $global:removedPorts -ne 0 -or $global:printers.Count -ne 1) { throw 'Wrong final state' }; 'VERIFIED'`)
 	if err != nil || !strings.Contains(output, "VERIFIED") || !strings.Contains(output, "Retained shared port") {
 		t.Fatalf("configure/shared: %v %s", err, output)
@@ -100,7 +100,7 @@ func TestLookupPrinterDecodesRealPowerShellOutput(t *testing.T) {
 	const queue = "Review Queue"
 	harness := `
 function Get-Printer { [CmdletBinding()]param()
- [PSCustomObject]@{Name='` + queue + `';PortName='SpoolSmith-192.0.2.10';DriverName='Reviewed Driver'}
+ [PSCustomObject]@{Name='` + queue + `';PortName='RAW9100-192.0.2.10';DriverName='Reviewed Driver'}
 }
 `
 	command, err := lookupPrinterCommand(queue)
@@ -116,7 +116,7 @@ function Get-Printer { [CmdletBinding()]param()
 	if err := json.Unmarshal([]byte(strings.TrimSpace(output)), &got); err != nil {
 		t.Fatalf("decode %q: %v", output, err)
 	}
-	want := PrinterConfiguration{PrinterName: queue, PortName: "SpoolSmith-192.0.2.10", DriverName: "Reviewed Driver"}
+	want := PrinterConfiguration{PrinterName: queue, PortName: "RAW9100-192.0.2.10", DriverName: "Reviewed Driver"}
 	if got != want {
 		t.Fatalf("LookupPrinter decoded %#v, want %#v (raw: %s)", got, want, strings.TrimSpace(output))
 	}

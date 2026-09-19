@@ -361,7 +361,7 @@ func (w Workflow) RunUninstall(ctx context.Context, env Environment, input io.Re
 	if err != nil {
 		return failOutcome(outcome, err, ExitGeneralError)
 	}
-	if options.Profile != nil && (!strings.EqualFold(configuration.PortName, "SpoolSmith-"+net.ParseIP(options.Profile.Target).String()) || !strings.EqualFold(configuration.DriverName, options.Profile.DriverName)) {
+	if options.Profile != nil && (!strings.EqualFold(configuration.PortName, managedPortPrefix+net.ParseIP(options.Profile.Target).String()) || !strings.EqualFold(configuration.DriverName, options.Profile.DriverName)) {
 		return failOutcome(outcome, fmt.Errorf("remove: installed queue differs from profile (port %q, driver %q); review removal explicitly by queue name", configuration.PortName, configuration.DriverName), ExitUnresolved)
 	}
 	plan, err := BuildUninstallPlan(configuration.PrinterName, configuration.PortName, configuration.DriverName, options.PurgeDriver)

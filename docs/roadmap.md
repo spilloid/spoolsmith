@@ -1,10 +1,14 @@
-# Remaining work after v0.6.0
+# Remaining work after v0.7.4
 
-Updated September 17, 2026. The current release includes the native desktop's
+Updated September 19, 2026. Shipped releases now include the native desktop's
 copy/apply, direct-IP, discovery, profile editing, status, offline and bulk JSON
-workflows. The workspace TODO requests for desktop parity and JSON transfer are
-implemented. Remaining work is primarily broader validation and product hardening,
-with additional protocols as future scope.
+workflows (v0.6.0); Intune packaging on both the CLI and desktop (v0.7.0–v0.7.1);
+a UX pass plus bulk driver export via `copy --all` on the CLI (v0.7.3); and
+`copy --all` on the desktop GUI plus a `--dry-run`/review preview for bulk
+saved-setup transfer on both surfaces (v0.7.4) — see "What shipped in v0.7.4"
+below and `docs/gui-parity.md` for the current CLI/desktop split. Remaining
+work below is primarily broader validation and
+product hardening, with additional protocols as future scope.
 
 ## Next validation priorities (outside Intune)
 
@@ -72,17 +76,22 @@ Still open: a real tenant/Company Portal pilot (see the [unrun lifecycle
 cases](validation/2026-09-15-windows11-results.md)) validating the manual upload
 path above, which isn't required to use packaging today.
 
-## Post-release fixes on main
+## What shipped in v0.7.4
 
-These follow v0.6.0 and are not in its existing ZIP:
+- Bulk driver export (`copy --all`) is now also available on the desktop GUI
+  (This PC → Copy all printers...), sharing the same `bundle.CreateAll` batch
+  implementation the CLI uses: one `.ssb` per queue, independent per-queue
+  outcomes, early filename-collision checks before any probe or driver export,
+  and a Stop control that keeps completed files.
+- `profile export-all`/`profile import-all` gained a `--dry-run` preview (CLI)
+  and a destination-review step (desktop) that lists filenames, printer
+  settings and destination conflicts before anything is written.
+- A single `copy`'s destination filename is now checked before the network
+  probe and any driver export, matching the batch path's existing preflight.
+- The desktop's saved-setup export/import review dialog can now be closed at
+  any time, including mid-check or mid-save, instead of blocking indefinitely
+  on a slow or unresponsive destination.
 
-- Invalid saved profiles cannot enter the desktop editor and lose unrecognized data.
-- Bulk JSON export refuses the profile folder itself, including directory aliases,
-  so a collection cannot be mistaken for an individual profile on the next export.
-- Empty library guidance and initial selection after switching folders are consistent.
-- The site leads with the downloadable app, desktop instructions and file-type guidance.
-  Documentation distinguishes one-PC tests from two-PC validation and released
-  workflows from held Intune work.
-
-See the [quality review](validation/2026-09-17-quality-review.md) and the
-[follow-up VM hardware QC](validation/2026-09-17-vm-hardware-qc.md) for checks and evidence.
+See [gui-parity.md](gui-parity.md) for what's shared between the CLI and
+desktop today, and the [quality review](validation/2026-09-17-quality-review.md)
+for the last full pass before this round of changes.

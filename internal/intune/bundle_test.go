@@ -12,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/spilloid/spoolsmith/internal/bundle"
 	"github.com/spilloid/spoolsmith/internal/evidence"
 	"github.com/spilloid/spoolsmith/internal/install"
 )
@@ -52,6 +53,34 @@ func testOptions(t *testing.T) Options {
 		t.Fatal(err)
 	}
 	return Options{ProfilePath: path, BinaryPath: testBinary, BinarySHA256: testBinaryHash, ID: "accounting", Revision: 1, DisplayName: "Accounting copier", Offline: true, DriverPrerequisite: true}
+}
+
+// writeTestBundle builds a .ssb at t.TempDir()/bundle.ssb with the given
+// profile, optionally carrying a minimal driver payload (one INF file), and
+// returns its path.
+func writeTestBundle(t *testing.T, p install.Profile, includeDriver bool) string {
+	t.Helper()
+	m := bundle.Manifest{SourceHost: "west-desk-07", Profile: p}
+	payloadRoot := ""
+	if includeDriver {
+		payloadRoot = t.TempDir()
+		if err := os.WriteFile(filepath.Join(payloadRoot, "driver.inf"), []byte("; test INF\n"), 0600); err != nil {
+			t.Fatal(err)
+		}
+		m.Driver = &bundle.DriverPayload{WindowsDriverName: p.DriverName, INF: "driver.inf", ExportedFrom: "test-vendor-pkg"}
+	}
+	path := filepath.Join(t.TempDir(), "bundle.ssb")
+	if err := bundle.Write(path, m, payloadRoot); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func testBundleOptions(t *testing.T, includeDriver bool) Options {
+	t.Helper()
+	p := install.Profile{Version: 1, Target: "192.0.2.41", PrinterName: "Bundle-sourced copier", DriverName: "Exact OEM Driver", Evidence: evidence.Evidence{Provenance: "captured", HTTPTitle: "Example Model"}}
+	path := writeTestBundle(t, p, includeDriver)
+	return Options{ProfilePath: path, BinaryPath: testBinary, BinarySHA256: testBinaryHash, ID: "bundle-sourced", Revision: 1, DisplayName: "Bundle-sourced copier", Offline: true, DriverPrerequisite: !includeDriver}
 }
 func TestExportPinsContentsAndPreservesExistingFiles(t *testing.T) {
 	prepared, err := Prepare(testOptions(t))
@@ -199,9 +228,9 @@ function Get-Item {param($LiteralPath,[switch]$Force);$attributes=0;if($mode -eq
 function Get-Acl {param($LiteralPath);$acl=[pscustomobject]@{};$acl|Add-Member ScriptMethod GetOwner {param($type);$sid='S-1-5-18';if($mode -eq 'untrusted-owner'){$sid='S-1-5-11'};[pscustomobject]@{Value=$sid}};$acl|Add-Member ScriptMethod GetAccessRules {param($explicit,$inherited,$type);if($mode -eq 'writable-state'){[pscustomobject]@{AccessControlType='Allow';FileSystemRights=2;IdentityReference=[pscustomobject]@{Value='S-1-5-11'}}}};return $acl}
 function Get-Content {param($LiteralPath,[switch]$Raw) return ($m|ConvertTo-Json -Depth 20)}
 function Test-Path {param($LiteralPath) return ($mode -eq 'pending')}
-function Get-Printer { [CmdletBinding()]param();if($mode -eq 'spooler'){throw 'spooler down'};if($mode -eq 'queue'){return};$driver=$m.profile.driver_name;if($mode -eq 'driver'){$driver='Other'};[pscustomobject]@{Name=$m.profile.printer_name;DriverName=$driver;PortName=('SpoolSmith-'+$m.profile.target)} }
+function Get-Printer { [CmdletBinding()]param();if($mode -eq 'spooler'){throw 'spooler down'};if($mode -eq 'queue'){return};$driver=$m.profile.driver_name;if($mode -eq 'driver'){$driver='Other'};[pscustomobject]@{Name=$m.profile.printer_name;DriverName=$driver;PortName=('RAW9100-'+$m.profile.target)} }
 function Get-PrinterDriver { [CmdletBinding()]param();if($mode -ne 'registration'){[pscustomobject]@{Name=$m.profile.driver_name}} }
-function Get-PrinterPort { [CmdletBinding()]param();if($mode -eq 'port'){return};$address=$m.profile.target;$protocol=1;$number=9100;if($mode -eq 'address'){$address='192.0.2.41'};if($mode -eq 'protocol'){$protocol=2};if($mode -eq 'number'){$number=515};[pscustomobject]@{Name=('SpoolSmith-'+$m.profile.target);PrinterHostAddress=$address;Protocol=$protocol;PortNumber=$number} }
+function Get-PrinterPort { [CmdletBinding()]param();if($mode -eq 'port'){return};$address=$m.profile.target;$protocol=1;$number=9100;if($mode -eq 'address'){$address='192.0.2.41'};if($mode -eq 'protocol'){$protocol=2};if($mode -eq 'number'){$number=515};[pscustomobject]@{Name=('RAW9100-'+$m.profile.target);PrinterHostAddress=$address;Protocol=$protocol;PortNumber=$number} }
 & ` + psString(path)
 			cmd := exec.Command(shell, "-NoProfile", "-NonInteractive", "-Command", prelude)
 			cmd.Env = shellEnv()
@@ -228,7 +257,7 @@ func TestGeneratedLifecycleRepeatUpdateRecoveryAndRemoval(t *testing.T) {
 function Assert-Platform {}
 function Assert-Protected([string]$Path) {}
 function Initialize-Root { return $env:SPOOLSMITH_TEST_ROOT }
-function Get-Printer { [CmdletBinding()]param();$path=Join-Path $env:SPOOLSMITH_TEST_ROOT 'queue.json';if(Test-Path -LiteralPath $path){$q=Read-JSON $path;[pscustomobject]@{Name=$q.printer_name;DriverName=$q.driver_name;PortName=('SpoolSmith-'+$q.target)}} }
+function Get-Printer { [CmdletBinding()]param();$path=Join-Path $env:SPOOLSMITH_TEST_ROOT 'queue.json';if(Test-Path -LiteralPath $path){$q=Read-JSON $path;[pscustomobject]@{Name=$q.printer_name;DriverName=$q.driver_name;PortName=('RAW9100-'+$q.target)}} }
 function Invoke-SpoolSmith([string]$Directory,[string]$Operation,[bool]$Offline,[string]$LogDir) {
  $m=Read-JSON (Join-Path $Directory 'deployment.json');$path=Join-Path $env:SPOOLSMITH_TEST_ROOT 'queue.json'
  $q=$null;if(Test-Path -LiteralPath $path){$q=Read-JSON $path}
@@ -375,5 +404,209 @@ func main(){fmt.Print("{\"compliant\":true}");c,_:=strconv.Atoi(os.Getenv("SPOOL
 		if err = json.Unmarshal(out, &result); err != nil || result.Code == nil || *result.Code != want || !result.Data.Compliant {
 			t.Fatalf("want=%d result=%s error=%v", want, out, err)
 		}
+	}
+}
+
+// TestInvokeSpoolSmithRoutesBundleThroughApply exercises the real runtime.ps1
+// against a helper binary that echoes its own argv, confirming Invoke-SpoolSmith
+// calls `apply <bundle.ssb>` (with `--update` for configure) exactly when the
+// deployment manifest carries a bundle payload AND the operation mutates the
+// queue -- never for status/remove, which stay on --profile regardless.
+func TestInvokeSpoolSmithRoutesBundleThroughApply(t *testing.T) {
+	shell := powershell(t)
+	dir := t.TempDir()
+	helper := filepath.Join(dir, "helper.go")
+	code := `package main
+import("encoding/json";"fmt";"os")
+func main(){b,_:=json.Marshal(map[string]any{"argv":os.Args[1:]});fmt.Print(string(b))}`
+	if err := os.WriteFile(helper, []byte(code), 0600); err != nil {
+		t.Fatal(err)
+	}
+	goBinary := filepath.Join(runtime.GOROOT(), "bin", "go")
+	if runtime.GOOS == "windows" {
+		goBinary += ".exe"
+	}
+	binary := filepath.Join(dir, "spoolsmith.exe")
+	if data, err := exec.Command(goBinary, "build", "-o", binary, helper).CombinedOutput(); err != nil {
+		t.Fatalf("%v %s", err, data)
+	}
+	binaryBytes, err := os.ReadFile(binary)
+	if err != nil {
+		t.Fatal(err)
+	}
+	profileBytes := []byte(`{}`)
+	if err := os.WriteFile(filepath.Join(dir, "profile.json"), profileBytes, 0600); err != nil {
+		t.Fatal(err)
+	}
+	bundleBytes := []byte("fake-bundle-bytes")
+	if err := os.WriteFile(filepath.Join(dir, "bundle.ssb"), bundleBytes, 0600); err != nil {
+		t.Fatal(err)
+	}
+	m := Manifest{BinarySHA256: digest(binaryBytes), ProfileSHA256: digest(profileBytes), BundleSHA256: digest(bundleBytes)}
+	data, _ := json.Marshal(m)
+	if err := os.WriteFile(filepath.Join(dir, "deployment.json"), data, 0600); err != nil {
+		t.Fatal(err)
+	}
+	script, err := templates.ReadFile("templates/runtime.ps1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtimePath := filepath.Join(dir, "runtime.ps1")
+	if err := os.WriteFile(runtimePath, script, 0600); err != nil {
+		t.Fatal(err)
+	}
+	run := func(operation string) []string {
+		t.Helper()
+		cmd := exec.Command(shell, "-NoProfile", "-NonInteractive", "-Command", ". "+psString(runtimePath)+"; Invoke-SpoolSmith "+psString(dir)+" "+psString(operation)+" $false "+psString(dir)+" | ConvertTo-Json -Depth 10")
+		cmd.Env = shellEnv()
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("%s: %v %s", operation, err, out)
+		}
+		var result struct {
+			Data struct {
+				Argv []string `json:"argv"`
+			}
+		}
+		if err = json.Unmarshal(out, &result); err != nil {
+			t.Fatalf("%s: %v %s", operation, err, out)
+		}
+		return result.Data.Argv
+	}
+	contains := func(argv []string, substr string) bool {
+		for _, a := range argv {
+			if strings.Contains(a, substr) {
+				return true
+			}
+		}
+		return false
+	}
+	for _, tc := range []struct {
+		operation  string
+		wantApply  bool
+		wantUpdate bool
+	}{
+		{"add", true, false},
+		{"configure", true, true},
+		{"status", false, false},
+		{"remove", false, false},
+	} {
+		argv := run(tc.operation)
+		gotApply := len(argv) > 0 && argv[0] == "apply"
+		if gotApply != tc.wantApply {
+			t.Fatalf("%s: argv=%v, want apply routing=%v", tc.operation, argv, tc.wantApply)
+		}
+		if contains(argv, "--update") != tc.wantUpdate {
+			t.Fatalf("%s: argv=%v, want --update=%v", tc.operation, argv, tc.wantUpdate)
+		}
+		if tc.wantApply && !contains(argv, "bundle.ssb") {
+			t.Fatalf("%s: argv=%v missing bundle.ssb", tc.operation, argv)
+		}
+		if !tc.wantApply && !contains(argv, "profile.json") {
+			t.Fatalf("%s: argv=%v missing profile.json", tc.operation, argv)
+		}
+	}
+}
+
+func TestPrepareFromBundleWithDriverPayload(t *testing.T) {
+	o := testBundleOptions(t, true)
+	prepared, err := Prepare(o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := prepared.Manifest
+	if m.ProfileSource != "bundle" {
+		t.Fatalf("profile source = %q, want bundle", m.ProfileSource)
+	}
+	if m.BundleSourceHost != "west-desk-07" {
+		t.Fatalf("bundle source host = %q", m.BundleSourceHost)
+	}
+	if m.BundleSHA256 == "" {
+		t.Fatal("bundle SHA-256 not recorded")
+	}
+	found := false
+	for _, name := range m.Files {
+		if name == "bundle.ssb" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("bundle.ssb missing from Files: %v", m.Files)
+	}
+	dest := filepath.Join(t.TempDir(), "export")
+	if err = prepared.Export(dest); err != nil {
+		t.Fatal(err)
+	}
+	if err = verifyFile(filepath.Join(dest, "bundle.ssb"), m.BundleSHA256); err != nil {
+		t.Fatal(err)
+	}
+	// The vendor-archive driver hash stays empty; this profile has no local
+	// vendor package, only a bundle-carried one.
+	if m.DriverSHA256 != "" {
+		t.Fatalf("unexpected vendor driver hash %q for a bundle-sourced payload", m.DriverSHA256)
+	}
+}
+
+func TestPrepareFromBundleWithoutDriverPayload(t *testing.T) {
+	o := testBundleOptions(t, false)
+	prepared, err := Prepare(o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := prepared.Manifest
+	if m.ProfileSource != "bundle" {
+		t.Fatalf("profile source = %q, want bundle", m.ProfileSource)
+	}
+	if m.BundleSHA256 != "" {
+		t.Fatalf("unexpected bundle hash %q for a driverless bundle", m.BundleSHA256)
+	}
+	for _, name := range m.Files {
+		if name == "bundle.ssb" {
+			t.Fatalf("driverless bundle should not ship bundle.ssb: %v", m.Files)
+		}
+	}
+	// Without --driver-prerequisite, a driverless bundle is refused exactly
+	// like a driverless profile JSON.
+	o.DriverPrerequisite = false
+	if _, err = Prepare(o); err == nil {
+		t.Fatal("accepted a driverless bundle with no driver prerequisite accepted")
+	}
+}
+
+func TestPrepareRejectsBundleAndPrerequisiteTogether(t *testing.T) {
+	o := testBundleOptions(t, true)
+	o.DriverPrerequisite = true
+	if _, err := Prepare(o); err == nil {
+		t.Fatal("accepted a bundle driver payload together with the separately managed prerequisite")
+	}
+}
+
+func TestPrepareRejectsBundleProfileWithVendorArchive(t *testing.T) {
+	p := install.Profile{
+		Version: 1, Target: "192.0.2.42", PrinterName: "Ambiguous copier", DriverName: "Brother HL-L2315D series",
+		Evidence:      evidence.Evidence{Provenance: "captured", HTTPTitle: "Example Model"},
+		DriverPackage: &install.PackageSelection{ID: "brother-y14a-c1-hostm-1110", Archive: ".packages/brother/driver.EXE"},
+	}
+	path := writeTestBundle(t, p, false)
+	o := testBundleOptions(t, false)
+	o.ProfilePath = path
+	o.DriverPrerequisite = false
+	if _, err := Prepare(o); err == nil {
+		t.Fatal("accepted a bundle whose embedded profile also names a local vendor archive")
+	}
+}
+
+func TestHasLocalPayloadDispatchesOnExtension(t *testing.T) {
+	jsonOpts := testOptions(t)
+	if has, err := HasLocalPayload(jsonOpts.ProfilePath); err != nil || has {
+		t.Fatalf("has=%v err=%v, want false for a driverless profile JSON", has, err)
+	}
+	driverless := testBundleOptions(t, false)
+	if has, err := HasLocalPayload(driverless.ProfilePath); err != nil || has {
+		t.Fatalf("has=%v err=%v, want false for a driverless bundle", has, err)
+	}
+	withDriver := testBundleOptions(t, true)
+	if has, err := HasLocalPayload(withDriver.ProfilePath); err != nil || !has {
+		t.Fatalf("has=%v err=%v, want true for a bundle with a driver payload", has, err)
 	}
 }

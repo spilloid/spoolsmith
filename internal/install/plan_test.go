@@ -42,7 +42,7 @@ func TestBuildPlanCommandsForBothFamilies(t *testing.T) {
 			if err != nil {
 				t.Fatalf("BuildPlan() error = %v", err)
 			}
-			if got.IPAddress != tt.ip || got.PortName != "SpoolSmith-"+tt.ip || got.PrinterName != tt.model || got.DriverName != tt.wantDriver {
+			if got.IPAddress != tt.ip || got.PortName != "RAW9100-"+tt.ip || got.PrinterName != tt.model || got.DriverName != tt.wantDriver {
 				t.Fatalf("BuildPlan() metadata = %#v", got)
 			}
 			if got.Family.ID != tt.familyID || got.Driver.FamilyID != tt.familyID {
@@ -145,7 +145,7 @@ func TestInstallRunsPlanCommandsInOrderWhenConfirmed(t *testing.T) {
 
 func TestUninstallRemovesPrinterAndPortBeforeOptionalDriver(t *testing.T) {
 	env := &fakeEnvironment{elevated: true}
-	result, err := Uninstall(context.Background(), env, "HP LaserJet Pro M404dn", "SpoolSmith-192.0.2.10", "HP Universal Print Driver for Windows PCL 6", true)
+	result, err := Uninstall(context.Background(), env, "HP LaserJet Pro M404dn", "RAW9100-192.0.2.10", "HP Universal Print Driver for Windows PCL 6", true)
 	if err != nil {
 		t.Fatalf("Uninstall() error = %v", err)
 	}

@@ -109,6 +109,23 @@ reported with its reason rather than stopping the batch — this is a set of ind
 exports, not one transaction, so one bad queue does not cost you the other twenty-nine.
 The command still fails (non-zero exit) if nothing at all got copied.
 
+In the source desktop build, **This PC → Copy all printers...** runs the same batch
+operation. Review the inventory, choose a folder and whether to include drivers,
+then choose **Copy printers**. The dialog stays responsive and offers **Stop copying**;
+completed files remain available. **Copy results / JSON** copies the same result
+fields the CLI emits so you can attach the outcome to a ticket. This control shipped
+in v0.7.4.
+
+Existing files and filename collisions are reported before the affected printer is
+probed or its driver is exported. Retry a failed printer with **Copy to a file** or
+`spoolsmith copy "Queue name" different-name.ssb --include-driver`.
+
+The CLI preserves its existing partial-success convention: a batch with at least
+one successful copy exits zero even if another copy failed. Check `failed` and
+`skipped` in its JSON result. Ctrl+C stops further work and exits nonzero with the
+available results. Neither surface applies a whole folder at once; open each `.ssb`
+on the destination and review its plan before confirming.
+
 ### What gets captured
 
 SpoolSmith probes the printer itself at copy time and stores model evidence — HTTP title, PJL

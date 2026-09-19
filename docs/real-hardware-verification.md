@@ -185,7 +185,7 @@ Run the preview first, unelevated — this now works and mutates nothing:
 .\spoolsmith.exe remove --profile profiles\brother-home.json --dry-run
 ```
 
-Expect the queue name, `SpoolSmith-<ip>`, and the exact driver name to be populated
+Expect the queue name, `RAW9100-<ip>`, and the exact driver name to be populated
 from live Windows inventory, then `administrator privileges are required`. Empty
 port/driver values mean the decode bug is back; stop and fix it rather than granting
 admin.
@@ -196,13 +196,13 @@ Then, in an **elevated** shell, run the removal itself and confirm each claim:
 .\spoolsmith.exe remove --profile profiles\brother-home.json
 # Review the plan, confirm once.
 Get-Printer      | Where-Object Name -eq 'Brother Home'              # expect nothing
-Get-PrinterPort  | Where-Object Name -eq 'SpoolSmith-192.168.68.108' # expect nothing
+Get-PrinterPort  | Where-Object Name -eq 'RAW9100-192.168.68.108' # expect nothing
 Get-PrinterDriver | Where-Object Name -eq 'Brother HL-L2315D series' # expect STILL PRESENT
 ```
 
 The driver must survive: removal without `--purge-driver` retains it, and the
 uninstall commands additionally retain any port still referenced by another queue
-and any port not named `SpoolSmith-`. Verify the retention branches too, ideally by
+and any port not named `RAW9100-`. Verify the retention branches too, ideally by
 pointing a second queue at the same port before removing the first.
 
 Then prove the cycle is closed by putting it back and printing again:

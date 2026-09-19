@@ -60,6 +60,9 @@ type CreateResult struct {
 // Front ends keep only what is genuinely theirs -- asking for the file name,
 // and showing progress.
 func Create(ctx context.Context, env install.Environment, collect Collector, opts CreateOptions) (CreateResult, error) {
+	if err := ctx.Err(); err != nil {
+		return CreateResult{}, err
+	}
 	report := opts.Progress
 	if report == nil {
 		report = func(string) {}
@@ -69,6 +72,16 @@ func Create(ctx context.Context, env install.Environment, collect Collector, opt
 	}
 	if strings.TrimSpace(opts.Path) == "" {
 		return CreateResult{}, fmt.Errorf("copy: choose where to save the file")
+	}
+
+	// Checked here, before any network probe or driver export, so a collision
+	// fails cheaply instead of after paying for both -- the same ordering
+	// CreateAll uses for its batch of queues. Write still uses exclusive
+	// creation to protect against a race after this check.
+	if _, err := os.Stat(opts.Path); err == nil {
+		return CreateResult{}, fmt.Errorf("copy: %s already exists; retry with a different, unused bundle filename", opts.Path)
+	} else if !os.IsNotExist(err) {
+		return CreateResult{}, fmt.Errorf("copy: check %s: %w", opts.Path, err)
 	}
 
 	// Exporting a driver reads the protected driver store through pnputil,
@@ -90,6 +103,9 @@ func Create(ctx context.Context, env install.Environment, collect Collector, opt
 	if err != nil {
 		return CreateResult{}, err
 	}
+	if err := ctx.Err(); err != nil {
+		return CreateResult{}, err
+	}
 
 	// The printer's own evidence is captured here, not copied from the queue,
 	// so applying the bundle elsewhere still checks it is talking to the same
@@ -97,6 +113,9 @@ func Create(ctx context.Context, env install.Environment, collect Collector, opt
 	report(fmt.Sprintf("Checking the printer at %s...", cloned.HostAddress))
 	probed, err := collectIdentity(ctx, collect, cloned.HostAddress, report)
 	if err != nil {
+		return CreateResult{}, err
+	}
+	if err := ctx.Err(); err != nil {
 		return CreateResult{}, err
 	}
 
@@ -129,6 +148,9 @@ func Create(ctx context.Context, env install.Environment, collect Collector, opt
 		// bundle is worth being able to look at, and this matches how the
 		// existing driver-staging path treats its own working directory.
 		report(fmt.Sprintf("Copying driver %q out of Windows. This can take a minute...", cloned.DriverName))
+		if err := ctx.Err(); err != nil {
+			return CreateResult{ExportDir: exportRoot}, err
+		}
 		export, err := install.ExportDriver(ctx, env, cloned.DriverName, exportRoot)
 		if err != nil {
 			return CreateResult{ExportDir: exportRoot}, err
@@ -146,6 +168,9 @@ func Create(ctx context.Context, env install.Environment, collect Collector, opt
 	}
 
 	report("Writing the file...")
+	if err := ctx.Err(); err != nil {
+		return CreateResult{ExportDir: payloadRoot}, err
+	}
 	if err := Write(opts.Path, manifest, payloadRoot); err != nil {
 		return CreateResult{ExportDir: payloadRoot}, err
 	}

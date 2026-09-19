@@ -61,6 +61,7 @@ function Assert-Payload([string]$Directory,$Manifest) {
     Assert-Hash (Join-Path $Directory 'spoolsmith.exe') $Manifest.binary_sha256
     Assert-Hash (Join-Path $Directory 'profile.json') $Manifest.profile_sha256
     if ($Manifest.driver_sha256) { Assert-Hash (Join-Path $Directory 'driver.exe') $Manifest.driver_sha256 }
+    if ($Manifest.bundle_sha256) { Assert-Hash (Join-Path $Directory 'bundle.ssb') $Manifest.bundle_sha256 }
 }
 function Revision-Directory([string]$StateDir,$Manifest) {
     if ($Manifest.revision -lt 1 -or $Manifest.configuration_sha256 -notmatch '^[0-9a-f]{64}$') { throw 'Invalid stored revision' }
@@ -71,7 +72,19 @@ function Invoke-SpoolSmith([string]$Directory,[string]$Operation,[bool]$Offline,
     Assert-Payload $Directory $manifest
     $prefix = Join-Path $LogDir ([DateTime]::UtcNow.ToString('yyyyMMddTHHmmssfff') + '-' + [Guid]::NewGuid().ToString('N'))
     $outFile = $prefix + '.stdout.log'; $errFile = $prefix + '.stderr.log'
-    $arguments = @($Operation,'--profile',('"' + (Join-Path $Directory 'profile.json') + '"'),'--json')
+    # A profile sourced from a .ssb bundle carries its driver payload only
+    # inside that bundle. `apply` reopens it and runs the same catalog-
+    # signature-checked staging `spoolsmith copy`/`apply` already use on the
+    # CLI; `install`/`configure` never learned that trust path, so mutating
+    # operations route through `apply` here instead when a bundle is present.
+    # Detection and removal never touch the driver payload either way and
+    # keep using the plain profile.
+    if ($manifest.bundle_sha256 -and $Operation -in @('add','configure')) {
+        $arguments = @('apply',('"' + (Join-Path $Directory 'bundle.ssb') + '"'),'--json')
+        if ($Operation -eq 'configure') { $arguments += '--update' }
+    } else {
+        $arguments = @($Operation,'--profile',('"' + (Join-Path $Directory 'profile.json') + '"'),'--json')
+    }
     if ($Operation -ne 'status') { $arguments += @('--yes','--non-interactive') }
     if ($Offline -and $Operation -ne 'status' -and $Operation -ne 'remove') { $arguments += '--offline' }
     $process = Start-Process -FilePath (Join-Path $Directory 'spoolsmith.exe') -ArgumentList $arguments -PassThru -NoNewWindow -RedirectStandardOutput $outFile -RedirectStandardError $errFile

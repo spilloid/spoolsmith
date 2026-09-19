@@ -42,6 +42,41 @@ public sealed class FunctionalTests : IDisposable
     }
 
     [StaFact]
+    public void Bulk_copy_shows_inventory_and_can_be_cancelled_without_exporting()
+    {
+        var list = Find(_fixture.MainWindow, "thispc-list").AsListBox();
+        var copyAll = FindButton(_fixture.MainWindow, "Copy all printers...");
+        WaitUntil(() => FindButton(_fixture.MainWindow, "Refresh").IsEnabled,
+            "Printer inventory did not finish loading.");
+        if (list.Items.Length == 0)
+        {
+            Assert.False(copyAll.IsEnabled);
+            return;
+        }
+
+        copyAll.Invoke();
+        Window? dialog = null;
+        WaitUntil(() => (dialog = _fixture.MainWindow.ModalWindows.Concat(_fixture.App.GetAllTopLevelWindows(_fixture.Automation))
+            .FirstOrDefault(w => w.Title == "Copy all printers")) != null, "Bulk copy did not open.");
+        var folder = Path.Combine(_testDirectory, "cancelled-export");
+        SetText(Find(dialog!, "copy-all-folder").AsTextBox(), folder);
+        Assert.Contains("will be skipped", Find(dialog!, "copy-all-details").AsTextBox().Text);
+        // Native checkboxes report their visible caption as their UIA Name
+        // regardless of an Accessibility.Name override (confirmed against a
+        // real Windows run: the "copy-all-drivers" override never reaches
+        // UIA for this control type), so this is the only reliable lookup --
+        // by control type, since the dialog has exactly one checkbox.
+        var driverCheckbox = dialog!.FindFirstDescendant(cf => cf.ByControlType(ControlType.CheckBox));
+        Assert.NotNull(driverCheckbox);
+        Assert.False(driverCheckbox!.IsOffscreen);
+        Assert.False(FindButton(dialog!, "Copy results / JSON").IsEnabled);
+        Assert.True(FindButton(dialog!, "Copy printers").IsEnabled);
+        FindButton(dialog!, "Cancel").Invoke();
+        WaitUntil(() => _fixture.MainWindow.IsEnabled, "Bulk copy did not close.");
+        Assert.False(Directory.Exists(folder));
+    }
+
+    [StaFact]
     public void Scan_completes_and_populates_discovery_results()
     {
         _fixture.SelectTab("Add a printer");

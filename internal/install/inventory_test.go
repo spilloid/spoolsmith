@@ -14,7 +14,7 @@ func TestCopyBlockedReasonMatchesWhatCloneWouldDo(t *testing.T) {
 	}{
 		{
 			name:     "RAW 9100 with a literal address",
-			queue:    InstalledQueue{PortName: "SpoolSmith-192.0.2.10", HostAddress: "192.0.2.10", PortNumber: 9100, Protocol: 1, PortKnown: true},
+			queue:    InstalledQueue{PortName: "RAW9100-192.0.2.10", HostAddress: "192.0.2.10", PortNumber: 9100, Protocol: 1, PortKnown: true},
 			copyable: true,
 		},
 		{
@@ -73,7 +73,7 @@ func TestCopyBlockedReasonMatchesWhatCloneWouldDo(t *testing.T) {
 // test is what keeps that true if either side is edited.
 func TestListingAgreesWithCloneQueue(t *testing.T) {
 	ports := []PortConfiguration{
-		{PortName: "SpoolSmith-192.0.2.10", HostAddress: "192.0.2.10", PortNumber: 9100, Protocol: 1},
+		{PortName: "RAW9100-192.0.2.10", HostAddress: "192.0.2.10", PortNumber: 9100, Protocol: 1},
 		{PortName: "IP_192.0.2.10", HostAddress: "192.0.2.10", PortNumber: 515, Protocol: 2},
 		{PortName: "IP_192.0.2.10", HostAddress: "192.0.2.10", PortNumber: 9101, Protocol: 1},
 		{PortName: "IP_printer.local", HostAddress: "printer.local", PortNumber: 9100, Protocol: 1},
@@ -95,7 +95,7 @@ func TestListingAgreesWithCloneQueue(t *testing.T) {
 }
 
 func TestDecodeInstalledQueues(t *testing.T) {
-	queues, err := decodeInstalledQueues(`[{"printer_name":"Office","driver_name":"Brother HL-L2315D series","port_name":"SpoolSmith-192.0.2.10","host_address":"192.0.2.10","port_number":9100,"protocol":1,"port_known":true,"shared":false}]`)
+	queues, err := decodeInstalledQueues(`[{"printer_name":"Office","driver_name":"Brother HL-L2315D series","port_name":"RAW9100-192.0.2.10","host_address":"192.0.2.10","port_number":9100,"protocol":1,"port_known":true,"shared":false}]`)
 	if err != nil {
 		t.Fatal(err)
 	}

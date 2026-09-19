@@ -123,7 +123,7 @@ func TestOperationNormalizedClearsInapplicableInputs(t *testing.T) {
 func TestQueueRowAndDetailStateCopyability(t *testing.T) {
 	ok := install.InstalledQueue{
 		PrinterName: "Office", DriverName: "Brother HL-L2315D series",
-		PortName: "SpoolSmith-192.0.2.10", HostAddress: "192.0.2.10",
+		PortName: "RAW9100-192.0.2.10", HostAddress: "192.0.2.10",
 		PortNumber: 9100, Protocol: 1, ProtocolName: "RAW", PortKnown: true,
 	}
 	row := queueRow(ok)

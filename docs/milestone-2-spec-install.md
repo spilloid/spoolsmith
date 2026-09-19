@@ -55,7 +55,7 @@ type Plan struct {
 }
 
 // BuildPlan fails if resolution is not fully resolved (nil Family or Driver) —
-// there is nothing to build a plan for. Naming: PortName = "SpoolSmith-<ip>",
+// there is nothing to build a plan for. Naming: PortName = "RAW9100-<ip>",
 // PrinterName = the resolved NormalizedModel string. Commands must be built
 // here, as literal strings, so they can be shown to the user verbatim and
 // tested without touching Windows.

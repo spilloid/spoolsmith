@@ -33,7 +33,7 @@ func inventoryApplication(t *testing.T, queues []install.InstalledQueue) applica
 
 func sampleQueues() []install.InstalledQueue {
 	return []install.InstalledQueue{
-		{PrinterName: "Office", DriverName: "Brother HL-L2315D series", PortName: "SpoolSmith-192.0.2.10", HostAddress: "192.0.2.10", PortNumber: 9100, Protocol: 1, PortKnown: true},
+		{PrinterName: "Office", DriverName: "Brother HL-L2315D series", PortName: "RAW9100-192.0.2.10", HostAddress: "192.0.2.10", PortNumber: 9100, Protocol: 1, PortKnown: true},
 		{PrinterName: "Microsoft Print to PDF", DriverName: "Microsoft Print To PDF", PortName: "PORTPROMPT:", PortKnown: true},
 	}
 }

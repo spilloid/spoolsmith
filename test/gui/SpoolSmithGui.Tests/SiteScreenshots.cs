@@ -27,7 +27,44 @@ public sealed class SiteScreenshots
             Thread.Sleep(500);
             fixture.MainWindow.CaptureToFile(Path.Combine(images, file));
         }
+        // Before CaptureIntuneWizard, which is written to be the last step
+        // in this method: it never closes its own modal dialog, so anything
+        // run after it would fight that leftover dialog for the main window.
+        CaptureCopyAllDialog(fixture, images);
         CaptureIntuneWizard(fixture, images);
+    }
+
+    /// <summary>
+    /// "Copy all printers..." opens a modal dialog from This PC, not a tab of
+    /// its own, so the loop above never sees it. Skips silently if this
+    /// machine has no printer queues at all (the button stays disabled) --
+    /// every real capture host is expected to have at least the built-in
+    /// Microsoft virtual printers, so this is a defensive no-op, not the
+    /// normal path.
+    /// </summary>
+    private static void CaptureCopyAllDialog(AppFixture fixture, string images)
+    {
+        fixture.SelectTab("This PC");
+        var copyAll = FunctionalTests.FindButton(fixture.MainWindow, "Copy all printers...");
+        FunctionalTests.WaitUntil(() => FunctionalTests.FindButton(fixture.MainWindow, "Refresh").IsEnabled,
+            "Printer inventory did not finish loading.");
+        if (!copyAll.IsEnabled) return;
+        copyAll.Invoke();
+        Window? dialog = null;
+        FunctionalTests.WaitUntil(() => (dialog = fixture.MainWindow.ModalWindows
+            .Concat(fixture.App.GetAllTopLevelWindows(fixture.Automation))
+            .FirstOrDefault(w => w.Title == "Copy all printers")) != null,
+            "Bulk copy did not open.");
+        try
+        {
+            Thread.Sleep(300);
+            dialog!.CaptureToFile(Path.Combine(images, "gui-copy-all.png"));
+        }
+        finally
+        {
+            FunctionalTests.FindButton(dialog!, "Cancel").Invoke();
+            FunctionalTests.WaitUntil(() => fixture.MainWindow.IsEnabled, "Bulk copy did not close.");
+        }
     }
 
     /// <summary>

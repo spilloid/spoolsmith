@@ -274,6 +274,7 @@ func (a *app) onPreview() {
 			a.finishPreview(string(op.Kind), args, start, err, buf.String())
 			return
 		}
+		outcome.Operation = string(op.Kind)
 		a.mw.Synchronize(func() { a.previewJSON = prettyJSON(outcome) })
 		for _, reason := range outcome.Uncertain {
 			fmt.Fprintln(&buf, "Evidence: "+reason)
@@ -459,7 +460,7 @@ func (a *app) onExecute() {
 	start := time.Now()
 	go func() {
 		var buf bytes.Buffer
-		var status, errText string
+		var outcome install.Outcome
 		ctx := context.Background()
 
 		switch {
@@ -467,23 +468,22 @@ func (a *app) onExecute() {
 			options := *pendingRepoint
 			options.Yes = true
 			options.NonInteractive = true
-			outcome, _ := a.workflow.RunRepoint(ctx, a.env, strings.NewReader(""), &buf, false, options)
-			status, errText = outcome.Status, outcome.Error
+			outcome, _ = a.workflow.RunRepoint(ctx, a.env, strings.NewReader(""), &buf, false, options)
 		case pendingUninstall != nil:
 			options := *pendingUninstall
 			options.DryRun = false
 			options.Yes = true
 			options.NonInteractive = true
-			outcome, _ := a.workflow.RunUninstall(ctx, a.env, strings.NewReader(""), &buf, false, options)
-			status, errText = outcome.Status, outcome.Error
+			outcome, _ = a.workflow.RunUninstall(ctx, a.env, strings.NewReader(""), &buf, false, options)
 		default:
 			options := *pendingInstall
 			options.DryRun = false
 			options.Yes = true
 			options.NonInteractive = true
-			outcome, _ := a.workflow.RunInstall(ctx, a.env, strings.NewReader(""), &buf, false, options)
-			status, errText = outcome.Status, outcome.Error
+			outcome, _ = a.workflow.RunInstall(ctx, a.env, strings.NewReader(""), &buf, false, options)
 		}
+		outcome.Operation = string(op.Kind)
+		status, errText := outcome.Status, outcome.Error
 
 		var err error
 		if errText != "" {
@@ -493,6 +493,10 @@ func (a *app) onExecute() {
 		a.mw.Synchronize(func() {
 			a.mutationExecuting = false
 			a.resetPending()
+			// Keep the shared result available for ticket notes, including partial
+			// failures, without retaining permission to execute the reviewed plan.
+			a.previewJSON = prettyJSON(outcome)
+			a.planDetailsBtn.SetEnabled(true)
 			a.setMutationBusy(false)
 			text := lines(buf.String())
 			if errText != "" {
@@ -517,6 +521,7 @@ func (a *app) setMutationBusy(busy bool) {
 		}
 	}
 	a.updateReviewControls()
+	a.updateQueueActions()
 }
 
 func (a *app) bindMutationInputs() {

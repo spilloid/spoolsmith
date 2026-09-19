@@ -13,7 +13,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/spilloid/spoolsmith/internal/install"
 	"github.com/spilloid/spoolsmith/internal/intune"
 )
 
@@ -48,20 +47,20 @@ func runIntune(ctx context.Context, args []string, input io.Reader, stdout, stde
 			}
 			return value
 		}
-		fmt.Fprintln(stderr, "Step 1 of 2: Select a validated profile and approved Windows x64 CLI. Hashing is automatic.")
-		profilePath := ask("Profile JSON path")
+		fmt.Fprintln(stderr, "Step 1 of 2: Select a validated profile or SpoolSmith bundle, and approved Windows x64 CLI. Hashing is automatic.")
+		profilePath := ask("Profile JSON or .ssb bundle path")
 		var err error
 		opts, err = intune.ProfileDefaults(profilePath)
 		if err != nil {
 			return commandError(stdout, stderr, "intune wizard", err, 2)
 		}
 		opts.BinaryPath = ask("SpoolSmith Windows CLI binary path")
-		profile, err := install.LoadProfile(profilePath)
+		hasPayload, err := intune.HasLocalPayload(profilePath)
 		if err != nil {
 			return commandError(stdout, stderr, "intune wizard", err, 2)
 		}
-		if profile.DriverPackage == nil {
-			opts.DriverPrerequisite = ask("This profile has no local driver archive. Driver will be registered separately before installation? Type yes to accept") == "yes"
+		if !hasPayload {
+			opts.DriverPrerequisite = ask("This profile has no local driver payload. Driver will be registered separately before installation? Type yes to accept") == "yes"
 		}
 		fmt.Fprintf(stderr, "App: %s\nDeployment ID: %s\nRevision: 1; live identity validation; no queue adoption.\n", opts.DisplayName, opts.ID)
 		fmt.Fprintln(stderr, "For updates, keep the existing ID and queue name and increase the revision. Reuse any previously chosen custom ID.")
@@ -119,7 +118,7 @@ func runIntune(ctx context.Context, args []string, input io.Reader, stdout, stde
 	}
 	flags := flag.NewFlagSet("intune build", flag.ContinueOnError)
 	flags.SetOutput(stderr)
-	flags.StringVar(&opts.ProfilePath, "profile", "", "administrator-prevalidated profile")
+	flags.StringVar(&opts.ProfilePath, "profile", "", "administrator-prevalidated profile (.json) or bundle (.ssb)")
 	flags.StringVar(&opts.BinaryPath, "binary", "", "Windows x64 CLI binary containing offline/status commands")
 	flags.StringVar(&opts.BinarySHA256, "binary-sha256", "", "optional approved binary SHA-256 (default: calculate from selected CLI)")
 	flags.StringVar(&opts.ID, "id", "", "stable deployment ID (default: derived from profile queue name)")

@@ -33,7 +33,7 @@ func cloneEnv(port PortConfiguration) *cloneFakeEnvironment {
 }
 
 func TestCloneQueueReadsInstalledSetup(t *testing.T) {
-	env := cloneEnv(PortConfiguration{PortName: "SpoolSmith-192.0.2.10", HostAddress: "192.0.2.10", PortNumber: 9100, Protocol: 1})
+	env := cloneEnv(PortConfiguration{PortName: "RAW9100-192.0.2.10", HostAddress: "192.0.2.10", PortNumber: 9100, Protocol: 1})
 	cloned, err := CloneQueue(context.Background(), env, "Test Printer")
 	if err != nil {
 		t.Fatal(err)
@@ -102,7 +102,7 @@ func TestCloneCommandsRejectInjectionAttempts(t *testing.T) {
 }
 
 func TestFingerprintPlanIsStableAndChangeSensitive(t *testing.T) {
-	plan := Plan{PrinterName: "Accounting", PortName: "SpoolSmith-192.0.2.10", DriverName: "D", IPAddress: "192.0.2.10", Commands: []string{"one", "two"}}
+	plan := Plan{PrinterName: "Accounting", PortName: "RAW9100-192.0.2.10", DriverName: "D", IPAddress: "192.0.2.10", Commands: []string{"one", "two"}}
 	first, err := FingerprintPlan(plan)
 	if err != nil {
 		t.Fatal(err)
