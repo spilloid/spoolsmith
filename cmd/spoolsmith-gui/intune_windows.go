@@ -99,7 +99,12 @@ func (a *app) onIntuneWizard() {
 		}
 		reviewedOutput = output.Text()
 		data, _ := json.MarshalIndent(candidate.Manifest, "", "  ")
-		preview.SetText("Export folder: " + reviewedOutput + "\r\n\r\n" + string(data))
+		// lines() converts LF to CRLF for the native edit control; see its
+		// doc comment in handlers_windows.go. Building this string with LF
+		// throughout and converting once, rather than hand-mixing "\r\n" with
+		// json.MarshalIndent's LF output, is what dev-process.md already
+		// recorded once as the fix for an unreadable-plan regression.
+		preview.SetText(lines("Export folder: " + reviewedOutput + "\n\n" + string(data)))
 		pages.SetCurrentIndex(1)
 		prepared = candidate
 		exportButton.SetEnabled(true)
@@ -139,11 +144,11 @@ func (a *app) onIntuneWizard() {
 						Label{Text: "Description:"}, LineEdit{AssignTo: &description, Accessibility: name("intune-description"), OnTextChanged: invalidate},
 						Label{Text: "CLI SHA-256 (automatic; editable):"}, LineEdit{AssignTo: &pin, Accessibility: name("intune-binary-sha256"), OnTextChanged: invalidate},
 					}},
-					CheckBox{AssignTo: &offline, Text: "Provision offline: skip live identity validation", OnCheckedChanged: invalidate},
+					CheckBox{AssignTo: &offline, Text: "Offline setup — the installed app won't check the printer is really there", OnCheckedChanged: invalidate},
 					CheckBox{AssignTo: &adopt, Text: "Allow adoption of an existing, exactly matching unmanaged queue", OnCheckedChanged: invalidate},
 					Label{Text: "For updates, keep the existing ID and queue name and increase the revision. Reuse any previously chosen custom ID."},
 				}},
-				Label{Text: "Default: live identity validation, no adoption, revision 1. Offline provisioning still needs connectivity for printing."},
+				Label{Text: "Default: the app checks the printer is really there when it installs, no adoption, revision 1. Offline setup still needs connectivity for printing."},
 				VSpacer{}, PushButton{Text: "Validate and preview package", OnClicked: review},
 			}},
 			{Title: "2. Review and export", Layout: VBox{Spacing: 8}, Children: []Widget{

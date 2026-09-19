@@ -983,3 +983,97 @@ v0.5.0 and write the corporate-strategy entry afterwards. **That entry is still 
 **Not verified:** a genuine second machine (the target state was manufactured on the source
 machine), a live `repoint` mutation, a physical test print through a bundle-staged driver, and
 anything on Windows PowerShell 5.1. GUI parity for the copy workflow is the next release's work.
+
+## 2026-09-18 — v0.7.3: UX pass, GUI/CLI polish, and bulk driver export
+
+Operator direction: run a UX pass over SpoolSmith with Astra (Codex `gpt-6-astra`, read-only,
+high reasoning effort), primed with `corporate-strategy/state/products/SpoolSmith.md` so its
+recommendations stayed inside the actual authorization (milestone-authorized experiment,
+Windows-only, no RMM/cloud, the D-0040 confirmation gate never touched). The operator separately
+found two GUI issues by using the app, not reading source, and asked for bulk driver export,
+scoped out of the original milestone for no recorded reason. Spec at
+[`v0.7.3-polish-spec.md`](v0.7.3-polish-spec.md).
+
+**Astra's UX pass, ten ranked findings plus a parity-diff table**, all adopted: broken
+command-level help (`add --help` was an unknown-flag error; `inspect --help` was treated as the
+inspect target; `help copy` printed the entire catalog instead of one command); a driver chosen
+for one printer silently carrying over to the next; stale README version/feature claims (a
+"v0.6.0" headline and "Intune packaging remains outside the shipped surface" long after both
+were untrue); an Intune preview building its JSON text with raw LF instead of the app's own
+`lines()` CRLF helper — the same class of bug this log already recorded once before; saved-setup
+dialog wording that let "Remove" (a Windows mutation) and "Save changes" (a local file edit) read
+as the same kind of action; three empty-states that collapsed "nothing here" and "couldn't read"
+into one misleading message; offline setup buried under "More options" with no discoverable
+name; three unlabeled file-type entry points; a "Review catalog setup" button that silently
+discards the name/driver just typed; and three recovery messages that gave printer-connectivity
+advice for what were actually filesystem, driver-registration, or scope-mismatched failures. Full
+findings kept in this session's own record; each was reproduced against source before being
+accepted, not taken on Astra's word.
+
+**Two more found by using the app, not reading it.** The review screen's confirm button read
+"Add printer..." — a trailing ellipsis is Windows convention for "opens another dialog," which is
+backwards for a button that performs the reviewed action immediately. Fixed by dropping the
+suffix everywhere `operation.Title()` feeds it. And "offline mode" had two different names in the
+GUI — the main review checkbox never said "offline" at all, the Intune wizard's said "skip live
+identity validation." Standardized on **"Offline setup"** as the one term, defined once in the
+README, used consistently in both places and in `docs/`.
+
+**Bulk driver export:** `spoolsmith copy --all [<output-dir>]` bundles every copyable queue in
+one run, reusing the exact `Copyable()`/`CopyBlockedReason()` rule `printers --copyable` already
+enforces. This is a set of independent, non-mutating exports, not a transaction — one queue's
+failure is reported and skipped, not fatal to the batch — so it fails (non-zero exit) only when
+nothing at all got copied. GUI parity is deliberately deferred, tracked as an open row in
+`docs/gui-parity.md` rather than silently dropped.
+
+**Astra's second pass reviewed the diff itself for correctness**, not UX, and found four real
+issues, all fixed and reproduced against source before being accepted:
+- The driver-clearing fix only guarded the "select a different printer" path; typing a new IP
+  directly into the editable target field bypassed it entirely, since that field's own
+  change handler never touched the driver. Closed by tracking which address the current driver
+  selection actually applies to (`captureDriverTarget`) and checking it from both entry points.
+- The Intune wizard's new offline label claimed "the printer is checked before packaging" —
+  false; `intune.Prepare` validates local input only and never contacts the printer, offline or
+  not. The checkbox controls what the *installed* app checks later, not anything SpoolSmith does
+  now. Reworded to say so.
+- Renaming the saved-setups "Remove..." button to "Remove printer from this PC..." broke two
+  `FunctionalTests.cs` assertions that still looked for the old exact string — a real example of
+  why every GUI copy change in this release also had to touch the FlaUI test literals byte for
+  byte, em dashes included.
+- The new `copy --all` test only checked that a same-named file existed, which cannot tell a
+  correct per-queue loop from a bug that reused one hardcoded name — the shared fake's
+  `LookupPrinter` ignores the name it's asked for by design (every other test relies on that).
+  Strengthened by recording what the loop actually requested and asserting the written bundle's
+  own contents, not just its filename.
+
+**Verification:** `go build`/`go vet`/`go test ./... -count=1` pass on Linux for every
+cross-platform package; both `spoolsmith.exe` and `spoolsmith-gui.exe` cross-compile clean under
+`GOOS=windows`. The repo and freshly built binaries were shipped to the `kubert` Windows 11 box
+(`192.168.68.227`) over SSH and the real CLI exercised there against its actual installed
+printers: `copy --all` correctly bundled the one copyable queue (a real Brother HL-L2315D over
+SNMP/HTTP), skipped "Microsoft Print to PDF" with the same reason `printers` gives, wrote a
+bundle that `bundle inspect` reads back and verifies, and the new scoped `--help`/`help copy`
+output rendered correctly.
+
+**The GUI pass, and the updated `SpoolSmithGui.Tests` FlaUI suite, also ran for real.**
+`dotnet test` over plain SSH failed all 30 tests identically first — `walk`'s `RegisterClassEx`
+panicking because that SSH process has no visible desktop to attach to, the same
+already-documented constraint the 2026-09-15 pilot and the v0.7.1 validation both hit ("SSH-launched
+GUI processes still can't attach to a visible desktop"). The box already had an active interactive
+console session (`kubert`, session 2, per `query session`), so rather than requiring an operator
+at an RDP client, a scheduled task (`schtasks /create ... /ru kubert`, no stored password, which
+binds it to that user's existing logged-on session instead of spawning a new one) ran a `.ps1`
+invoking `dotnet test` inside it. **All 30 tests passed, 2m55s, on the first run** — every renamed
+caption (`Add printer`, `Remove printer from this PC...`, both `Offline setup` checkboxes) and the
+Intune preview's CRLF fix all rendered and matched exactly.
+
+**Not exercised:** the new `copy --all` behavior when the operator terminal is present and
+non-copyable-vs-copyable mixes vary further; the CLI/JSON path was proven for real (see above),
+GUI parity for bulk export is out of scope for v0.7.3 by design. This branch is now real-hardware
+verified end to end and ready to tag.
+
+**Deliberately not touched:** the confirmation gate, `--yes`, and `--plan-hash`. Astra separately
+noticed the README's "there is no flag that skips this" line sits next to a documented `--yes`
+flag used for scripted daily-use rollout — flagged to the operator as a possible D-0040
+documentation question, not treated as license to change anything here. Also deferred, per
+Astra's own recommendation to keep them a separate increment: responsive progress during bundle
+verification/local-status/Intune hashing, and richer partial-failure result presentation.

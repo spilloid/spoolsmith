@@ -218,7 +218,7 @@ therefore affect this experience if modeled as an app dependency. Verify in the
 pilot using the tenant's actual dependency layout. See
 [Microsoft's program settings](https://learn.microsoft.com/en-us/intune/app-management/deployment/add-win32#step-2-program).
 
-When deploying off-site, select offline mode and provide all prerequisites locally.
+When deploying off-site, select Offline setup and provide all prerequisites locally.
 The queue should appear before a route to the printer is available. Test printing
 later, when connectivity returns. Installation success is not a print-test result.
 

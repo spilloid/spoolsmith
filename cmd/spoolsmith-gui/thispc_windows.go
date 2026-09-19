@@ -241,7 +241,7 @@ func copySuccessMessage(path string, manifest bundle.Manifest) string {
 	} else {
 		text += fmt.Sprintf("The driver is included (%d files), so the other PC does not need it beforehand.\r\n\r\n", len(manifest.Driver.Files))
 	}
-	return text + "Copy this file to the other PC, open SpoolSmith there, and choose Add a printer > Open a printer file."
+	return text + "Copy this file to the other PC, open SpoolSmith there, and choose Add a printer > Open a copied printer (.ssb)."
 }
 
 func (a *app) onRepointQueue() {

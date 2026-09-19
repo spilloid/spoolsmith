@@ -162,7 +162,10 @@ func (w Workflow) RunRepoint(ctx context.Context, env Environment, input io.Read
 	}
 	outcome.Result = &result
 	outcome.Status = "success"
-	fmt.Fprintf(interactive, "Queue %q now prints to %s.\n", plan.PrinterName, plan.IPAddress)
+	// This confirms the queue's configured address changed, not that printing
+	// actually succeeds -- repoint never sends a test print or contacts the
+	// new address to verify it.
+	fmt.Fprintf(interactive, "Queue %q address updated to %s.\n", plan.PrinterName, plan.IPAddress)
 	for _, ran := range result.Ran {
 		if strings.TrimSpace(ran.Output) != "" {
 			fmt.Fprintln(interactive, strings.TrimSpace(ran.Output))

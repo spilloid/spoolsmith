@@ -79,6 +79,16 @@ func run(ctx context.Context, args []string, input io.Reader, stdout, stderr io.
 		return usageError(stdout, stderr, "spoolsmith", errors.New("command is required"))
 	}
 
+	// "<command> --help"/"-h" is intercepted before that command's own
+	// parser ever sees it, rather than being treated as an unknown flag
+	// (most commands) or, for `inspect`, as the target to inspect.
+	if len(args) > 1 && (args[1] == "--help" || args[1] == "-h") {
+		if usage, ok := commandUsage[args[0]]; ok {
+			fmt.Fprint(stdout, usage)
+			return 0
+		}
+	}
+
 	switch args[0] {
 	// capabilities stays on the command table so it always names this build's
 	// own intune-endpoint support: the packager identifies a compatible CLI by
@@ -100,6 +110,13 @@ func run(ctx context.Context, args []string, input io.Reader, stdout, stderr io.
 		}
 		return encodeSuccess(stdout, stderr, "drivers", names)
 	case "--help", "-h", "help":
+		if len(args) > 1 {
+			if usage, ok := commandUsage[args[1]]; ok {
+				fmt.Fprint(stdout, usage)
+				return 0
+			}
+			return usageError(stdout, stderr, "help", fmt.Errorf("unknown command %q", args[1]))
+		}
 		printUsage(stdout)
 		return 0
 	case "discover":
@@ -358,7 +375,14 @@ func commandError(stdout, stderr io.Writer, command string, err error, code int)
 
 func usageError(stdout, stderr io.Writer, command string, err error) int {
 	code := commandError(stdout, stderr, command, err, int(install.ExitUsageError))
-	printUsage(stderr)
+	// Show the one command's own syntax, not the entire catalog, whenever a
+	// mistake can be attributed to a specific command; fall back to the full
+	// listing only for a genuinely unknown or unnamed command.
+	if usage, ok := commandUsage[command]; ok {
+		fmt.Fprint(stderr, usage)
+	} else {
+		printUsage(stderr)
+	}
 	return code
 }
 
@@ -366,6 +390,49 @@ func encodeJSON(writer io.Writer, value any) error {
 	encoder := json.NewEncoder(writer)
 	encoder.SetIndent("", "  ")
 	return encoder.Encode(value)
+}
+
+// commandUsage gives each top-level command its own syntax, so `<command>
+// --help`/`-h` and `help <command>` show only what's relevant instead of
+// silently falling into that command's own argument parser (which used to
+// treat "--help" as an unknown flag, or as an inspect target) or dumping the
+// entire command catalog on every usage mistake.
+var commandUsage = map[string]string{
+	"capabilities": "spoolsmith capabilities                    this build's intune-endpoint capability marker\n",
+	"drivers":      "spoolsmith drivers                         exact registered Windows driver names\n",
+	"discover":     "spoolsmith discover <IPv4-CIDR>            /24 through /32\n",
+	"inspect":      "spoolsmith inspect <target>                target is an IP address, a fixture file, or a .ssb bundle\n",
+	"catalog":      "spoolsmith catalog probe <ip> | catalog families\n",
+	"printers":     "spoolsmith printers [--copyable] [--json]   installed queues, and which can be copied\n",
+	"status":       "spoolsmith status --profile <file> [--json] local configuration only, no network\n",
+	"copy": "spoolsmith copy [<queue>] [<bundle-file>] [--include-driver] [--note <text>]\n" +
+		"spoolsmith copy --all [<output-dir>] [--include-driver] [--note <text>]\n" +
+		"Omit <queue> to choose from a numbered list; omit <bundle-file> to name it after the queue.\n" +
+		"--all bundles every copyable queue into <output-dir> (default: the current directory),\n" +
+		"skipping and reporting a reason for any queue that can't be reproduced.\n",
+	"apply": "spoolsmith apply <bundle-file> [--dry-run] [--offline] [--update]\n" +
+		"                                [--plan-hash <fingerprint>] [--yes] [--non-interactive] [--json]\n",
+	"bundle": "spoolsmith bundle inspect <bundle-file>    read a bundle, touching nothing\n",
+	"profile": "spoolsmith profile export-all <folder> <collection.json>\n" +
+		"spoolsmith profile import-all <collection.json> <folder>\n" +
+		"spoolsmith profile capture <target> <file> --name <queue> --driver <installed-driver-name>\n" +
+		"spoolsmith profile edit <file> [--name <queue>] [--driver <name>] [--target <ip>]\n" +
+		"spoolsmith profile edit <file> [--package <recipe-id> --archive <local-file>] [--clear-package]\n",
+	"add":       "spoolsmith add --profile <file> [--offline] [--dry-run] [--yes] [--json]\n",
+	"configure": "spoolsmith configure --profile <file> [--offline] [--dry-run] [--yes] [--json]\n",
+	"install":   "spoolsmith install <ip> [--force-family <id>] [--dry-run|--what-if] [--yes] [--non-interactive] [--json]\n",
+	"repoint":   "spoolsmith repoint <queue> <new-ip> [--dry-run] [--yes] [--non-interactive] [--json]\n",
+	"remove":    "spoolsmith remove --profile <file> [--dry-run] [--json]\n",
+	"uninstall": "spoolsmith uninstall <printer-name> [--purge-driver] [--dry-run|--what-if] [--yes] [--non-interactive] [--json]\n",
+	"intune": "spoolsmith intune wizard                   interactive, one export directory at a time\n" +
+		"spoolsmith intune build --profile <file> --binary <exe> [--revision <n>] [--dry-run]\n" +
+		"--binary-sha256, --id, --name, --description and --output are all derived from the profile\n" +
+		"when omitted; give them explicitly only to override the suggested value.\n" +
+		"Never signs in to a tenant or uploads anything; `intune build --help` lists every flag.\n",
+}
+
+func init() {
+	commandUsage["clone"] = commandUsage["copy"]
 }
 
 func printUsage(writer io.Writer) {
@@ -378,10 +445,13 @@ func printUsage(writer io.Writer) {
 	fmt.Fprintln(writer, "")
 	fmt.Fprintln(writer, "Copy a printer from one PC to another")
 	fmt.Fprintln(writer, "  spoolsmith copy [<queue>] [<bundle-file>] [--include-driver] [--note <text>]")
+	fmt.Fprintln(writer, "  spoolsmith copy --all [<output-dir>] [--include-driver] [--note <text>]")
 	fmt.Fprintln(writer, "  spoolsmith apply <bundle-file> [--dry-run] [--offline] [--update]")
-	fmt.Fprintln(writer, "                                 [--plan-hash <fingerprint>] [--yes|--non-interactive|--json]")
+	fmt.Fprintln(writer, "                                 [--plan-hash <fingerprint>] [--yes] [--non-interactive] [--json]")
 	fmt.Fprintln(writer, "  spoolsmith bundle inspect <bundle-file>    read a bundle, touching nothing")
 	fmt.Fprintln(writer, "  Omit <queue> to choose from a numbered list; omit <bundle-file> to name it after the queue.")
+	fmt.Fprintln(writer, "  --all bundles every copyable queue into <output-dir> (default: the current directory),")
+	fmt.Fprintln(writer, "  skipping and reporting a reason for any queue that can't be reproduced.")
 	fmt.Fprintln(writer, "")
 	fmt.Fprintln(writer, "Find and save a printer")
 	fmt.Fprintln(writer, "  spoolsmith discover <IPv4-CIDR>            /24 through /32")
@@ -395,15 +465,16 @@ func printUsage(writer io.Writer) {
 	fmt.Fprintln(writer, "")
 	fmt.Fprintln(writer, "Map, change, and remove queues")
 	fmt.Fprintln(writer, "  spoolsmith add|configure --profile <file> [--offline] [--dry-run] [--yes] [--json]")
-	fmt.Fprintln(writer, "  spoolsmith repoint <queue> <new-ip> [--dry-run] [--yes|--non-interactive|--json]")
+	fmt.Fprintln(writer, "  spoolsmith repoint <queue> <new-ip> [--dry-run] [--yes] [--non-interactive] [--json]")
 	fmt.Fprintln(writer, "  spoolsmith remove --profile <file> [--dry-run] [--json]")
-	fmt.Fprintln(writer, "  spoolsmith install <ip> [--force-family <id>] [--dry-run|--what-if] [--yes|--non-interactive|--json]")
-	fmt.Fprintln(writer, "  spoolsmith uninstall <printer-name> [--purge-driver] [--dry-run|--what-if] [--yes|--non-interactive|--json]")
+	fmt.Fprintln(writer, "  spoolsmith install <ip> [--force-family <id>] [--dry-run|--what-if] [--yes] [--non-interactive] [--json]")
+	fmt.Fprintln(writer, "  spoolsmith uninstall <printer-name> [--purge-driver] [--dry-run|--what-if] [--yes] [--non-interactive] [--json]")
 	fmt.Fprintln(writer, "")
 	fmt.Fprintln(writer, "Package a validated profile for Intune (local only; never contacts a tenant)")
 	fmt.Fprintln(writer, "  spoolsmith intune wizard                   interactive, one export directory at a time")
-	fmt.Fprintln(writer, "  spoolsmith intune build --profile <file> --binary <exe> --binary-sha256 <hash>")
-	fmt.Fprintln(writer, "                          --id <id> --revision <n> --name <text> --output <dir> [--dry-run]")
+	fmt.Fprintln(writer, "  spoolsmith intune build --profile <file> --binary <exe> [--revision <n>] [--dry-run]")
+	fmt.Fprintln(writer, "  --binary-sha256, --id, --name, --description and --output are all derived from the")
+	fmt.Fprintln(writer, "  profile when omitted; give them explicitly only to override the suggested value.")
 	fmt.Fprintln(writer, "  Produces install.ps1/uninstall.ps1/detect.ps1 and a README with the exact commands")
 	fmt.Fprintln(writer, "  to paste into Intune's Win32 app. Add --content-prep-tool/--content-prep-output to")
 	fmt.Fprintln(writer, "  also run Microsoft's own IntuneWinAppUtil.exe. Uploading and assigning the app in")

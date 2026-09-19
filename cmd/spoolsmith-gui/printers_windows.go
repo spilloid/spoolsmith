@@ -30,7 +30,13 @@ type printerUI struct {
 	discoveryJSON                              string
 	driversLoading, driversLoaded, captureBusy bool
 	captureSuggestedName, captureSuggestedFile string
-	profileDirPath                             string
+	// captureDriverTarget is the IP address the current captureDriver value
+	// was chosen for. It is compared against captureTarget's current text
+	// wherever the target can change -- selecting a different printer and
+	// editing the IP field directly -- so a driver chosen for one printer
+	// is never silently carried into another's setup.
+	captureDriverTarget string
+	profileDirPath      string
 	// setupEvidence is what the printer being set up reported about itself.
 	// It only ever seeds a driver suggestion the operator can overwrite.
 	setupEvidence evidence.Evidence
@@ -201,7 +207,7 @@ func (a *app) reviewSavedPrinter(target string) bool {
 	case 1:
 		return a.startProfileOperation(matches[0], opInstall)
 	default:
-		a.showSavedSetups(matches, fmt.Sprintf("There are %d saved setups for %s. Choose the one you want.", len(matches), target))
+		a.showSavedSetups(matches, fmt.Sprintf("There are %d saved setups for %s. Choose the one you want.", len(matches), target), nil)
 		return true
 	}
 }
@@ -233,6 +239,17 @@ func (a *app) openPrinterSetup(e evidence.Evidence) {
 	if a.captureBusy || a.mutationBusy {
 		return
 	}
+	// A driver chosen for one printer must never silently carry over to a
+	// different one. Only keep it when this is the same target being
+	// revisited (e.g. Refresh drivers); clear it when switching printers.
+	// captureDriverTarget -- not just the current text field -- is the
+	// source of truth, because the operator can also retype the IP field
+	// directly (see suggestCaptureFields) without ever calling this function.
+	if a.captureDriverTarget != strings.TrimSpace(e.IP) {
+		a.captureDriver.SetText("")
+		a.driversLoaded = false
+	}
+	a.captureDriverTarget = strings.TrimSpace(e.IP)
 	a.setupEvidence = e
 	a.setupOpen = true
 	a.captureTarget.SetText(e.IP)
@@ -260,6 +277,14 @@ func (a *app) suggestCaptureFields() {
 	if err != nil || ip.Zone() != "" {
 		return
 	}
+	// Typing a different target directly (not by selecting a printer, which
+	// openPrinterSetup already guards) must equally stop a driver chosen for
+	// the previous address from silently applying to this one.
+	if a.captureDriverTarget != "" && a.captureDriverTarget != ip.String() {
+		a.captureDriver.SetText("")
+		a.driversLoaded = false
+	}
+	a.captureDriverTarget = ip.String()
 	if name := a.captureName.Text(); name == "" || name == a.captureSuggestedName {
 		a.captureSuggestedName = "Printer " + ip.String()
 		a.captureName.SetText(a.captureSuggestedName)
@@ -354,7 +379,7 @@ func (a *app) onOpenBundle() {
 	if a.mutationBusy {
 		return
 	}
-	dialog := walk.FileDialog{Title: "Open a printer file", Filter: "Printer files (*.ssb)|*.ssb|All files (*.*)|*.*"}
+	dialog := walk.FileDialog{Title: "Open a copied printer (.ssb)", Filter: "Printer files (*.ssb)|*.ssb|All files (*.*)|*.*"}
 	accepted, err := dialog.ShowOpen(a.mw)
 	if err != nil {
 		showErr(a.mw, "Open printer file", err)
@@ -431,15 +456,22 @@ func (a *app) onCaptureProfile() {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 		result, finalErr := probe.Collect(ctx, ip.String())
+		savingFailed := false
 		if finalErr == nil {
 			p := install.Profile{Version: 1, Target: result.Evidence.IP, Evidence: result.Evidence, PrinterName: name, DriverName: driver}
-			finalErr = install.SaveProfile(file, p)
+			if finalErr = install.SaveProfile(file, p); finalErr != nil {
+				savingFailed = true
+			}
 		}
 		a.log("gui", "profile capture", []string{target, file}, statusOf(finalErr), finalErr, start)
 		a.mw.Synchronize(func() {
 			a.setCaptureBusy(false)
 			if finalErr != nil {
-				a.captureStatus.SetText("Couldn't save this printer. Check that it is awake, verify the IP and driver, then try again. " + finalErr.Error())
+				if savingFailed {
+					a.captureStatus.SetText("The printer answered, but its setup could not be saved to " + file + ". Check the destination and folder permissions. " + finalErr.Error())
+				} else {
+					a.captureStatus.SetText("Couldn't save this printer. Check that it is awake, verify the IP and driver, then try again. " + finalErr.Error())
+				}
 				return
 			}
 			a.captureStatus.SetText("Saved " + name + ".")

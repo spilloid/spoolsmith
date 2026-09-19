@@ -55,7 +55,12 @@ func (a *app) startOperation(op operation) {
 	a.purgeDriverCheck.SetChecked(op.PurgeDriver)
 	a.forceFamilyCombo.SetCurrentIndex(0)
 	a.updateReviewControls()
-	a.planOut.SetText("Choose Preview changes to see exactly what will happen. Nothing is changed until you confirm.")
+	planText := "Choose Preview changes to see exactly what will happen. Nothing is changed until you confirm."
+	offlineApplies := (a.pending.Kind == opInstall && a.pending.ProfilePath != "") || a.pending.Kind == opConfigure || a.pending.Kind == opApply
+	if offlineApplies {
+		planText += " Preparing this away from the printer? Offline setup is under More options."
+	}
+	a.planOut.SetText(planText)
 	a.reviewHint.SetText("Nothing has changed yet.")
 	a.tabs.SetCurrentIndex(tabReview)
 	if a.previewBtn != nil {
@@ -143,7 +148,10 @@ func (a *app) updateReviewControls() {
 		if op.Kind == "" {
 			caption = "Apply"
 		}
-		a.executeBtn.SetText(caption + "...")
+		// No trailing ellipsis: this button performs the reviewed action
+		// immediately, it doesn't open another dialog, and Windows UI
+		// convention reads a trailing "..." as the latter.
+		a.executeBtn.SetText(caption)
 	}
 }
 
@@ -209,7 +217,7 @@ func friendlyOperationError(message string) string {
 		return "Administrator access is needed. Close SpoolSmith, right-click the app and choose Run as administrator. Your saved printer settings will still be available."
 	}
 	if strings.Contains(message, "driver not found") {
-		return "This driver is not installed on this computer. Install the compatible vendor driver, then return to Add a printer and refresh the driver list."
+		return "This driver is not installed on this computer. Install the exact compatible Windows driver, then use Preview changes again."
 	}
 	return message
 }

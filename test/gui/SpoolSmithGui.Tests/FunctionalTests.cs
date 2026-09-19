@@ -112,7 +112,7 @@ public sealed class FunctionalTests : IDisposable
     public void Empty_review_cannot_enable_execution()
     {
         _fixture.SelectTab("Review and apply");
-        Assert.False(FindButton(_fixture.MainWindow, "Apply...").IsEnabled);
+        Assert.False(FindButton(_fixture.MainWindow, "Apply").IsEnabled);
         Assert.False(FindButton(_fixture.MainWindow, "Preview changes").IsEnabled);
     }
 
@@ -138,7 +138,7 @@ public sealed class FunctionalTests : IDisposable
         Find(_fixture.MainWindow, "More options").AsCheckBox().Click();
         WaitUntil(() => !IsHidden("Preview only (never apply)"), "More options did not open.");
         Assert.True(IsHidden("Also remove the driver, if nothing else uses it"));
-        Assert.True(IsHidden("Do not contact the printer (its identity will not be checked)"));
+        Assert.True(IsHidden("Offline setup — the printer will not be contacted or checked"));
     }
 
     private bool IsHidden(string accessibleName)
@@ -179,16 +179,16 @@ public sealed class FunctionalTests : IDisposable
         File.WriteAllText(path, invalid);
         var dialog = OpenSavedSetups();
         Assert.Contains("cannot be used", Find(dialog, "saved-detail").AsTextBox().Text);
-        foreach (var caption in new[] { "Set up this printer", "Update to match", "Check status", "Remove...", "Edit..." })
+        foreach (var caption in new[] { "Set up this printer", "Update to match", "Check status", "Remove printer from this PC...", "Edit..." })
             Assert.False(FindButton(dialog, caption).IsEnabled);
         FindButton(dialog, "Close").Invoke();
         Assert.Equal(invalid, File.ReadAllText(path));
     }
 
     [StaTheory]
-    [InlineData("Set up this printer", "Add printer...")]
-    [InlineData("Update to match", "Update printer...")]
-    [InlineData("Remove...", "Remove printer...")]
+    [InlineData("Set up this printer", "Add printer")]
+    [InlineData("Update to match", "Update printer")]
+    [InlineData("Remove printer from this PC...", "Remove printer")]
     public void Saved_setup_hands_the_named_operation_to_review(string action, string applyCaption)
     {
         CreateSavedPrinter();
@@ -211,12 +211,12 @@ public sealed class FunctionalTests : IDisposable
         FindButton(dialog, "Set up this printer").Invoke();
         WaitUntil(() => !IsHidden("mutate-output"), "Review did not open.");
         Find(_fixture.MainWindow, "More options").AsCheckBox().Click();
-        Find(_fixture.MainWindow, "Do not contact the printer (its identity will not be checked)").AsCheckBox().Click();
+        Find(_fixture.MainWindow, "Offline setup — the printer will not be contacted or checked").AsCheckBox().Click();
         FindButton(_fixture.MainWindow, "Preview changes").Invoke();
         var output = Find(_fixture.MainWindow, "mutate-output").AsTextBox();
         WaitForText(output, t => t.Contains("Unable to continue"), 60_000);
         Assert.Contains("driver", output.Text, StringComparison.OrdinalIgnoreCase);
-        Assert.False(FindButton(_fixture.MainWindow, "Add printer...").IsEnabled);
+        Assert.False(FindButton(_fixture.MainWindow, "Add printer").IsEnabled);
         Assert.True(FindButton(_fixture.MainWindow, "Full plan / JSON").IsEnabled);
     }
 
@@ -361,7 +361,7 @@ public sealed class FunctionalTests : IDisposable
     private static readonly string[] IntuneAdvancedFields =
     {
         "intune-id", "intune-revision", "intune-location", "intune-description", "intune-binary-sha256",
-        "Provision offline: skip live identity validation",
+        "Offline setup — the installed app won't check the printer is really there",
         "Allow adoption of an existing, exactly matching unmanaged queue"
     };
 

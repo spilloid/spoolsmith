@@ -146,7 +146,7 @@ func showErr(owner walk.Form, title string, err error) {
 func (a *app) onInspect() {
 	target := strings.TrimSpace(a.inspectTarget.Text())
 	if target == "" {
-		showErr(a.mw, "Inspect", fmt.Errorf("enter a target IP address or fixture file path"))
+		showErr(a.mw, "Inspect", fmt.Errorf("enter a target IP address, fixture file path, or .ssb bundle file"))
 		return
 	}
 	a.inspectBtn.SetEnabled(false)
@@ -258,7 +258,11 @@ func (a *app) onPreview() {
 	a.setMutationBusy(true)
 	a.previewBtn.SetEnabled(false)
 	a.resetPending()
-	a.planOut.SetText("Checking the printer and preparing your preview. This may take a few seconds...")
+	if op.Offline {
+		a.planOut.SetText("Checking local configuration and preparing your preview. This may take a few seconds...")
+	} else {
+		a.planOut.SetText("Checking the printer and preparing your preview. This may take a few seconds...")
+	}
 	a.reviewHint.SetText("Preparing your preview. No changes are being made.")
 	dryRunOnly := a.dryRunOnlyCheck.Checked()
 
@@ -534,7 +538,11 @@ func (a *app) bindMutationInputs() {
 func (a *app) onRefreshLog() {
 	data, err := os.ReadFile(actionlog.Path())
 	if err != nil {
-		a.logOut.SetText("(no log entries yet: " + err.Error() + ")")
+		if os.IsNotExist(err) {
+			a.logOut.SetText("(no log entries yet)")
+		} else {
+			a.logOut.SetText("Couldn't read the log file at " + actionlog.Path() + ":\r\n" + err.Error())
+		}
 		return
 	}
 	entries := strings.Split(strings.TrimRight(string(data), "\n"), "\n")

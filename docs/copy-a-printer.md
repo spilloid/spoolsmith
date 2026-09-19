@@ -11,10 +11,10 @@ No build tools are needed. Open `spoolsmith-gui.exe`:
 1. On the source PC, use **This PC → Copy to a file** for a supported queue.
    Run the app as administrator if including driver files.
 2. Move the resulting `.ssb` file to the destination PC.
-3. Open the app as administrator there, then **Add a printer → Open a printer file**.
+3. Open the app as administrator there, then **Add a printer → Open a copied printer (.ssb)...**.
 4. **Preview changes**, review the queue/address/driver plan, and confirm.
 
-**More options** offers offline mode and updating an existing queue.
+**More options** offers offline setup and updating an existing queue.
 **This PC → Change address** reviews an address change; **Tools → Inspect**
 verifies and displays a bundle manifest. The CLI examples follow below.
 
@@ -96,6 +96,18 @@ the driver — telling you so rather than installing something else.
 Some drivers cannot be exported at all. An inbox or Windows Update driver has no driver-store
 package to copy, and SpoolSmith says exactly that: the target machine will need to obtain it the
 same way this one did.
+
+### Copying every queue at once
+
+```powershell
+spoolsmith copy --all exports --include-driver
+```
+
+Bundles every copyable queue on this PC into `exports/`, one `.ssb` per queue, named the
+same way a single `copy` would name it. A queue `printers` would mark `!` is skipped and
+reported with its reason rather than stopping the batch — this is a set of independent
+exports, not one transaction, so one bad queue does not cost you the other twenty-nine.
+The command still fails (non-zero exit) if nothing at all got copied.
 
 ### What gets captured
 

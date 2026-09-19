@@ -44,9 +44,19 @@ func runPrinters(ctx context.Context, args []string, stdout, stderr io.Writer, a
 				kept = append(kept, queue)
 			}
 		}
+		// "No copyable queues" and "no queues at all" are different facts;
+		// writeQueueTable's own empty message only knows the latter, so say
+		// the former explicitly rather than letting it print as if this PC
+		// had nothing installed.
+		noneCopyable := len(kept) == 0 && len(queues) > 0
+		if noneCopyable && !jsonOnly {
+			fmt.Fprintln(stderr, "No copyable queues. Run `spoolsmith printers` (without --copyable) to see all queues and why each is excluded.")
+		}
 		queues = kept
-	}
-	if !jsonOnly {
+		if !jsonOnly && !noneCopyable {
+			writeQueueTable(stderr, queues)
+		}
+	} else if !jsonOnly {
 		writeQueueTable(stderr, queues)
 	}
 	return encodeSuccess(stdout, stderr, "printers", queues)

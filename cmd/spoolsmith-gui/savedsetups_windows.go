@@ -25,14 +25,24 @@ func (a *app) onOpenSavedSetup() {
 	if a.mutationBusy {
 		return
 	}
-	a.showSavedSetups(savedSetupPaths(a.profilesDirectory()), "")
+	paths, err := savedSetupPaths(a.profilesDirectory())
+	a.showSavedSetups(paths, "", err)
 }
 
-// savedSetupPaths lists JSON candidates in a folder, in filename order.
-func savedSetupPaths(dir string) []string {
+// savedSetupPaths lists JSON candidates in a folder, in filename order. A
+// folder that does not exist yet is the ordinary first-run case, not an
+// error -- SpoolSmith has never had reason to create it. Anything else
+// os.ReadDir reports (permission denied, the path is a file, a network
+// share gone away) is a real problem and is returned rather than folded
+// into the same "no saved setups" empty state a caller cannot tell apart
+// from it.
+func savedSetupPaths(dir string) ([]string, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		return nil
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
 	}
 	var paths []string
 	for _, entry := range entries {
@@ -42,7 +52,7 @@ func savedSetupPaths(dir string) []string {
 		paths = append(paths, filepath.Join(dir, entry.Name()))
 	}
 	sort.Strings(paths)
-	return paths
+	return paths, nil
 }
 
 // savedSetupLabel describes one setup in a single line.
@@ -54,13 +64,14 @@ func savedSetupLabel(path string) string {
 	return fmt.Sprintf("%s  ·  %s  ·  %s", profile.PrinterName, profile.Target, filepath.Base(path))
 }
 
-func (a *app) showSavedSetups(paths []string, message string) {
+func (a *app) showSavedSetups(paths []string, message string, readErr error) {
 	var dialog *walk.Dialog
 	var list *walk.ListBox
 	var detail *walk.TextEdit
 	var status *walk.Label
 	var setupBtn, updateBtn, editBtn, statusBtn, removeBtn, cancelBtn *walk.PushButton
 	current := append([]string(nil), paths...)
+	folderErr := readErr
 
 	labels := func() []string {
 		out := make([]string, 0, len(current))
@@ -79,9 +90,12 @@ func (a *app) showSavedSetups(paths []string, message string) {
 	refreshDetail := func() {
 		path, ok := selected()
 		if !ok {
-			if len(current) == 0 {
+			switch {
+			case folderErr != nil:
+				detail.SetText("Couldn't read this folder: " + folderErr.Error() + "\r\n\r\nUse Open another folder to choose a different location.")
+			case len(current) == 0:
 				detail.SetText("No saved setups in this folder yet.\r\n\r\nImport a JSON collection, open another folder, or save a printer from Add a printer.")
-			} else {
+			default:
 				detail.SetText("Choose a saved setup.")
 			}
 			for _, button := range []*walk.PushButton{setupBtn, updateBtn, editBtn, statusBtn, removeBtn} {
@@ -132,7 +146,7 @@ func (a *app) showSavedSetups(paths []string, message string) {
 						a.checkSavedStatus(dialog, path)
 					}
 				}},
-				PushButton{AssignTo: &removeBtn, Text: "Remove...", Enabled: false, OnClicked: func() { start(opRemove) }},
+				PushButton{AssignTo: &removeBtn, Text: "Remove printer from this PC...", Enabled: false, OnClicked: func() { start(opRemove) }},
 				PushButton{AssignTo: &editBtn, Text: "Edit...", Enabled: false, OnClicked: func() {
 					path, ok := selected()
 					if !ok {
@@ -150,7 +164,7 @@ func (a *app) showSavedSetups(paths []string, message string) {
 				PushButton{Text: "Export all JSON...", OnClicked: func() { a.exportSetups(dialog) }},
 				PushButton{Text: "Import all JSON...", OnClicked: func() {
 					if a.importSetups(dialog) {
-						current = savedSetupPaths(a.profilesDirectory())
+						current, folderErr = savedSetupPaths(a.profilesDirectory())
 						list.SetModel(labels())
 						if len(current) > 0 {
 							list.SetCurrentIndex(0)
@@ -165,7 +179,7 @@ func (a *app) showSavedSetups(paths []string, message string) {
 						showErr(dialog, "Choose folder", err)
 					} else if ok {
 						a.profileDirPath = picker.FilePath
-						current = savedSetupPaths(picker.FilePath)
+						current, folderErr = savedSetupPaths(picker.FilePath)
 						list.SetModel(labels())
 						status.SetText("Folder: " + picker.FilePath)
 						if len(current) > 0 {
@@ -235,7 +249,7 @@ func (a *app) editSavedSetup(owner walk.Form, path string) bool {
 			Composite{Layout: row(), Children: []Widget{
 				HSpacer{},
 				PushButton{AssignTo: &cancelBtn, Text: "Cancel", OnClicked: func() { dialog.Cancel() }},
-				PushButton{AssignTo: &saveBtn, Text: "Save changes", OnClicked: func() {
+				PushButton{AssignTo: &saveBtn, Text: "Save setup changes", OnClicked: func() {
 					updated := profile
 					updated.PrinterName = strings.TrimSpace(nameEdit.Text())
 					updated.DriverName = strings.TrimSpace(driverEdit.Text())
@@ -262,7 +276,9 @@ func (a *app) editSavedSetup(owner walk.Form, path string) bool {
 					}
 					saved = true
 					a.log("gui", "profile edit", []string{path}, "success", nil, time.Now())
-					walk.MsgBox(dialog, "Saved", "Changes saved.\r\n\r\nThe previous version is kept at:\r\n"+backup, walk.MsgBoxIconInformation)
+					walk.MsgBox(dialog, "Saved", "Saved settings only — this PC's Windows printer is unchanged.\r\n"+
+						"Use Update to match to review and apply this change. Changing the printer name creates a separate queue when applied.\r\n\r\n"+
+						"The previous version is kept at:\r\n"+backup, walk.MsgBoxIconInformation)
 					dialog.Accept()
 				}},
 			}},

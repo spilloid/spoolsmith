@@ -5,14 +5,17 @@ printer setup from one PC to another, and maps Windows queues using locally inst
 drivers after you review the plan. A small family catalog also provides automatic
 identification and driver guidance.
 
-**v0.6.0 includes the command-line tool and the native Windows desktop app.**
-The desktop now mirrors the copy, apply, installed-printer inventory, address-change,
-offline setup and local-status workflows. Saved setups can be exported and imported
-in bulk as JSON, and the app has a lighter layout with blue accents.
+**The current release (see [VERSION](VERSION) and [releases/](releases/) for exactly which)
+includes the command-line tool and the native Windows desktop app.** The desktop mirrors the
+copy, apply, installed-printer inventory, address-change, offline setup, local-status and
+Intune-packaging workflows. Saved setups can be exported and imported in bulk as JSON.
 
-The underlying copy and offline workflows have real Windows 11 validation from
-v0.5.0. See [Current limitations](#current-limitations) for the validation boundaries.
-Automatic downloads and Intune packaging remain outside the shipped surface.
+The underlying copy and offline workflows have real Windows 11 validation; see
+[Current limitations](#current-limitations) for the validation boundaries, and
+[releases/](releases/) for what shipped in which version. Automatic driver downloads
+remain outside the shipped surface. Intune packaging (below) is local-only Win32-app
+export from both the CLI and the desktop GUI — it does not sign in to a tenant or
+upload/assign anything.
 
 ## Copy a printer from one PC to another
 
@@ -90,15 +93,18 @@ go build -ldflags="-H windowsgui" -o dist/spoolsmith-gui.exe ./cmd/spoolsmith-gu
 ```
 
 The app opens on **This PC**, showing Windows' installed printers. Select one to
-**Copy to a file**, **Change address**, or **Remove printer**. Copying can include the
-driver; exporting driver files requires administrator rights.
+**Copy to a file**, **Change address**, or **Remove printer**. Copying includes the
+driver by default (the CLI's `copy` is the opposite: pass `--include-driver` explicitly);
+either way, exporting driver files requires administrator rights.
 
 **Add a printer** combines network discovery and printer settings. Enter a subnet
 and **Scan**, or enter one address and choose **Use IP directly**. Choose a compatible
-installed driver and **Save and review**, or use **Review catalog setup** for catalog
-resolution. **Open a printer file** reads a copied `.ssb`; **More options** on its
-review offers offline setup and updating an existing queue. **Tools → Inspect** can
-also verify a bundle and show its complete manifest without contacting the printer.
+installed driver and **Save and review**, or use **Use catalog identification instead...**
+to have SpoolSmith derive the name and driver itself from the catalog, ignoring whatever
+you typed. **Open a copied printer (.ssb)...** reads a copied bundle (the CLI's
+`bundle inspect` reads one without applying it); **More options** on the review screen
+offers offline setup and updating an existing queue. **Tools → Inspect** can also verify
+a bundle and show its complete manifest without contacting the printer.
 **Tools → Build an Intune printer app...** packages a reviewed profile into a
 local, reviewable Win32 app bundle — see [Intune packaging](#intune-packaging).
 
@@ -267,7 +273,8 @@ single reviewed decision instead of a wizard.
 ## Install
 
 Grab the latest Windows build from [Releases](https://github.com/spilloid/spoolsmith/releases).
-It's a single `spoolsmith.exe` — no installer, no dependencies.
+The release ZIP has two standalone binaries, `spoolsmith.exe` (CLI) and `spoolsmith-gui.exe`
+(desktop app) — no installer, no dependencies, no need for both if you only want one.
 
 Building from source needs Go 1.24+:
 
@@ -388,6 +395,11 @@ what got fixed. It's not polished marketing copy; it's the real record, warts in
 MIT — see [LICENSE](LICENSE).
 
 ## Offline provisioning (released)
+
+**Offline setup** is the one term for this everywhere in SpoolSmith — the CLI's
+`--offline` flag, and the desktop GUI's "Offline setup" checkboxes on the review
+screen and the Intune wizard all mean the same thing: skip contacting and
+identity-checking the printer, and use a saved profile's settings as-is.
 
 Prevalidated profiles can provision a queue before the printer is reachable:
 
