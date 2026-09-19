@@ -378,7 +378,7 @@ public sealed class FunctionalTests : IDisposable
         }), "Advanced settings were not collapsed.");
     }
 
-    private static AutomationElement FindVisibleIntuneControl(Window dialog, string name)
+    internal static AutomationElement FindVisibleIntuneControl(Window dialog, string name)
     {
         AutomationElement? element = null;
         WaitUntil(() =>
@@ -422,7 +422,7 @@ public sealed class FunctionalTests : IDisposable
         return path;
     }
 
-    private static void WaitUntil(Func<bool> ready, string failure, int timeoutMs = 10_000)
+    internal static void WaitUntil(Func<bool> ready, string failure, int timeoutMs = 10_000)
     {
         var deadline = DateTime.UtcNow.AddMilliseconds(timeoutMs);
         while (DateTime.UtcNow < deadline)
@@ -433,7 +433,7 @@ public sealed class FunctionalTests : IDisposable
         throw new TimeoutException(failure);
     }
 
-    private static AutomationElement Find(AutomationElement root, string accessibleName)
+    internal static AutomationElement Find(AutomationElement root, string accessibleName)
     {
         return root.FindFirstDescendant(cf => cf.ByName(accessibleName))
             ?? throw new InvalidOperationException($"No control with accessible name \"{accessibleName}\" was found.");
@@ -452,7 +452,7 @@ public sealed class FunctionalTests : IDisposable
     /// failed only in a full run, where the preceding test's window teardown
     /// shifts the timing.
     /// </summary>
-    private static Button FindButton(AutomationElement root, string caption, int timeoutMs = 5_000)
+    internal static Button FindButton(AutomationElement root, string caption, int timeoutMs = 5_000)
     {
         var deadline = DateTime.UtcNow.AddMilliseconds(timeoutMs);
         while (true)
@@ -476,7 +476,7 @@ public sealed class FunctionalTests : IDisposable
     /// running Inspect. ValuePattern.SetValue drives the control directly
     /// through UI Automation regardless of focus or window z-order.
     /// </summary>
-    private static void SetText(TextBox box, string value)
+    internal static void SetText(TextBox box, string value)
     {
         var pattern = box.Patterns.Value.PatternOrDefault
             ?? throw new InvalidOperationException("Control does not support ValuePattern.");
@@ -488,7 +488,7 @@ public sealed class FunctionalTests : IDisposable
     /// via walk.Synchronize, so the TextEdit updates a beat after Invoke()
     /// returns. Poll instead of sleeping a fixed amount.
     /// </summary>
-    private static string WaitForText(TextBox box, Func<string, bool> ready, int timeoutMs = 10_000)
+    internal static string WaitForText(TextBox box, Func<string, bool> ready, int timeoutMs = 10_000)
     {
         var deadline = DateTime.UtcNow.AddMilliseconds(timeoutMs);
         string last = box.Text ?? string.Empty;
