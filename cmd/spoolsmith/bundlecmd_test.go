@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -186,6 +187,94 @@ func TestApplyWithoutConfirmationRunsNothing(t *testing.T) {
 	if code != int(install.ExitNotConfirmed) || len(env.ran) != 0 {
 		t.Fatalf("apply = code %d after running %d commands", code, len(env.ran))
 	}
+}
+
+// allQueuesFakeEnvironment adds the listing capability to the clone-capable
+// fake, so `copy --all` can be exercised without a real Windows machine.
+//
+// cliFakeEnvironment.LookupPrinter ignores the name it is asked for and
+// always returns the same canned configuration, which is fine for every
+// other test here but would let a batch-loop bug (e.g. reusing one queue
+// name for every iteration) pass unnoticed. requestedPrinters records what
+// was actually asked for so the batch tests can tell the loop really visited
+// each distinct copyable queue, not just that some file got written per
+// queue in the list.
+type allQueuesFakeEnvironment struct {
+	*bundleFakeEnvironment
+	queues            []install.InstalledQueue
+	requestedPrinters []string
+}
+
+func (f *allQueuesFakeEnvironment) ListPrinters(context.Context) ([]install.InstalledQueue, error) {
+	return f.queues, nil
+}
+
+func (f *allQueuesFakeEnvironment) LookupPrinter(ctx context.Context, name string) (install.PrinterConfiguration, error) {
+	f.requestedPrinters = append(f.requestedPrinters, name)
+	return f.bundleFakeEnvironment.LookupPrinter(ctx, name)
+}
+
+// TestCloneAllSkipsUncopyableAndBundlesTheRest is the batch equivalent of
+// TestCloneThenApplyAcrossMachines: one queue this fake can actually
+// reproduce, one it can't (Microsoft Print to PDF has no reproducible RAW
+// TCP/9100 port), and the run should bundle the first while explaining and
+// continuing past the second, not aborting the whole batch.
+func TestCloneAllSkipsUncopyableAndBundlesTheRest(t *testing.T) {
+	t.Setenv("TMPDIR", t.TempDir())
+	app, env := bundleTestApplication(t)
+	all := &allQueuesFakeEnvironment{bundleFakeEnvironment: env, queues: sampleQueues()}
+	app.environment = all
+	outputDir := t.TempDir()
+
+	var stdout, stderr bytes.Buffer
+	code := run(context.Background(), []string{"copy", "--all", outputDir}, strings.NewReader(""), &stdout, &stderr, app)
+	if code != 0 {
+		t.Fatalf("copy --all code=%d\n%s\n%s", code, stdout.String(), stderr.String())
+	}
+	assertValidJSON(t, stdout.Bytes())
+
+	var result copyAllResult
+	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+		t.Fatalf("decode result: %v\n%s", err, stdout.String())
+	}
+	if result.Requested != 2 || result.Written != 1 || result.Skipped != 1 || result.Failed != 0 {
+		t.Fatalf("result = %+v", result)
+	}
+	// Only the copyable queue should ever reach CloneQueue -- the uncopyable
+	// one must be skipped before any lookup, not merely fail one afterward.
+	if want := []string{"Office"}; !slices.Equal(all.requestedPrinters, want) {
+		t.Fatalf("requested printers = %v, want %v", all.requestedPrinters, want)
+	}
+	if _, err := os.Stat(filepath.Join(outputDir, "Office.ssb")); err != nil {
+		t.Fatalf("expected a bundle for the copyable queue: %v", err)
+	}
+	opened, err := bundle.Open(filepath.Join(outputDir, "Office.ssb"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer opened.Close()
+	if opened.Manifest.Profile.PrinterName != "Test Printer" {
+		t.Fatalf("bundle for Office contains printer name %q (this fake's LookupPrinter always names it Test Printer)", opened.Manifest.Profile.PrinterName)
+	}
+	if !strings.Contains(stderr.String(), "Microsoft Print to PDF") {
+		t.Fatalf("stderr does not explain the skipped queue: %s", stderr.String())
+	}
+}
+
+// TestCloneAllFailsWhenNothingIsCopyable checks the batch reports failure,
+// not silent success, when every queue is skipped.
+func TestCloneAllFailsWhenNothingIsCopyable(t *testing.T) {
+	t.Setenv("TMPDIR", t.TempDir())
+	app, env := bundleTestApplication(t)
+	app.environment = &allQueuesFakeEnvironment{bundleFakeEnvironment: env, queues: []install.InstalledQueue{sampleQueues()[1]}}
+	outputDir := t.TempDir()
+
+	var stdout, stderr bytes.Buffer
+	code := run(context.Background(), []string{"copy", "--all", outputDir}, strings.NewReader(""), &stdout, &stderr, app)
+	if code == 0 {
+		t.Fatalf("expected a non-zero exit when nothing was copied:\n%s", stderr.String())
+	}
+	assertValidJSON(t, stdout.Bytes())
 }
 
 func TestCloneRefusesQueuesItCannotReproduce(t *testing.T) {

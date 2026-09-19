@@ -173,7 +173,7 @@ func addPage(a *app) TabPage {
 				PushButton{AssignTo: &a.discoverUseBtn, Text: "Use this printer", Enabled: false, OnClicked: a.onUseDiscovered},
 				PushButton{AssignTo: &a.discoverDetailsBtn, Text: "Scan details", Enabled: false, OnClicked: a.onDiscoveryDetails},
 				HSpacer{},
-				PushButton{Text: "Open a printer file...", OnClicked: a.onOpenBundle},
+				PushButton{Text: "Open a copied printer (.ssb)...", OnClicked: a.onOpenBundle},
 				PushButton{Text: "Open a saved setup...", OnClicked: a.onOpenSavedSetup},
 			}},
 			TextEdit{AssignTo: &a.discoverOut, Text: "Preparing discovery...", ReadOnly: true, VScroll: true,
@@ -195,7 +195,7 @@ func addPage(a *app) TabPage {
 			Label{AssignTo: &a.captureStatus, Text: "Saving checks the printer and keeps its settings for next time."},
 			Composite{Layout: row(), Children: []Widget{
 				PushButton{Text: "Back to discovery", OnClicked: func() { a.setupOpen = false; a.setupGroup.SetVisible(false); a.searchGroup.SetVisible(true) }},
-				PushButton{Text: "Review catalog setup", OnClicked: func() {
+				PushButton{Text: "Use catalog identification instead...", OnClicked: func() {
 					a.startOperation(operation{Kind: opInstall, Target: strings.TrimSpace(a.captureTarget.Text())})
 				}},
 				HSpacer{}, PushButton{AssignTo: &a.captureBtn, Text: "Save and review", OnClicked: a.onCaptureProfile},
@@ -225,7 +225,7 @@ func mutatePage(a *app) TabPage {
 		}},
 		Composite{AssignTo: &a.advancedPanel, Visible: false, Layout: VBox{MarginsZero: true, Spacing: 8}, Children: []Widget{
 			CheckBox{AssignTo: &a.updateCheck, Text: "Update an existing queue to match this printer file"},
-			CheckBox{AssignTo: &a.offlineCheck, Text: "Do not contact the printer (its identity will not be checked)"},
+			CheckBox{AssignTo: &a.offlineCheck, Text: "Offline setup — the printer will not be contacted or checked"},
 			Composite{AssignTo: &a.familyRow, Layout: row(), Children: []Widget{
 				Label{Text: "Printer family:"},
 				ComboBox{AssignTo: &a.forceFamilyCombo, Model: a.familyLabels, CurrentIndex: 0, Accessibility: name("mutate-force-family")},
@@ -240,7 +240,7 @@ func mutatePage(a *app) TabPage {
 		Composite{Layout: row(), Children: []Widget{
 			PushButton{Text: "This PC", OnClicked: func() { a.tabs.SetCurrentIndex(tabThisPC) }},
 			PushButton{AssignTo: &a.planDetailsBtn, Text: "Full plan / JSON", Enabled: false, OnClicked: a.onPlanDetails},
-			HSpacer{}, PushButton{AssignTo: &a.executeBtn, Text: "Apply...", Enabled: false, OnClicked: a.onExecute},
+			HSpacer{}, PushButton{AssignTo: &a.executeBtn, Text: "Apply", Enabled: false, OnClicked: a.onExecute},
 		}},
 	}}
 }
