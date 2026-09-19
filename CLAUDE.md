@@ -147,6 +147,22 @@ regardless of what calls it. SpoolSmith does not depend on NetViz existing; it g
 fingerprinting evidence independently and must remain fully useful from its own CLI with zero
 NetViz integration wired up.
 
+## Product icon
+
+`assets/icon/spoolsmith.png` is the single master (square, at least 256px, transparent
+background). Everything else is generated from it and committed: the icon inside both
+executables (`rsrc_windows_amd64.syso` in `cmd/spoolsmith` and `cmd/spoolsmith-gui`) and the
+site's `favicon.ico`, touch icon and header PNGs. To change the artwork, replace that one file
+and run:
+
+```sh
+go generate ./cmd/spoolsmith ./cmd/spoolsmith-gui ./internal/icon
+```
+
+Drift tests fail until you do. The icon group is resource ID 7 on purpose — tailscale/walk
+loads exactly that ID for every window class it registers, so the main window and all dialogs
+get the icon with no GUI code. Don't renumber it.
+
 ## Release checklist
 
 A release is not just a version bump. Every time `VERSION` moves and a `releases/vX.Y.Z.md`
