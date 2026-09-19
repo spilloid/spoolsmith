@@ -50,23 +50,7 @@ func runDiscover(ctx context.Context, args []string, stdout, stderr io.Writer, a
 
 func runProfile(ctx context.Context, args []string, stdout, stderr io.Writer, app application) int {
 	if len(args) > 0 && (args[0] == "export-all" || args[0] == "import-all") {
-		if len(args) != 3 {
-			return usageError(stdout, stderr, "profile", errors.New("use profile export-all <folder> <collection.json> or profile import-all <collection.json> <folder>"))
-		}
-		var count int
-		var err error
-		if args[0] == "export-all" {
-			count, err = profileset.Export(args[1], args[2])
-		} else {
-			count, err = profileset.Import(args[1], args[2])
-		}
-		if err != nil {
-			return commandError(stdout, stderr, "profile "+args[0], err, 1)
-		}
-		return encodeSuccess(stdout, stderr, "profile "+args[0], struct {
-			Count       int    `json:"count"`
-			Destination string `json:"destination"`
-		}{count, args[2]})
+		return runProfileTransfer(args, stdout, stderr)
 	}
 
 	if len(args) > 0 && args[0] == "edit" {
@@ -102,6 +86,53 @@ func runProfile(ctx context.Context, args []string, stdout, stderr io.Writer, ap
 	}
 	fmt.Fprintln(stderr, "Saved printer profile. The driver name is operator-selected; installation checks that it is registered locally.")
 	return encodeSuccess(stdout, stderr, "profile", p)
+}
+
+func runProfileTransfer(args []string, stdout, stderr io.Writer) int {
+	command := "profile " + args[0]
+	dryRun := false
+	var paths []string
+	for _, arg := range args[1:] {
+		if arg == "--dry-run" && !dryRun {
+			dryRun = true
+		} else if strings.HasPrefix(arg, "--") {
+			return usageError(stdout, stderr, command, fmt.Errorf("unknown or duplicate option %q", arg))
+		} else {
+			paths = append(paths, arg)
+		}
+	}
+	if len(paths) != 2 {
+		return usageError(stdout, stderr, command, errors.New("use profile export-all <folder> <collection.json> [--dry-run] or profile import-all <collection.json> <folder> [--dry-run]"))
+	}
+	var transfer *profileset.Transfer
+	var err error
+	if args[0] == "export-all" {
+		transfer, err = profileset.PrepareExport(paths[0], paths[1])
+	} else {
+		transfer, err = profileset.PrepareImport(paths[0], paths[1])
+	}
+	if err != nil {
+		return commandError(stdout, stderr, command, err, 1)
+	}
+	if dryRun {
+		preview := transfer.Preview()
+		fmt.Fprintf(stderr, "Preview: %d saved setups to %s. No files written.\n%s\n", preview.Count, preview.Destination, preview.Scope)
+		code := encodeSuccess(stdout, stderr, command, preview)
+		if len(preview.Conflicts) > 0 {
+			fmt.Fprintf(stderr, "Files already exist: %s. Choose another destination.\n", strings.Join(preview.Conflicts, ", "))
+			return 1
+		}
+		return code
+	}
+	count, err := transfer.Execute()
+	if err != nil {
+		return commandError(stdout, stderr, command, err, 1)
+	}
+	fmt.Fprintf(stderr, "Saved %d setups to %s.\n%s\n", count, paths[1], profileset.TransferScope)
+	return encodeSuccess(stdout, stderr, command, struct {
+		Count       int    `json:"count"`
+		Destination string `json:"destination"`
+	}{count, paths[1]})
 }
 
 func runProfileEdit(args []string, stdout, stderr io.Writer) int {

@@ -64,7 +64,7 @@ func bundleTestApplication(t *testing.T) (application, *bundleFakeEnvironment) {
 	app.workflow.Collect = collect
 	env := &bundleFakeEnvironment{
 		cliFakeEnvironment: app.environment.(*cliFakeEnvironment),
-		port:               install.PortConfiguration{PortName: "SpoolSmith-192.0.2.10", HostAddress: "192.0.2.10", PortNumber: 9100, Protocol: 1},
+		port:               install.PortConfiguration{PortName: "RAW9100-192.0.2.10", HostAddress: "192.0.2.10", PortNumber: 9100, Protocol: 1},
 	}
 	app.environment = env
 	return app, env

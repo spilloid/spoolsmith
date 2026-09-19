@@ -12,6 +12,14 @@ import (
 	"github.com/spilloid/spoolsmith/internal/catalog"
 )
 
+// managedPortPrefix names every TCP/IP port SpoolSmith creates, deterministic
+// from the target address alone. It exists so reconcile.go can tell a port
+// SpoolSmith created apart from one that merely shares a target IP, before
+// deciding it is safe to remove — never as a display of attribution, which is
+// why it names the one thing SpoolSmith actually guarantees about the port
+// (RAW protocol on 9100) rather than the product.
+const managedPortPrefix = "RAW9100-"
+
 // Environment is the seam between orchestration logic and the real OS.
 type Environment interface {
 	IsElevated(ctx context.Context) (bool, error)
@@ -113,7 +121,7 @@ func BuildPlan(ip string, resolution catalog.ResolutionResult) (Plan, error) {
 	}
 
 	ip = parsedIP.String()
-	portName := "SpoolSmith-" + ip
+	portName := managedPortPrefix + ip
 	plan := Plan{
 		IPAddress:   ip,
 		PrinterName: resolution.NormalizedModel,

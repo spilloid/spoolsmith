@@ -32,7 +32,7 @@ Three more of the report's proposals are already implemented here:
 - **Shared-resource refcounting on uninstall.** The report proposes checking whether a port or
   driver is still referenced before removing it. `uninstallCommands` in `reconcile.go` already
   does exactly this, and additionally refuses to remove a port it did not name (the
-  `SpoolSmith-` prefix check).
+  `RAW9100-` prefix check).
 - **Desired-state detection over a marker key.** The report correctly warns against
   `Test-Path HKLM:\Software\SpoolSmith\...`. `installCommands` already re-reads live Windows
   inventory and re-checks host address, port number, and protocol at mutation time.

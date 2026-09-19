@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/spilloid/spoolsmith/internal/bundle"
 	"github.com/spilloid/spoolsmith/internal/install"
 )
 
@@ -213,20 +214,7 @@ func queueDetail(q install.InstalledQueue) string {
 // bundleFileName derives a suggested file name from a queue name, matching the
 // CLI's own default so the two produce the same name for the same printer.
 func bundleFileName(queueName string) string {
-	var builder strings.Builder
-	for _, r := range queueName {
-		switch {
-		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '-', r == '_':
-			builder.WriteRune(r)
-		default:
-			builder.WriteRune('-')
-		}
-	}
-	name := strings.Trim(builder.String(), "-")
-	if name == "" {
-		name = "printer"
-	}
-	return name + ".ssb"
+	return bundle.FileName(queueName)
 }
 
 func quoted(value string) string {

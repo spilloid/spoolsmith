@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/spilloid/spoolsmith/internal/bundle"
+	"github.com/spilloid/spoolsmith/internal/install"
 	"github.com/spilloid/spoolsmith/internal/intune"
 )
 
@@ -44,6 +46,39 @@ func TestIntunePackagingUX(t *testing.T) {
 			t.Fatal(err)
 		}
 		return profile, output
+	}
+	bundleFixture := func(t *testing.T, includeDriver bool) (string, string) {
+		t.Helper()
+		profilePath := filepath.Join(t.TempDir(), "printer.json")
+		if err := os.WriteFile(profilePath, profileBytes, 0600); err != nil {
+			t.Fatal(err)
+		}
+		p, err := install.LoadProfile(profilePath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		m := bundle.Manifest{SourceHost: "east-desk-12", Profile: p}
+		payloadRoot := ""
+		if includeDriver {
+			payloadRoot = t.TempDir()
+			if err := os.WriteFile(filepath.Join(payloadRoot, "driver.inf"), []byte("; test INF\n"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			m.Driver = &bundle.DriverPayload{WindowsDriverName: p.DriverName, INF: "driver.inf", ExportedFrom: "test-vendor-pkg"}
+		}
+		bundlePath := filepath.Join(t.TempDir(), "printer.ssb")
+		if err := bundle.Write(bundlePath, m, payloadRoot); err != nil {
+			t.Fatal(err)
+		}
+		defaults, err := intune.ProfileDefaults(bundlePath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		output, err := intune.SuggestOutput(filepath.Dir(bundlePath), defaults.ID, 1)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return bundlePath, output
 	}
 	runCommand := func(args []string, input string) (int, string, string) {
 		var stdout, stderr bytes.Buffer
@@ -81,6 +116,53 @@ func TestIntunePackagingUX(t *testing.T) {
 		code, stdout, stderr = runCommand(args, "")
 		if code != 0 || !strings.Contains(stderr, output+"-2") {
 			t.Fatalf("repeat export: %d %s %s", code, stdout, stderr)
+		}
+	})
+	t.Run("build from a bundle with a driver payload", func(t *testing.T) {
+		bundlePath, output := bundleFixture(t, true)
+		args := []string{"build", "--profile", bundlePath, "--binary", binaryPath, "--dry-run"}
+		code, stdout, stderr := runCommand(args, "")
+		if code != 0 {
+			t.Fatalf("preview: %d %s %s", code, stdout, stderr)
+		}
+		var m intune.Manifest
+		if err := json.Unmarshal([]byte(stdout), &m); err != nil {
+			t.Fatal(err)
+		}
+		if m.ProfileSource != "bundle" || m.BundleSourceHost != "east-desk-12" || m.BundleSHA256 == "" {
+			t.Fatalf("expected bundle provenance in manifest: %+v", m)
+		}
+		found := false
+		for _, name := range m.Files {
+			if name == "bundle.ssb" {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatalf("bundle.ssb missing from Files: %v", m.Files)
+		}
+		exportArgs := []string{"build", "--profile", bundlePath, "--binary", binaryPath}
+		code, stdout, stderr = runCommand(exportArgs, "")
+		if code != 0 {
+			t.Fatalf("export: %d %s %s", code, stdout, stderr)
+		}
+		if _, err := os.Stat(filepath.Join(output, "bundle.ssb")); err != nil {
+			t.Fatal(err)
+		}
+		// A driver-carrying bundle and the separately managed prerequisite
+		// together are refused, exactly like a vendor archive would be.
+		if code, _, _ := runCommand(append(args, "--driver-prerequisite"), ""); code != 2 {
+			t.Fatalf("accepted bundle driver payload with the prerequisite flag: %d", code)
+		}
+	})
+	t.Run("build from a driverless bundle requires the prerequisite", func(t *testing.T) {
+		bundlePath, _ := bundleFixture(t, false)
+		args := []string{"build", "--profile", bundlePath, "--binary", binaryPath, "--dry-run"}
+		if code, _, _ := runCommand(args, ""); code != 2 {
+			t.Fatalf("accepted a driverless bundle with no driver prerequisite: %d", code)
+		}
+		if code, stdout, stderr := runCommand(append(args, "--driver-prerequisite"), ""); code != 0 {
+			t.Fatalf("preview: %d %s %s", code, stdout, stderr)
 		}
 	})
 	t.Run("build overrides and invalid explicit values", func(t *testing.T) {
@@ -123,6 +205,23 @@ func TestIntunePackagingUX(t *testing.T) {
 		var m intune.Manifest
 		if err := json.Unmarshal([]byte(stdout), &m); err != nil || code != 0 || m.ID != "existing-id" || m.Revision != 2 || !m.Offline || !m.Adopt || m.DisplayName != "Custom" {
 			t.Fatalf("wizard overrides: %d %s %s %v", code, stdout, stderr, err)
+		}
+	})
+	t.Run("wizard from a bundle skips the driver-prerequisite prompt", func(t *testing.T) {
+		bundlePath, output := bundleFixture(t, true)
+		// No "yes\n" answer for the driver-archive question: a bundle that
+		// already carries a driver payload never asks it.
+		input := bundlePath + "\n" + binaryPath + "\n\nexport\n"
+		code, stdout, stderr := runCommand([]string{"wizard"}, input)
+		if code != 0 {
+			t.Fatalf("wizard: %d %s %s", code, stdout, stderr)
+		}
+		var m intune.Manifest
+		if err := json.Unmarshal([]byte(stdout), &m); err != nil || m.ProfileSource != "bundle" || m.BundleSHA256 == "" {
+			t.Fatalf("expected bundle manifest: %+v %v", m, err)
+		}
+		if _, err := os.Stat(filepath.Join(output, "bundle.ssb")); err != nil {
+			t.Fatal(err)
 		}
 	})
 }

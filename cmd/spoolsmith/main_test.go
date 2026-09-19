@@ -222,7 +222,7 @@ func testApplication() application {
 	env := &cliFakeEnvironment{
 		elevated:      true,
 		driverPresent: true,
-		configuration: install.PrinterConfiguration{PrinterName: "Test Printer", PortName: "SpoolSmith-192.0.2.10", DriverName: "Verified Windows Driver"},
+		configuration: install.PrinterConfiguration{PrinterName: "Test Printer", PortName: "RAW9100-192.0.2.10", DriverName: "Verified Windows Driver"},
 	}
 	return application{
 		workflow:    w,

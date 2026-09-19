@@ -57,7 +57,7 @@ func BuildRepointPlan(current PrinterConfiguration, newAddress string) (Plan, er
 		return Plan{}, fmt.Errorf("repoint: %q is not a literal IP address", newAddress)
 	}
 	ip := parsed.String()
-	portName := "SpoolSmith-" + ip
+	portName := managedPortPrefix + ip
 	if strings.EqualFold(current.PortName, portName) {
 		return Plan{}, fmt.Errorf("repoint: %q already prints to %s through port %q; nothing to change", current.PrinterName, ip, current.PortName)
 	}

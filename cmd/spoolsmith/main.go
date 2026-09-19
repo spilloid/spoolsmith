@@ -413,8 +413,9 @@ var commandUsage = map[string]string{
 	"apply": "spoolsmith apply <bundle-file> [--dry-run] [--offline] [--update]\n" +
 		"                                [--plan-hash <fingerprint>] [--yes] [--non-interactive] [--json]\n",
 	"bundle": "spoolsmith bundle inspect <bundle-file>    read a bundle, touching nothing\n",
-	"profile": "spoolsmith profile export-all <folder> <collection.json>\n" +
-		"spoolsmith profile import-all <collection.json> <folder>\n" +
+	"profile": "spoolsmith profile export-all <folder> <collection.json> [--dry-run]\n" +
+		"spoolsmith profile import-all <collection.json> <folder> [--dry-run]\n" +
+		"--dry-run reviews filenames, printer settings and destination conflicts without writing files.\n" +
 		"spoolsmith profile capture <target> <file> --name <queue> --driver <installed-driver-name>\n" +
 		"spoolsmith profile edit <file> [--name <queue>] [--driver <name>] [--target <ip>]\n" +
 		"spoolsmith profile edit <file> [--package <recipe-id> --archive <local-file>] [--clear-package]\n",
@@ -457,8 +458,8 @@ func printUsage(writer io.Writer) {
 	fmt.Fprintln(writer, "  spoolsmith discover <IPv4-CIDR>            /24 through /32")
 	fmt.Fprintln(writer, "  spoolsmith inspect <target>")
 	fmt.Fprintln(writer, "  spoolsmith catalog probe <ip> | catalog families")
-	fmt.Fprintln(writer, "  spoolsmith profile export-all <folder> <collection.json>")
-	fmt.Fprintln(writer, "  spoolsmith profile import-all <collection.json> <folder>")
+	fmt.Fprintln(writer, "  spoolsmith profile export-all <folder> <collection.json> [--dry-run]")
+	fmt.Fprintln(writer, "  spoolsmith profile import-all <collection.json> <folder> [--dry-run]")
 	fmt.Fprintln(writer, "  spoolsmith profile capture <target> <file> --name <queue> --driver <installed-driver-name>")
 	fmt.Fprintln(writer, "  spoolsmith profile edit <file> [--name <queue>] [--driver <name>] [--target <ip>]")
 	fmt.Fprintln(writer, "  spoolsmith profile edit <file> [--package <recipe-id> --archive <local-file> | --clear-package]")

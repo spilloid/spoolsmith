@@ -38,6 +38,18 @@ does not need it beforehand. It requires an elevated prompt, and SpoolSmith chec
 doing any other work. Without it the bundle carries the mapping only, and the target PC must
 already have that driver registered.
 
+For a PC replacement with several printers, copy every supported queue in one pass:
+
+```powershell
+spoolsmith copy --all printer-copies --include-driver
+```
+
+The desktop source build also offers **This PC → Copy all printers...** with a
+folder picker, driver choice, progress, a stop control and results for every printer.
+Completed files survive a failed or stopped batch; existing files are never replaced.
+Copy results as JSON for your ticket. Apply each `.ssb` on the destination using the
+normal reviewed-plan workflow below. See [the UX pass record](docs/validation/2026-09-18-technician-ux.md).
+
 Copy `accounting.ssb` to the other PC however you normally move a file, then:
 
 ```powershell
@@ -116,6 +128,9 @@ The default library sits beside the executable; `SPOOLSMITH_PROFILES_DIR` can ov
 **Export all JSON** saves every profile in the current folder into one versioned
 collection. **Import all JSON** validates the entire collection, preserves all profile
 properties and evidence, and refuses existing filenames (including case-only clashes).
+In the source build, both actions show a review of filenames, printer settings,
+external archive references and destination conflicts. Choose another destination
+within the review; importing switches the library to that folder after saving.
 Import saves files only; each Windows change still needs review and confirmation.
 Driver archives are not embedded: carry them separately and preserve their relative
 paths beside the imported profiles. Keep collection exports outside the profile folder.
@@ -123,9 +138,14 @@ paths beside the imported profiles. Keep collection exports outside the profile 
 The CLI exposes the same transfer:
 
 ```powershell
+spoolsmith profile export-all profiles printer-setups.json --dry-run
 spoolsmith profile export-all profiles printer-setups.json
+spoolsmith profile import-all printer-setups.json imported-profiles --dry-run
 spoolsmith profile import-all printer-setups.json imported-profiles
 ```
+
+Transfer `--dry-run` is also new in the source build. It writes no files and reports
+all filename conflicts. Actual imports recheck the destination before writing.
 
 ### Desktop tests
 

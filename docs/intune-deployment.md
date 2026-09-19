@@ -38,12 +38,15 @@ See Microsoft's [Win32 prerequisites and setup](https://learn.microsoft.com/en-u
    compatibility by installing and printing. Review the exact queue name, literal
    IP address, and registered driver name. Captured identity is descriptive evidence,
    not device authentication.
-2. Supply either a profile referencing the supported pinned Brother local archive
-   recipe or explicitly accept a separately managed registered-driver prerequisite.
-   Arbitrary OEM installers, downloaded payloads, and clone/export bundles are not
-   supported by this packaging path. Both the archive hash and Windows signature
-   checks remain mandatory when staging the supported archive. Keeping a driver
-   registered does not prove it is compatible with the printer; validate that first.
+2. Supply a profile (`.json`) referencing the supported pinned Brother local
+   archive recipe, a `.ssb` bundle written by `spoolsmith copy --include-driver`,
+   or explicitly accept a separately managed registered-driver prerequisite.
+   Arbitrary OEM installers and downloaded payloads are still not supported by
+   this packaging path. Both the archive hash and Windows signature checks
+   remain mandatory when staging the supported archive; a bundle's driver
+   payload is verified and catalog-signature-checked instead, on the narrower
+   terms described below. Keeping a driver registered does not prove it is
+   compatible with the printer; validate that first.
 3. Build the CLI. `spoolsmith capabilities` must report `intune-endpoint-v1`; an
    older release binary or the GUI executable is refused by `intune build`/`wizard`.
 
@@ -136,13 +139,41 @@ Override defaults when needed, especially when updating an existing deployment:
   --driver-prerequisite --offline --output .\accounting-r2 --dry-run
 ```
 
-Omit `--driver-prerequisite` when the profile includes an approved local archive.
+Omit `--driver-prerequisite` when the profile includes an approved local archive
+or the bundle carries a driver payload.
 Explicit metadata overrides are preserved; `--description=` leaves the
 optional description empty.
 
+### Packaging from a `.ssb` bundle
+
+`--profile` also accepts a `.ssb` bundle written by `spoolsmith copy` (dispatch
+is by file extension, matching the CLI and GUI elsewhere). Its embedded profile
+is the same `install.Profile` a captured JSON carries, validated identically —
+captured evidence is still required, and there is no separate, weaker path for
+bundle input. If the bundle was written with `--include-driver`, its driver
+payload satisfies the local-payload requirement in place of a vendor archive
+and `--driver-prerequisite` must be omitted; a driverless bundle needs
+`--driver-prerequisite` exactly like a driverless profile does. A bundle whose
+embedded profile also names a local vendor archive path is refused — that
+archive does not travel inside the bundle, so there is nothing to resolve it
+against.
+
+The exported package ships the original `.ssb` file (pinned by SHA-256, exactly
+like `driver.exe` is for the vendor-archive path) alongside a `profile.json`
+extracted from it, purely for local status/detection checks. At install time,
+a bundle-sourced driver payload is staged through `apply`'s existing trust
+chain — every payload byte hash-verified against the bundle manifest, then a
+valid Windows catalog (.cat) Authenticode signature required before `pnputil`
+stages the INF — deliberately narrower than, and never described as
+equivalent to, the pinned-vendor-archive-hash-plus-Authenticode-on-the-EXE/MSI
+path. `README.txt` and `deployment.json` in the exported package record which
+path a given deployment used, plus the bundle's own recorded source host for
+provenance (display only, never a trust decision).
+
 The export contains `profile.json`, `deployment.json`, `spoolsmith.exe`,
 `install.ps1`, `uninstall.ps1`, `runtime.ps1`, `detect.ps1`, and `README.txt`,
-plus `driver.exe` when using the supported archive. Existing output directories
+plus `driver.exe` when using the supported archive or `bundle.ssb` when
+packaging from a bundle with a driver payload. Existing output directories
 are refused. The sample [profile](../examples/intune/accounting.json) is illustrative
 and must be replaced with an actual captured, validated profile before deployment.
 

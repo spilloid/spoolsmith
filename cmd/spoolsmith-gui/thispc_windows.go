@@ -23,6 +23,7 @@ type thisPCUI struct {
 	queueStatus  *walk.Label
 	queueRefresh *walk.PushButton
 	copyBtn      *walk.PushButton
+	copyAllBtn   *walk.PushButton
 	repointBtn   *walk.PushButton
 	removeBtn    *walk.PushButton
 	queues       []install.InstalledQueue
@@ -42,6 +43,7 @@ func thisPCPage(a *app) TabPage {
 			PushButton{AssignTo: &a.queueRefresh, Text: "Refresh", OnClicked: a.onRefreshQueues},
 			Label{AssignTo: &a.queueStatus, Text: "Reading this PC's printers..."},
 			HSpacer{},
+			PushButton{AssignTo: &a.copyAllBtn, Text: "Copy all printers...", Enabled: false, OnClicked: a.onCopyAllQueues},
 		}},
 		HSplitter{Children: []Widget{
 			ListBox{AssignTo: &a.queueList, MinSize: Size{Width: 330, Height: 150}, Accessibility: name("thispc-list")},
@@ -67,6 +69,7 @@ func (a *app) onRefreshQueues() {
 	}
 	a.queuesBusy = true
 	a.queueRefresh.SetEnabled(false)
+	a.updateQueueActions()
 	a.queueStatus.SetText("Reading this PC's printers...")
 	start := time.Now()
 	go func() {
@@ -116,9 +119,11 @@ func (a *app) selectedQueue() (install.InstalledQueue, bool) {
 
 func (a *app) updateQueueActions() {
 	queue, ok := a.selectedQueue()
-	a.copyBtn.SetEnabled(ok && queue.Copyable() && !a.queuesBusy)
-	a.repointBtn.SetEnabled(ok && !a.queuesBusy)
-	a.removeBtn.SetEnabled(ok && !a.queuesBusy)
+	ready := !a.queuesBusy && !a.mutationBusy
+	a.copyBtn.SetEnabled(ok && queue.Copyable() && ready)
+	a.copyAllBtn.SetEnabled(len(a.queues) > 0 && ready)
+	a.repointBtn.SetEnabled(ok && ready)
+	a.removeBtn.SetEnabled(ok && ready)
 	if !ok {
 		if len(a.queues) > 0 {
 			a.queueDetail.SetText("Choose a printer to see its details.")
@@ -136,7 +141,7 @@ func (a *app) updateQueueActions() {
 // confirmation step is a formality.
 func (a *app) onCopyQueue() {
 	queue, ok := a.selectedQueue()
-	if !ok || !queue.Copyable() {
+	if !ok || !queue.Copyable() || a.queuesBusy || a.mutationBusy {
 		return
 	}
 	var dialog *walk.Dialog

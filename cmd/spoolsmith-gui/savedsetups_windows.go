@@ -164,6 +164,7 @@ func (a *app) showSavedSetups(paths []string, message string, readErr error) {
 				PushButton{Text: "Export all JSON...", OnClicked: func() { a.exportSetups(dialog) }},
 				PushButton{Text: "Import all JSON...", OnClicked: func() {
 					if a.importSetups(dialog) {
+						status.SetText("Folder: " + a.profilesDirectory())
 						current, folderErr = savedSetupPaths(a.profilesDirectory())
 						list.SetModel(labels())
 						if len(current) > 0 {

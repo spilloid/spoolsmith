@@ -1,5 +1,62 @@
 # Dev Process Log
 
+## 2026-09-19: v0.7.4 — desktop `copy --all`, bulk transfer preview, and two bugs only a real Windows run caught
+
+Astra built the desktop side of bulk driver export — **This PC → Copy all
+printers...**, sharing `bundle.CreateAll` with the CLI's `copy --all` rather
+than a second implementation — plus a `--dry-run`/review preview for bulk
+saved-setup transfer (`profile export-all`/`import-all` on the CLI, a
+destination-review step on the desktop), landing filenames, printer settings
+and destination conflicts before anything is written.
+
+A quality pass (eight parallel adversarial reviews of the diff) followed by a
+small/medium audit found and fixed, in order:
+
+- `spoolsmith copy --all` silently broke its own documented JSON schema
+  (`{output_dir,requested,written,skipped,failed,queues}`) whenever the output
+  directory couldn't be created or read, falling back to a generic
+  `{command,status,error}` shape instead — the exact case `CreateAll` had
+  already built a populated per-queue result for. Fixed and pinned with
+  `TestCopyAllOutputDirFailureStillKeepsJSONContract`, confirmed to fail
+  against the old code before the fix.
+- A single `copy`'s destination collision was only discovered inside `Write`'s
+  exclusive-create, after the network probe and any `--include-driver`
+  export — `copy --all` had the cheap early check; `Create` didn't. Given the
+  same preflight, with a regression test proving no probe or lookup happens
+  before the collision error.
+- The saved-setup export/import review dialog blocked its own close for the
+  entire duration of a destination check or save — neither is cancellable
+  (plain filesystem calls, no context), so a stalled network destination
+  trapped the operator with no way out short of killing the app. Now closes
+  immediately; the background completion callback discards its result instead
+  of touching disposed widgets.
+- `gofmt` drift in `internal/intune/bundle.go`; `AllResult.Queues` could
+  serialize as JSON `null` instead of `[]` depending on which error path
+  returned early; a local variable named `copy` shadowed the builtin in
+  `profileset.WithDestination`.
+
+Two more were found only by actually running the thing on `kubert` — the full
+31-test FlaUI suite had never been run against this diff before, only static
+review: **"Export all JSON..." and "Import all JSON..." had silently regressed
+to "Export setup JSON..." / "Import setup JSON..."** somewhere in this diff —
+misleading, since the button exports every saved profile in the folder, not
+the one selected above it, and it drifted from both the CLI's `export-all`
+naming and the docs. And the new bulk-copy dialog's driver checkbox used an
+`Accessibility.Name` override the test relied on for lookup; confirmed against
+real UIA output that native Win32 checkboxes report their visible caption as
+their Name regardless of that override, so the test now finds it by control
+type instead. Neither would have been caught by `go build`/`go vet`/`go test`
+alone — both are exactly the class of defect this project's process exists to
+catch before a release, not after.
+
+Verified for real: `gofmt`/`go build`/`go vet`/`go test` clean on Linux and
+cross-compiled for Windows; all 31 `SpoolSmithGui.Tests` FlaUI tests passing
+against the actual rendered GUI on `kubert`, including the two fixes above;
+the new **Copy all printers** screenshot captured live and added to the
+product site gallery; stale v0.7.1 download links on the product site and a
+`docs/roadmap.md` still describing v0.6.0-era state both corrected.
+
+
 ## 2026-09-16: v0.6.0 desktop parity and bulk JSON transfer
 
 Completed the operator-authorized GUI handoff and workspace TODO requests. This PC

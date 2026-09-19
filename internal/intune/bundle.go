@@ -23,6 +23,7 @@ import (
 	"text/template"
 	"unicode"
 
+	"github.com/spilloid/spoolsmith/internal/bundle"
 	"github.com/spilloid/spoolsmith/internal/install"
 )
 
@@ -48,24 +49,35 @@ type Options struct {
 }
 
 type Manifest struct {
-	Format             int             `json:"format"`
-	ID                 string          `json:"id"`
-	Revision           int             `json:"revision"`
-	DisplayName        string          `json:"display_name"`
-	Description        string          `json:"description"`
-	Location           string          `json:"location"`
-	Architecture       string          `json:"architecture"`
-	Offline            bool            `json:"offline"`
-	Adopt              bool            `json:"adopt_matching_queue"`
-	DriverPrerequisite bool            `json:"driver_prerequisite"`
-	BinarySHA256       string          `json:"binary_sha256"`
-	ProfileSHA256      string          `json:"profile_sha256"`
-	DriverSHA256       string          `json:"driver_sha256,omitempty"`
-	ConfigSHA256       string          `json:"configuration_sha256"`
-	Profile            install.Profile `json:"profile"`
-	InstallCommand     string          `json:"install_command"`
-	UninstallCommand   string          `json:"uninstall_command"`
-	Files              []string        `json:"files"`
+	Format             int    `json:"format"`
+	ID                 string `json:"id"`
+	Revision           int    `json:"revision"`
+	DisplayName        string `json:"display_name"`
+	Description        string `json:"description"`
+	Location           string `json:"location"`
+	Architecture       string `json:"architecture"`
+	Offline            bool   `json:"offline"`
+	Adopt              bool   `json:"adopt_matching_queue"`
+	DriverPrerequisite bool   `json:"driver_prerequisite"`
+	BinarySHA256       string `json:"binary_sha256"`
+	ProfileSHA256      string `json:"profile_sha256"`
+	DriverSHA256       string `json:"driver_sha256,omitempty"`
+	ConfigSHA256       string `json:"configuration_sha256"`
+	// ProfileSource is "json" or "bundle", recording which local file format the
+	// reviewed profile and, when present, driver payload came from.
+	ProfileSource string `json:"profile_source"`
+	// BundleSHA256 pins the original .ssb file when the profile source is a
+	// bundle carrying a driver payload; empty otherwise. The bundle itself
+	// (not an extracted copy) travels with the package so `apply`'s own
+	// catalog-signature trust chain runs unchanged at install time.
+	BundleSHA256 string `json:"bundle_sha256,omitempty"`
+	// BundleSourceHost is the bundle manifest's own recorded source host, shown
+	// for operator provenance only; it is never part of the trust decision.
+	BundleSourceHost string          `json:"bundle_source_host,omitempty"`
+	Profile          install.Profile `json:"profile"`
+	InstallCommand   string          `json:"install_command"`
+	UninstallCommand string          `json:"uninstall_command"`
+	Files            []string        `json:"files"`
 }
 
 // Prepared retains the reviewed bytes. Export verifies payload pins again,
@@ -77,6 +89,66 @@ type Prepared struct {
 }
 
 var identifier = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,63}$`)
+
+// loadedProfile is a validated profile plus, when it came from a .ssb bundle,
+// the provenance and driver-payload facts Prepare needs to package it.
+type loadedProfile struct {
+	Profile    install.Profile
+	Source     string // "json" or "bundle"
+	SourceHost string // bundle.Manifest.SourceHost; "" for a plain profile
+	HasDriver  bool   // bundle.Manifest.Driver != nil
+	BundleHash string // sha256 of the .ssb file itself; "" unless HasDriver
+}
+
+// loadProfileSource accepts either a plain administrator-prevalidated profile
+// JSON or a .ssb bundle written by `spoolsmith copy`. Dispatch is by
+// extension, matching how the CLI and GUI already recognize a bundle
+// elsewhere. Both paths return an install.Profile that has already passed
+// Profile.Validate() — a bundle's embedded profile is validated identically,
+// both when the bundle was written (bundle.Write calls Manifest.Validate)
+// and again here on open; it carries no weaker evidence requirement than a
+// standalone profile JSON.
+func loadProfileSource(path string) (loadedProfile, error) {
+	if strings.EqualFold(filepath.Ext(path), ".ssb") {
+		b, err := bundle.Open(path)
+		if err != nil {
+			return loadedProfile{}, err
+		}
+		defer b.Close()
+		if b.Manifest.Profile.DriverPackage != nil {
+			return loadedProfile{}, errors.New("intune: this bundle's profile also names a local vendor driver archive, which the bundle does not carry; recapture without a referenced archive or package the plain profile JSON instead")
+		}
+		result := loadedProfile{Profile: b.Manifest.Profile, Source: "bundle", SourceHost: b.Manifest.SourceHost, HasDriver: b.Manifest.Driver != nil}
+		if result.HasDriver {
+			hash, err := HashBinary(path)
+			if err != nil {
+				return loadedProfile{}, err
+			}
+			result.BundleHash = hash
+		}
+		return result, nil
+	}
+	p, err := install.LoadProfile(path)
+	if err != nil {
+		return loadedProfile{}, err
+	}
+	if err = p.ResolvePackagePath(path); err != nil {
+		return loadedProfile{}, err
+	}
+	return loadedProfile{Profile: p, Source: "json"}, nil
+}
+
+// HasLocalPayload reports whether the profile or bundle at path already
+// carries a driver payload (a vendor archive or a bundle-exported driver
+// store), so callers can decide whether to ask for the separately managed
+// registered-driver prerequisite without duplicating the .json/.ssb dispatch.
+func HasLocalPayload(path string) (bool, error) {
+	loaded, err := loadProfileSource(path)
+	if err != nil {
+		return false, err
+	}
+	return loaded.Profile.DriverPackage != nil || loaded.HasDriver, nil
+}
 
 func Prepare(o Options) (*Prepared, error) {
 	if !identifier.MatchString(o.ID) {
@@ -93,17 +165,16 @@ func Prepare(o Options) (*Prepared, error) {
 			return nil, errors.New("app metadata must be at most 4096 bytes without control characters")
 		}
 	}
-	p, err := install.LoadProfile(o.ProfilePath)
+	loaded, err := loadProfileSource(o.ProfilePath)
 	if err != nil {
 		return nil, err
 	}
-	if err = p.ResolvePackagePath(o.ProfilePath); err != nil {
-		return nil, err
-	}
-	if p.DriverPackage == nil && !o.DriverPrerequisite {
+	p := loaded.Profile
+	hasLocalPayload := p.DriverPackage != nil || loaded.HasDriver
+	if !hasLocalPayload && !o.DriverPrerequisite {
 		return nil, errors.New("profile has no supported local payload: explicitly accept the separately managed registered-driver prerequisite")
 	}
-	if p.DriverPackage != nil && o.DriverPrerequisite {
+	if hasLocalPayload && o.DriverPrerequisite {
 		return nil, errors.New("choose a local payload or a separately managed driver prerequisite, not both")
 	}
 	binaryHash := strings.ToLower(o.BinarySHA256)
@@ -149,6 +220,12 @@ func Prepare(o Options) (*Prepared, error) {
 		sources["driver.exe"] = p.DriverPackage.Archive
 		p.DriverPackage = &install.PackageSelection{ID: p.DriverPackage.ID, Archive: "driver.exe"}
 	}
+	m.ProfileSource = loaded.Source
+	m.BundleSourceHost = loaded.SourceHost
+	if loaded.HasDriver {
+		m.BundleSHA256 = loaded.BundleHash
+		sources["bundle.ssb"] = o.ProfilePath
+	}
 	profileBytes, err := json.MarshalIndent(p, "", "  ")
 	if err != nil {
 		return nil, err
@@ -168,6 +245,9 @@ func Prepare(o Options) (*Prepared, error) {
 	m.Files = []string{"deployment.json", "profile.json", "spoolsmith.exe", "install.ps1", "uninstall.ps1", "detect.ps1", "runtime.ps1", "README.txt"}
 	if p.DriverPackage != nil {
 		m.Files = append(m.Files, "driver.exe")
+	}
+	if loaded.HasDriver {
+		m.Files = append(m.Files, "bundle.ssb")
 	}
 	manifestBytes, _ := json.MarshalIndent(m, "", "  ")
 	files := map[string][]byte{"profile.json": profileBytes, "deployment.json": append(manifestBytes, '\n')}
@@ -212,6 +292,9 @@ func (p *Prepared) Export(destination string) error {
 		expected := p.Manifest.BinarySHA256
 		if name == "driver.exe" {
 			expected = p.Manifest.DriverSHA256
+		}
+		if name == "bundle.ssb" {
+			expected = p.Manifest.BundleSHA256
 		}
 		if err := copyPinned(source, filepath.Join(destination, name), expected); err != nil {
 			return err

@@ -19,7 +19,7 @@ func (e *offlineEnvironment) LocalConfiguration(context.Context, string) (LocalC
 	return e.actual, e.readErr
 }
 func matchingLocal(p Profile) LocalConfiguration {
-	return LocalConfiguration{QueuePresent: true, PrinterName: p.PrinterName, DriverName: p.DriverName, DriverPresent: true, PortName: "SpoolSmith-" + p.Target, PortPresent: true, Address: p.Target, Protocol: 1, PortNumber: 9100}
+	return LocalConfiguration{QueuePresent: true, PrinterName: p.PrinterName, DriverName: p.DriverName, DriverPresent: true, PortName: "RAW9100-" + p.Target, PortPresent: true, Address: p.Target, Protocol: 1, PortNumber: 9100}
 }
 func TestOfflineProvisioningNeverProbesAndVerifies(t *testing.T) {
 	p := sampleProfile()

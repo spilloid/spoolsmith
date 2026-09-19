@@ -9,6 +9,7 @@ Driver: {{.Profile.DriverName}}
 Offline provisioning: {{.Offline}}
 Separately managed registered driver required: {{.DriverPrerequisite}}
 Adopt an existing exactly matching queue: {{.Adopt}}
+Profile source: {{.ProfileSource}}{{if .BundleSourceHost}} (SpoolSmith bundle exported from {{.BundleSourceHost}}){{end}}
 
 Review deployment.json, profile.json and all PowerShell scripts before delivery.
 Pin this locally built CLI by SHA-256: {{.BinarySHA256}}
@@ -50,8 +51,19 @@ manual reviewed cleanup.
 
 Provisioning is not a print test. Offline skips live identity verification and
 requires a profile prevalidated by an administrator. Printing requires connectivity.
-Drivers must already be registered or supplied through the supported pinned local
-archive recipe. Arbitrary vendor installers and driver downloads are unsupported.
+Drivers must already be registered, supplied through the supported pinned local
+archive recipe, or carried in this package's bundle.ssb (see below). Arbitrary
+vendor installers and driver downloads are unsupported either way.
+{{if .BundleSHA256}}
+This package's driver payload came from a SpoolSmith bundle (.ssb), not a vendor
+archive. Its trust chain is narrower and must not be described as equivalent to
+the pinned-vendor-archive path: every payload byte is hash-verified against the
+bundle manifest, and install requires a valid Windows catalog (.cat) Authenticode
+signature on the payload before pnputil stages it -- there is no vendor hash pin
+because the payload came from an operator's own driver store, not a vendor
+download. bundle.ssb is pinned by SHA-256 ({{.BundleSHA256}}) exactly like
+driver.exe would be for the vendor-archive path.
+{{end}}
 
 Full tutorial and pilot checklist: docs/intune-deployment.md in the source repo.
 Windows/SYSTEM/Intune pilot validation is required before production deployment.

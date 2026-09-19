@@ -99,76 +99,43 @@ func runClone(ctx context.Context, args []string, input io.Reader, stdout, stder
 	return encodeSuccess(stdout, stderr, "copy", manifest)
 }
 
-// copyAllResult reports what `copy --all` did with every installed queue.
-type copyAllResult struct {
-	OutputDir string         `json:"output_dir"`
-	Requested int            `json:"requested"`
-	Written   int            `json:"written"`
-	Skipped   int            `json:"skipped"`
-	Failed    int            `json:"failed"`
-	Queues    []copyAllQueue `json:"queues"`
-}
+// Keep the command's result names for callers and tests while sharing the
+// result schema and execution with the desktop app.
+type copyAllResult = bundle.AllResult
+type copyAllQueue = bundle.QueueResult
 
-// copyAllQueue is one queue's outcome within a `copy --all` run.
-type copyAllQueue struct {
-	Name   string `json:"name"`
-	Status string `json:"status"` // "written", "skipped", or "error"
-	Bundle string `json:"bundle,omitempty"`
-	Reason string `json:"reason,omitempty"`
-}
-
-// runCloneAll bundles every copyable queue on this machine into outputDir,
-// one file per queue, reusing the same bundle.Create the single-queue path
-// uses. Unlike a single copy, this is a set of independent, non-mutating
-// exports rather than one transaction: a queue that can't be copied, or
-// fails partway (an admin-rights or driver-store error), is reported and
-// skipped rather than aborting the rest of the batch -- an MSP tech running
-// this over thirty queues should not lose the other twenty-nine to one bad
-// one.
 func runCloneAll(ctx context.Context, outputDir string, includeDriver bool, note string, stdout, stderr io.Writer, app application) int {
-	queues, err := install.ListPrinters(ctx, app.environment)
-	if err != nil {
+	result, err := bundle.CreateAll(ctx, app.environment, bundle.Collector(app.collect), bundle.AllOptions{
+		OutputDir: outputDir, IncludeDriver: includeDriver, Note: note,
+		CreatedBy: "spoolsmith " + versionString(), SourceHost: hostName(),
+		Progress: func(queueName, step string) { fmt.Fprintf(stderr, "  %s: %s\n", queueName, step) },
+	})
+	if err != nil && len(result.Queues) == 0 {
 		return commandError(stdout, stderr, "copy", err, int(install.ExitGeneralError))
 	}
-	if len(queues) == 0 {
-		return commandError(stdout, stderr, "copy", errors.New("this PC has no printer queues installed"), int(install.ExitGeneralError))
-	}
-	if err := os.MkdirAll(outputDir, 0o700); err != nil {
-		return commandError(stdout, stderr, "copy", fmt.Errorf("copy --all: %w", err), int(install.ExitGeneralError))
-	}
-
-	result := copyAllResult{OutputDir: outputDir, Requested: len(queues)}
-	for _, queue := range queues {
-		if reason := queue.CopyBlockedReason(); reason != "" {
-			fmt.Fprintf(stderr, "! %s: skipped -- %s\n", queue.PrinterName, reason)
-			result.Skipped++
-			result.Queues = append(result.Queues, copyAllQueue{Name: queue.PrinterName, Status: "skipped", Reason: reason})
-			continue
+	for _, queue := range result.Queues {
+		switch queue.Status {
+		case "written":
+			fmt.Fprintf(stderr, "Wrote %s -> %s\n", queue.Name, queue.Bundle)
+		case "skipped":
+			fmt.Fprintf(stderr, "! %s: skipped -- %s\n", queue.Name, queue.Reason)
+		case "error":
+			fmt.Fprintf(stderr, "x %s: %s\n", queue.Name, queue.Reason)
 		}
-		path := filepath.Join(outputDir, defaultBundleName(queue.PrinterName))
-		_, err := bundle.Create(ctx, app.environment, bundle.Collector(app.collect), bundle.CreateOptions{
-			QueueName:     queue.PrinterName,
-			Path:          path,
-			Note:          note,
-			IncludeDriver: includeDriver,
-			CreatedBy:     "spoolsmith " + versionString(),
-			SourceHost:    hostName(),
-			Progress:      func(step string) { fmt.Fprintf(stderr, "  %s: %s\n", queue.PrinterName, step) },
-		})
-		if err != nil {
-			fmt.Fprintf(stderr, "x %s: %v\n", queue.PrinterName, err)
-			result.Failed++
-			result.Queues = append(result.Queues, copyAllQueue{Name: queue.PrinterName, Status: "error", Reason: err.Error()})
-			continue
-		}
-		fmt.Fprintf(stderr, "Wrote %s -> %s\n", queue.PrinterName, path)
-		result.Written++
-		result.Queues = append(result.Queues, copyAllQueue{Name: queue.PrinterName, Status: "written", Bundle: path})
 	}
 	fmt.Fprintf(stderr, "Wrote %d of %d queues to %s (%d skipped, %d failed).\n", result.Written, result.Requested, outputDir, result.Skipped, result.Failed)
+	if result.Written > 0 {
+		fmt.Fprintln(stderr, "Take the .ssb files to the other PC. Preview each with: spoolsmith apply <bundle-file> --dry-run")
+		if !includeDriver {
+			fmt.Fprintln(stderr, "No driver payloads: the target machine must already have these drivers registered. Re-run with --include-driver into a new folder to carry them.")
+		}
+	}
 
 	code := install.ExitSuccess
-	if result.Written == 0 {
+	if err != nil {
+		fmt.Fprintf(stderr, "spoolsmith copy --all: %v\n", err)
+		code = install.ExitGeneralError
+	} else if result.Written == 0 {
 		fmt.Fprintln(stderr, "spoolsmith copy --all: no queues were copied")
 		code = install.ExitGeneralError
 	}
@@ -300,26 +267,8 @@ func hostName() string {
 	return name
 }
 
-// defaultBundleName derives a bundle file name from the queue being copied, so
-// the common case needs no path at all.
-//
-// Two differently punctuated queue names can still derive the same file name.
-// That is safe rather than merely tolerated: bundle.Write refuses to overwrite
-// an existing file, so a collision stops with an error naming the path instead
-// of quietly replacing a bundle the operator still needed.
+// defaultBundleName preserves the CLI helper while both front ends use the
+// shared bundle naming rule.
 func defaultBundleName(queueName string) string {
-	var builder strings.Builder
-	for _, r := range queueName {
-		switch {
-		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '-', r == '_':
-			builder.WriteRune(r)
-		default:
-			builder.WriteRune('-')
-		}
-	}
-	name := strings.Trim(builder.String(), "-")
-	if name == "" {
-		name = "printer"
-	}
-	return name + ".ssb"
+	return bundle.FileName(queueName)
 }

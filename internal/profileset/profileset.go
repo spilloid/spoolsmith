@@ -59,26 +59,16 @@ func (c Collection) validate() error {
 	return nil
 }
 
-// Export collects every top-level profile, including evidence and package references.
-// It refuses invalid profiles and never replaces an existing export.
-func Export(directory, path string) (int, error) {
-	// A collection is not a single profile. Writing it among the profiles would
-	// poison both the saved-setup list and every subsequent export. SameFile
-	// also covers case aliases on Windows and symlinked directories.
-	source, err := os.Stat(directory)
+// PrepareExport reads and validates every top-level profile without writing files.
+// The prepared transfer retains exactly the profiles shown during review.
+func PrepareExport(directory, path string) (*Transfer, error) {
+	transfer, err := (&Transfer{operation: "export-all", source: directory}).WithDestination(path)
 	if err != nil {
-		return 0, err
-	}
-	destination, err := os.Stat(filepath.Dir(path))
-	if err != nil {
-		return 0, err
-	}
-	if os.SameFile(source, destination) {
-		return 0, fmt.Errorf("saved setups: choose an export destination outside the saved-setup folder")
+		return nil, err
 	}
 	entries, err := os.ReadDir(directory)
 	if err != nil {
-		return 0, err
+		return nil, fmt.Errorf("saved setups: cannot read profile folder %s; choose a folder containing saved setups: %w", directory, err)
 	}
 	c := Collection{Version: 1, Profiles: []Entry{}}
 	for _, e := range entries {
@@ -86,23 +76,44 @@ func Export(directory, path string) (int, error) {
 			continue
 		}
 		if e.Type()&os.ModeSymlink != 0 {
-			return 0, fmt.Errorf("saved setups: symbolic link %q is not a profile", e.Name())
+			return nil, fmt.Errorf("saved setups: symbolic link %q is not a profile", e.Name())
 		}
 		p, err := install.LoadProfile(filepath.Join(directory, e.Name()))
 		if err != nil {
-			return 0, fmt.Errorf("%s: %w", e.Name(), err)
+			return nil, fmt.Errorf("%s: %w", e.Name(), err)
 		}
 		c.Profiles = append(c.Profiles, Entry{File: e.Name(), Profile: p})
 	}
+	if len(c.Profiles) == 0 {
+		return nil, fmt.Errorf("saved setups: no JSON profiles in %s; choose a folder containing saved setups or save a printer first", directory)
+	}
 	if err := c.validate(); err != nil {
-		return 0, err
+		return nil, err
 	}
 	data, err := json.MarshalIndent(c, "", "  ")
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
 	if len(data)+1 > maxSize {
-		return 0, fmt.Errorf("saved setups: export exceeds 16 MiB")
+		return nil, fmt.Errorf("saved setups: export exceeds 16 MiB")
+	}
+	transfer.collection = c
+	return transfer, nil
+}
+
+// Export preserves the existing collection format and never replaces a file.
+func Export(directory, path string) (int, error) {
+	transfer, err := PrepareExport(directory, path)
+	if err != nil {
+		return 0, err
+	}
+	return transfer.Execute()
+}
+
+func exportCollection(c Collection, path string) (int, error) {
+	data, err := json.MarshalIndent(c, "", "  ")
+	if err != nil {
+		return 0, err
 	}
 	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
 	if err != nil {
@@ -151,23 +162,14 @@ func Load(path string) (Collection, error) {
 // Import preserves filenames and refuses all collisions, including case-only ones.
 // On a write failure it removes only files created by this attempt.
 func Import(path, directory string) (int, error) {
-	c, err := Load(path)
+	transfer, err := PrepareImport(path, directory)
 	if err != nil {
 		return 0, err
 	}
-	existing, err := os.ReadDir(directory)
-	if err != nil && !os.IsNotExist(err) {
-		return 0, err
-	}
-	names := map[string]bool{}
-	for _, e := range existing {
-		names[strings.ToLower(e.Name())] = true
-	}
-	for _, e := range c.Profiles {
-		if names[strings.ToLower(e.File)] {
-			return 0, fmt.Errorf("saved setups: %s already exists; import into another folder", e.File)
-		}
-	}
+	return transfer.Execute()
+}
+
+func importCollection(c Collection, directory string) (int, error) {
 	if err := os.MkdirAll(directory, 0700); err != nil {
 		return 0, err
 	}

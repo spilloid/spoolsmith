@@ -6,7 +6,7 @@ import (
 )
 
 func TestBuildRepointPlanKeepsTheQueueAndMovesThePort(t *testing.T) {
-	current := PrinterConfiguration{PrinterName: "Accounting", PortName: "SpoolSmith-192.0.2.10", DriverName: "Brother HL-L2315D series"}
+	current := PrinterConfiguration{PrinterName: "Accounting", PortName: "RAW9100-192.0.2.10", DriverName: "Brother HL-L2315D series"}
 	plan, err := BuildRepointPlan(current, "192.0.2.50")
 	if err != nil {
 		t.Fatal(err)
@@ -17,7 +17,7 @@ func TestBuildRepointPlanKeepsTheQueueAndMovesThePort(t *testing.T) {
 	if plan.DriverName != "Brother HL-L2315D series" {
 		t.Fatalf("repoint changed the driver: %q", plan.DriverName)
 	}
-	if plan.PortName != "SpoolSmith-192.0.2.50" || plan.IPAddress != "192.0.2.50" {
+	if plan.PortName != "RAW9100-192.0.2.50" || plan.IPAddress != "192.0.2.50" {
 		t.Fatalf("repoint did not move the port: %q -> %q", plan.PortName, plan.IPAddress)
 	}
 	if !plan.UpdateExisting {
@@ -36,7 +36,7 @@ func TestBuildRepointPlanKeepsTheQueueAndMovesThePort(t *testing.T) {
 }
 
 func TestBuildRepointPlanRefusesNoOpAndBadInput(t *testing.T) {
-	base := PrinterConfiguration{PrinterName: "Accounting", PortName: "SpoolSmith-192.0.2.10", DriverName: "Brother HL-L2315D series"}
+	base := PrinterConfiguration{PrinterName: "Accounting", PortName: "RAW9100-192.0.2.10", DriverName: "Brother HL-L2315D series"}
 	tests := []struct {
 		name    string
 		current PrinterConfiguration

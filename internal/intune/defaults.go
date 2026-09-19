@@ -5,19 +5,19 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-
-	"github.com/spilloid/spoolsmith/internal/install"
 )
 
 // ProfileDefaults suggests presentation and identity for a new deployment. The
 // queue name alone determines identity: changing its address, driver or profile
 // filename must not silently create a different deployment. Existing deployments
-// with a custom ID must continue to use that ID.
+// with a custom ID must continue to use that ID. path may be a profile JSON or
+// a .ssb bundle; both carry the same install.Profile shape.
 func ProfileDefaults(path string) (Options, error) {
-	p, err := install.LoadProfile(path)
+	loaded, err := loadProfileSource(path)
 	if err != nil {
 		return Options{}, err
 	}
+	p := loaded.Profile
 	var slug strings.Builder
 	for _, r := range strings.ToLower(p.PrinterName) {
 		if r >= 'a' && r <= 'z' || r >= '0' && r <= '9' {

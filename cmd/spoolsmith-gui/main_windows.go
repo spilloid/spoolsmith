@@ -112,7 +112,7 @@ func applyStyle(a *app) {
 
 func (a *app) showDetails(title, text string) {
 	var dialog *walk.Dialog
-	var closeButton *walk.PushButton
+	var closeButton, copyButton *walk.PushButton
 	err := (Dialog{
 		AssignTo: &dialog, Title: title,
 		MinSize: Size{Width: 600, Height: 400}, Size: Size{Width: 800, Height: 560}, Layout: pagePadding(),
@@ -120,6 +120,13 @@ func (a *app) showDetails(title, text string) {
 		Children: []Widget{
 			TextEdit{Text: text, ReadOnly: true, VScroll: true, HScroll: true, Font: Font{Family: "Consolas", PointSize: 10}},
 			Composite{Layout: row(), Children: []Widget{
+				PushButton{AssignTo: &copyButton, Text: "Copy", OnClicked: func() {
+					if err := walk.Clipboard().SetText(text); err != nil {
+						showErr(dialog, "Copy details", err)
+					} else {
+						copyButton.SetText("Copied")
+					}
+				}},
 				HSpacer{}, PushButton{AssignTo: &closeButton, Text: "Close", OnClicked: func() { dialog.Accept() }},
 			}},
 		},
@@ -133,7 +140,7 @@ func (a *app) showDetails(title, text string) {
 
 func (a *app) onPlanDetails() {
 	if a.previewJSON != "" {
-		a.showDetails("Full plan and preflight", a.previewJSON)
+		a.showDetails("Full plan and result / JSON", a.previewJSON)
 	}
 }
 

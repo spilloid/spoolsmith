@@ -46,6 +46,7 @@ try {
         New-Item -ItemType Directory -Path $stage | Out-Null
         foreach ($file in @('deployment.json','profile.json','spoolsmith.exe','runtime.ps1','uninstall.ps1')) { Copy-Item -LiteralPath (Join-Path $PSScriptRoot $file) -Destination (Join-Path $stage $file) }
         if ($manifest.driver_sha256) { Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'driver.exe') -Destination (Join-Path $stage 'driver.exe') }
+        if ($manifest.bundle_sha256) { Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'bundle.ssb') -Destination (Join-Path $stage 'bundle.ssb') }
         Assert-Payload $stage $manifest
         Move-Item -LiteralPath $stage -Destination $destination
     }

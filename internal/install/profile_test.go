@@ -172,7 +172,7 @@ func TestProfileRemovalRequiresMatchingEndpointAndDriver(t *testing.T) {
 	p := sampleProfile()
 	for _, configuration := range []PrinterConfiguration{
 		{PrinterName: p.PrinterName, PortName: "Other port", DriverName: p.DriverName},
-		{PrinterName: p.PrinterName, PortName: "SpoolSmith-" + p.Target, DriverName: "Other driver"},
+		{PrinterName: p.PrinterName, PortName: "RAW9100-" + p.Target, DriverName: "Other driver"},
 	} {
 		env := workflowEnvironment(true, true)
 		env.configuration = configuration

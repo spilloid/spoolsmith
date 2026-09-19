@@ -56,7 +56,7 @@ func CheckStatus(ctx context.Context, env Environment, profile Profile) (LocalSt
 		{actual.QueuePresent && strings.EqualFold(actual.PrinterName, profile.PrinterName), "queue is absent or name differs"},
 		{actual.DriverPresent, "queue driver is not registered"},
 		{strings.EqualFold(actual.DriverName, profile.DriverName), "driver differs"},
-		{actual.PortPresent && strings.EqualFold(actual.PortName, "SpoolSmith-"+net.ParseIP(profile.Target).String()), "managed port is absent or differs"},
+		{actual.PortPresent && strings.EqualFold(actual.PortName, managedPortPrefix+net.ParseIP(profile.Target).String()), "managed port is absent or differs"},
 		{net.ParseIP(profile.Target).Equal(net.ParseIP(actual.Address)), "target address differs"},
 		{actual.Protocol == 1, "port protocol is not RAW"},
 		{actual.PortNumber == 9100, "port number is not 9100"},

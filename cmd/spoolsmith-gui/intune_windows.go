@@ -120,8 +120,10 @@ func (a *app) onIntuneWizard() {
 			}
 		}, Pages: []TabPage{
 			{Title: "1. Package settings", Layout: VBox{Spacing: 8}, Children: []Widget{
-				Label{Text: "Choose a validated profile and approved Windows x64 CLI. Review the package before exporting."},
-				Composite{Layout: HBox{}, Children: []Widget{LineEdit{AssignTo: &profile, CueBanner: "Profile JSON file", Accessibility: name("intune-profile"), OnTextChanged: profileChanged}, PushButton{Text: "Browse profile...", OnClicked: func() { browse(&profile, "JSON files (*.json)|*.json") }}}},
+				Label{Text: "Choose a validated profile or SpoolSmith bundle (.ssb) and approved Windows x64 CLI. Review the package before exporting."},
+				Composite{Layout: HBox{}, Children: []Widget{LineEdit{AssignTo: &profile, CueBanner: "Profile JSON or SpoolSmith bundle (.ssb) file", Accessibility: name("intune-profile"), OnTextChanged: profileChanged}, PushButton{Text: "Browse profile...", OnClicked: func() {
+					browse(&profile, "Profile or bundle (*.json;*.ssb)|*.json;*.ssb|JSON files (*.json)|*.json|SpoolSmith bundle (*.ssb)|*.ssb|All files (*.*)|*.*")
+				}}}},
 				Composite{Layout: HBox{}, Children: []Widget{LineEdit{AssignTo: &binary, CueBanner: "SpoolSmith CLI .exe", Accessibility: name("intune-binary"), OnTextChanged: binaryChanged}, PushButton{Text: "Browse CLI...", OnClicked: func() { browse(&binary, "Windows executable (*.exe)|*.exe") }}}},
 				Label{Text: "The CLI hash is calculated automatically and included in review. Use a build approved by your organization."},
 				Composite{Layout: Grid{Columns: 2, Spacing: 8}, Children: []Widget{
@@ -130,7 +132,7 @@ func (a *app) onIntuneWizard() {
 				}},
 				Label{Text: "An unused folder beside the profile is suggested. You can edit the path; existing folders are never overwritten."},
 				CheckBox{AssignTo: &prerequisite, Text: "Driver is managed separately and will be registered before installation", OnCheckedChanged: invalidate},
-				Label{Text: "Leave unchecked to include the profile's supported local archive. A profile without an archive requires this choice."},
+				Label{Text: "Leave unchecked to include the profile's supported local archive or the selected bundle's driver payload. A profile or bundle without one requires this choice."},
 				CheckBox{AssignTo: &advanced, Text: "Advanced settings (updates, metadata and policy)", OnCheckedChanged: func() {
 					if advancedPanel != nil {
 						advancedPanel.SetVisible(advanced.Checked())
