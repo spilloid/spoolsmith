@@ -56,8 +56,13 @@ sufficient for a plain Go CLI with zero CGO/Node/desktop-framework dependencies.
 ## Explicitly out of scope
 
 - No macOS/Linux build or packaging steps (structure only, per above).
-- No code signing — netviz's own product state file records that as unpriced, unresolved
-  procurement work; do not invent a signing step here.
+- ~~No code signing — netviz's own product state file records that as unpriced, unresolved
+  procurement work; do not invent a signing step here.~~ **Superseded by operator decision:**
+  releases are now Authenticode-signed with Azure Artifact Signing, and the release workflow
+  fails rather than publishing unsigned binaries. The procurement question this deferred is
+  answered — see `docs/code-signing.md`. The rule that a release must be reproducible by hand
+  without the pipeline still holds, and `scripts/sign-windows.ps1` / `build-release.ps1 -Sign`
+  are how signing satisfies it.
 - No change to any file outside `.github/workflows/`, `scripts/`, and this spec.
 - Do not create a git tag or trigger an actual GitHub Release — that's a separate, later,
   explicit action, not part of writing the workflow files.

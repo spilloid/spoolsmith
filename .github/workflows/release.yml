@@ -13,6 +13,8 @@ on:
 
 permissions:
   contents: write
+  # Required for the OIDC federated credential the signing step authenticates with.
+  id-token: write
 
 jobs:
   build:
@@ -34,18 +36,86 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: "1.24.x"
-      - name: Build and package tagged release
+
+      # Fails before anything is built rather than part-way through, and refuses
+      # to fall back to an unsigned release if signing is misconfigured.
+      - name: Check release tag and signing configuration
         id: meta
         shell: pwsh
         env:
           RELEASE_TAG: ${{ inputs.tag || github.event.release.tag_name }}
+          SIGNING_ENDPOINT: ${{ vars.SIGNING_ENDPOINT }}
+          SIGNING_ACCOUNT: ${{ vars.SIGNING_ACCOUNT }}
+          SIGNING_PROFILE: ${{ vars.SIGNING_PROFILE }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
         run: |
           $tag = $env:RELEASE_TAG
           if ($tag -notmatch '^v[0-9]+\.[0-9]+\.[0-9]+$') { throw 'Invalid release tag' }
           if ((Get-Content VERSION -Raw).Trim() -ne $tag) { throw 'VERSION does not match the tag' }
-          ./scripts/build-release.ps1 -Tag $tag
+          $missing = @('SIGNING_ENDPOINT', 'SIGNING_ACCOUNT', 'SIGNING_PROFILE',
+                       'AZURE_CLIENT_ID', 'AZURE_TENANT_ID', 'AZURE_SUBSCRIPTION_ID') |
+            Where-Object { [string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($_)) }
+          if ($missing) {
+            throw "Code signing is not configured; missing: $($missing -join ', '). " +
+                  'Set them under Settings > Secrets and variables > Actions. ' +
+                  'Setup steps are in docs/code-signing.md. Releases are never published unsigned.'
+          }
           "tag=$tag" >> $env:GITHUB_OUTPUT
           "asset=dist/spoolsmith-$tag-windows-amd64.zip" >> $env:GITHUB_OUTPUT
+
+      # Split from packaging so the binaries can be signed before they go in the
+      # zip — the published SHA-256 has to cover the signed artifact.
+      - name: Build binaries
+        shell: pwsh
+        run: ./scripts/build-release.ps1 -Tag ${{ steps.meta.outputs.tag }} -Stage build
+
+      - name: Azure login
+        uses: azure/login@v3
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Sign binaries
+        uses: azure/artifact-signing-action@v2
+        with:
+          endpoint: ${{ vars.SIGNING_ENDPOINT }}
+          signing-account-name: ${{ vars.SIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ vars.SIGNING_PROFILE }}
+          files-folder: ${{ github.workspace }}\dist
+          files-folder-filter: exe
+          file-digest: SHA256
+          # Signing certificates are valid for three days; without this
+          # countersignature the release stops verifying almost immediately.
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+          # Go straight to the federated token azure/login put in the environment
+          # instead of walking the other DefaultAzureCredential sources first.
+          exclude-environment-credential: false
+          exclude-workload-identity-credential: false
+          exclude-managed-identity-credential: true
+          exclude-shared-token-cache-credential: true
+          exclude-visual-studio-credential: true
+          exclude-visual-studio-code-credential: true
+          exclude-azure-cli-credential: true
+          exclude-azure-powershell-credential: true
+          exclude-azure-developer-cli-credential: true
+          exclude-interactive-browser-credential: true
+
+      # Fails the release if a binary came back unsigned or without a timestamp,
+      # rather than discovering it once users cannot launch the download.
+      - name: Verify signatures
+        shell: pwsh
+        env:
+          EXPECTED_SUBJECT: ${{ vars.SIGNING_EXPECTED_SUBJECT }}
+        run: ./scripts/verify-signature.ps1 -Files dist/spoolsmith.exe, dist/spoolsmith-gui.exe -ExpectedSubject $env:EXPECTED_SUBJECT
+
+      - name: Package signed release
+        shell: pwsh
+        run: ./scripts/build-release.ps1 -Tag ${{ steps.meta.outputs.tag }} -Stage package
+
       - name: Upload release asset
         uses: actions/github-script@v7
         env:
