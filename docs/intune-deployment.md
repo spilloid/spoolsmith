@@ -180,16 +180,31 @@ and must be replaced with an actual captured, validated profile before deploymen
 ## Prepare and upload
 
 Download Microsoft's current [Win32 Content Prep Tool](https://github.com/microsoft/Microsoft-Win32-Content-Prep-Tool)
-and keep it outside the source bundle directory. Run:
+and put `IntuneWinAppUtil.exe` in the same folder as `spoolsmith.exe` and
+`spoolsmith-gui.exe`. That is all the setup there is: `intune build`,
+`intune wizard` and the desktop wizard all find it there and, after exporting,
+create `install.intunewin` in a new `<export folder>-intunewin` folder beside
+the export. Nothing is searched for other than that one file name in that one
+folder, so what runs is always a file you placed there or chose yourself.
+
+To use a copy elsewhere, or a different output folder, pass
+`--content-prep-tool <path>` and/or `--content-prep-output <separate-directory>`
+to `intune build` (either may be given alone), type the path in the wizard's
+advanced settings, or use the tool and output fields on the desktop wizard's
+review page. `--no-content-prep` exports the bundle only, even when the tool is
+present. A missing tool or an output folder inside the export is refused before
+anything is exported.
+
+If preparation fails, the exported folder is kept intact and the failure is
+reported with the tool's own output; the desktop wizard's **Create .intunewin
+from the exported folder** retries without exporting again. SpoolSmith reports
+success only when `install.intunewin` actually exists. Without the tool
+SpoolSmith exports the source and says so; it never claims to have created an
+`.intunewin` file. You can always run Microsoft's tool yourself:
 
 ```powershell
 .\IntuneWinAppUtil.exe -c "<exported-folder>" -s install.ps1 -o .\intunewin -q
 ```
-
-Alternatively pass `--content-prep-tool <path>` and
-`--content-prep-output <separate-directory>` to `intune build`. Without those
-options SpoolSmith exports the source and explicitly reports the preparation
-prerequisite; it does not claim to have created an `.intunewin` file.
 
 Create a Windows app (Win32) in Intune and upload the resulting package.
 Copy the exact commands from the exported `README.txt` or `deployment.json`.

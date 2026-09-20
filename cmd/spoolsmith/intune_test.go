@@ -200,7 +200,7 @@ func TestIntunePackagingUX(t *testing.T) {
 	t.Run("wizard advanced settings", func(t *testing.T) {
 		profile, _ := fixture(t)
 		output := filepath.Join(t.TempDir(), "custom")
-		input := strings.Join([]string{profile, binaryPath, "yes", "yes", "existing-id", "2", "Custom", "West", "Description", "", "offline", "yes", output, "export", ""}, "\n")
+		input := strings.Join([]string{profile, binaryPath, "yes", "yes", "existing-id", "2", "Custom", "West", "Description", "", "offline", "yes", output, "", "export", ""}, "\n")
 		code, stdout, stderr := runCommand([]string{"wizard"}, input)
 		var m intune.Manifest
 		if err := json.Unmarshal([]byte(stdout), &m); err != nil || code != 0 || m.ID != "existing-id" || m.Revision != 2 || !m.Offline || !m.Adopt || m.DisplayName != "Custom" {

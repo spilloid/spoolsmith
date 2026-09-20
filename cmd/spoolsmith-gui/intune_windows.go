@@ -3,10 +3,15 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
+	"time"
 
 	"github.com/spilloid/spoolsmith/internal/intune"
 	"github.com/tailscale/walk"
@@ -21,15 +26,37 @@ func (a *app) onIntuneWizard() {
 	var advancedPanel *walk.Composite
 	var pages *walk.TabWidget
 	var preview *walk.TextEdit
-	var exportButton *walk.PushButton
+	var exportButton, prepButton *walk.PushButton
+	var prepTool, prepOut *walk.LineEdit
+	var prepToolBrowse, prepOutBrowse *walk.PushButton
+	var prepStatus *walk.Label
 	var prepared *intune.Prepared
-	var reviewedOutput, suggestedOutput string
+	var reviewedOutput, suggestedOutput, suggestedPrepOutput, exportedFolder string
+	var stopPrep context.CancelFunc
+	running := false
 	var previous intune.Options
+	// Microsoft's tool is optional, but when the administrator already put it
+	// beside this executable there is nothing to ask: offer it filled in.
+	var exeDir string
+	if exe, err := os.Executable(); err == nil {
+		exeDir = filepath.Dir(exe)
+	}
+	foundTool := intune.FindContentPrepTool(exeDir)
 	invalidate := func() {
 		prepared = nil
 		if exportButton != nil {
 			exportButton.SetEnabled(false)
 		}
+	}
+	// setBusy locks the page while Microsoft's tool runs, and otherwise restores
+	// each button to what the current review and export state allow.
+	setBusy := func(busy bool) {
+		running = busy
+		for _, control := range []walk.Widget{prepTool, prepOut, prepToolBrowse, prepOutBrowse} {
+			control.SetEnabled(!busy)
+		}
+		exportButton.SetEnabled(!busy && prepared != nil)
+		prepButton.SetEnabled(!busy && exportedFolder != "")
 	}
 	suggestOutput := func() {
 		invalidate()
@@ -107,7 +134,51 @@ func (a *app) onIntuneWizard() {
 		preview.SetText(lines("Export folder: " + reviewedOutput + "\n\n" + string(data)))
 		pages.SetCurrentIndex(1)
 		prepared = candidate
-		exportButton.SetEnabled(true)
+		// A new review is a new export: the previous folder is no longer what this
+		// page is about, and its package output belongs beside the new one.
+		exportedFolder = ""
+		prepStatus.SetText("")
+		if next := intune.SuggestPrepOutput(reviewedOutput); prepOut.Text() == "" || prepOut.Text() == suggestedPrepOutput {
+			prepOut.SetText(next)
+			suggestedPrepOutput = next
+		}
+		setBusy(false)
+	}
+	// runPrep packages an exported folder with Microsoft's own tool. It runs off
+	// the UI thread and can be stopped by closing the dialog; the tool is killed
+	// with its context, and the exported folder is left exactly as it was.
+	runPrep := func(source string) {
+		tool, out := strings.TrimSpace(prepTool.Text()), strings.TrimSpace(prepOut.Text())
+		ctx, stop := context.WithTimeout(context.Background(), 10*time.Minute)
+		stopPrep = stop
+		setBusy(true)
+		prepStatus.SetText("Creating the .intunewin package with Microsoft's tool...")
+		started := time.Now()
+		go func() {
+			defer stop()
+			text, err := intune.PrepareContent(ctx, tool, source, out)
+			a.log("gui", "intune content prep", []string{out}, statusOf(err), err, started)
+			a.mw.Synchronize(func() {
+				setBusy(false)
+				switch {
+				case err == nil:
+					prepStatus.SetText("Created " + filepath.Join(out, intune.PreparedPackageName))
+					walk.MsgBox(dialog, "Package ready", "Created "+filepath.Join(out, intune.PreparedPackageName)+"\n\nUpload it as a Windows app (Win32) in Intune, using the commands in README.txt.", walk.MsgBoxOK|walk.MsgBoxIconInformation)
+				case errors.Is(ctx.Err(), context.Canceled):
+					prepStatus.SetText("Stopped. The exported folder is unchanged.")
+				default:
+					prepStatus.SetText("The .intunewin package was not created.")
+					detail := strings.TrimSpace(text)
+					if len(detail) > 1500 {
+						detail = "..." + detail[len(detail)-1500:]
+					}
+					if detail != "" {
+						detail = "\n\nTool output:\n" + detail
+					}
+					walk.MsgBox(dialog, "Content prep failed", "The package folder was exported, but Microsoft's tool did not produce a .intunewin file: "+err.Error()+detail, walk.MsgBoxOK|walk.MsgBoxIconError)
+				}
+			})
+		}()
 	}
 	err := (Dialog{AssignTo: &dialog, Title: "Build an Intune printer app", MinSize: Size{Width: 760, Height: 560}, Size: Size{Width: 880, Height: 740}, Layout: VBox{Spacing: 10}, Children: []Widget{
 		Label{Text: "Package one prevalidated printer for Required or Company Portal deployment."},
@@ -156,18 +227,64 @@ func (a *app) onIntuneWizard() {
 			{Title: "2. Review and export", Layout: VBox{Spacing: 8}, Children: []Widget{
 				Label{Text: "Review the destination, deployment ID, commands, payload hashes and policy. Export creates local files."},
 				TextEdit{AssignTo: &preview, ReadOnly: true, VScroll: true, HScroll: true, Accessibility: name("intune-preview")},
-				Label{Text: "After export, README.txt guides content preparation and Intune setup. Pilot on Windows before broad deployment."},
-				PushButton{Text: "Back to settings", OnClicked: func() { pages.SetCurrentIndex(0) }},
-				PushButton{AssignTo: &exportButton, Text: "Export reviewed package", Enabled: false, OnClicked: func() {
-					if prepared == nil {
-						return
-					}
-					if err := prepared.Export(reviewedOutput); err != nil {
-						showErr(dialog, "Export", err)
-						return
-					}
-					invalidate()
-					walk.MsgBox(dialog, "Package exported", "Open README.txt in "+reviewedOutput+" for Microsoft Content Prep and Intune instructions.", walk.MsgBoxOK|walk.MsgBoxIconInformation)
+				Label{Text: "Optional: also create the .intunewin file with Microsoft's Win32 Content Prep Tool (IntuneWinAppUtil.exe)."},
+				Label{Text: "It is filled in when it sits beside this program. Otherwise README.txt has the command to run yourself."},
+				Composite{Layout: formGrid(3), Children: []Widget{
+					Label{Text: "Content Prep tool:"},
+					LineEdit{AssignTo: &prepTool, Text: foundTool, CueBanner: "Optional: path to IntuneWinAppUtil.exe", Accessibility: name("intune-prep-tool")},
+					PushButton{AssignTo: &prepToolBrowse, Text: "Browse...", OnClicked: func() {
+						browse(&prepTool, "IntuneWinAppUtil (IntuneWinAppUtil.exe)|IntuneWinAppUtil.exe|Windows executable (*.exe)|*.exe")
+					}},
+					Label{Text: ".intunewin output folder:"},
+					LineEdit{AssignTo: &prepOut, Accessibility: name("intune-prep-output")},
+					PushButton{AssignTo: &prepOutBrowse, Text: "Browse...", OnClicked: func() {
+						picker := walk.FileDialog{Title: "Choose a folder for the .intunewin package", FilePath: prepOut.Text()}
+						if ok, err := picker.ShowBrowseFolder(dialog); err != nil {
+							showErr(dialog, "Choose folder", err)
+						} else if ok {
+							prepOut.SetText(picker.FilePath)
+						}
+					}},
+				}},
+				Label{AssignTo: &prepStatus, Text: "", Accessibility: name("intune-prep-status")},
+				Composite{Layout: HBox{MarginsZero: true, Spacing: 8}, Children: []Widget{
+					PushButton{Text: "Back to settings", OnClicked: func() { pages.SetCurrentIndex(0) }},
+					PushButton{AssignTo: &exportButton, Text: "Export reviewed package", Enabled: false, OnClicked: func() {
+						if prepared == nil || running {
+							return
+						}
+						// Refuse an unusable tool or output before exporting anything.
+						tool := strings.TrimSpace(prepTool.Text())
+						if tool != "" {
+							if _, _, err := intune.CheckContentPrep(tool, reviewedOutput, prepOut.Text()); err != nil {
+								showErr(dialog, "Content prep", err)
+								return
+							}
+						}
+						if err := prepared.Export(reviewedOutput); err != nil {
+							showErr(dialog, "Export", err)
+							return
+						}
+						exportedFolder = reviewedOutput
+						invalidate()
+						setBusy(false)
+						if tool == "" {
+							prepStatus.SetText("Exported. Choose Microsoft's tool above to create the .intunewin file, or follow README.txt.")
+							walk.MsgBox(dialog, "Package exported", "Open README.txt in "+reviewedOutput+" for Microsoft Content Prep and Intune instructions, or choose IntuneWinAppUtil.exe on this page and create the .intunewin file here.", walk.MsgBoxOK|walk.MsgBoxIconInformation)
+							return
+						}
+						runPrep(reviewedOutput)
+					}},
+					PushButton{AssignTo: &prepButton, Text: "Create .intunewin from the exported folder", Enabled: false, OnClicked: func() {
+						if running || exportedFolder == "" {
+							return
+						}
+						if _, _, err := intune.CheckContentPrep(prepTool.Text(), exportedFolder, prepOut.Text()); err != nil {
+							showErr(dialog, "Content prep", err)
+							return
+						}
+						runPrep(exportedFolder)
+					}},
 				}},
 			}},
 		}},
@@ -177,6 +294,14 @@ func (a *app) onIntuneWizard() {
 		showErr(a.mw, "Intune packaging", err)
 		return
 	}
+	dialog.Closing().Attach(func(canceled *bool, _ walk.CloseReason) {
+		if running {
+			*canceled = true
+			if stopPrep != nil {
+				stopPrep()
+			}
+		}
+	})
 	// Walk's visibility query includes ancestors. Apply the collapsed state
 	// after the dialog becomes visible, and again when returning to settings.
 	// Create has already created the child HWNDs. Hiding their parent may omit

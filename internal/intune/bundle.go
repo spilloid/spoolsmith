@@ -403,24 +403,49 @@ func copyPinned(source, destination, expected string) error {
 	return nil
 }
 
+// CheckContentPrep validates a content-prep request without running anything,
+// so a caller can refuse before it exports: the tool must be an existing file,
+// and the output must be a folder outside the source bundle so the tool cannot
+// package its own result. It returns the absolute source and output paths.
+func CheckContentPrep(tool, source, output string) (src, out string, err error) {
+	if strings.TrimSpace(output) == "" {
+		return "", "", errors.New("select an output folder for the .intunewin package")
+	}
+	if src, err = filepath.Abs(source); err != nil {
+		return "", "", err
+	}
+	if out, err = filepath.Abs(output); err != nil {
+		return "", "", err
+	}
+	rel, err := filepath.Rel(src, out)
+	if err != nil {
+		return "", "", err
+	}
+	if rel == "." || (rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))) {
+		return "", "", errors.New("content-prep output must be outside the bundle directory")
+	}
+	if strings.TrimSpace(tool) == "" {
+		return "", "", errors.New("select the Microsoft Content Prep tool (" + ContentPrepToolName + ")")
+	}
+	if info, statErr := os.Stat(tool); statErr != nil || !info.Mode().IsRegular() {
+		return "", "", fmt.Errorf("content prep tool not found: %s", tool)
+	}
+	return src, out, nil
+}
+
 // PrepareContent invokes an explicitly selected Microsoft tool after export.
 // Keep its output outside the source directory so it cannot package itself.
 func PrepareContent(ctx context.Context, tool, source, output string) (string, error) {
-	src, e := filepath.Abs(source)
+	src, out, e := CheckContentPrep(tool, source, output)
 	if e != nil {
 		return "", e
-	}
-	out, e := filepath.Abs(output)
-	if e != nil {
-		return "", e
-	}
-	rel, e := filepath.Rel(src, out)
-	if e != nil {
-		return "", e
-	}
-	if rel == "." || (rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))) {
-		return "", errors.New("content-prep output must be outside the bundle directory")
 	}
 	data, e := exec.CommandContext(ctx, tool, "-c", src, "-s", "install.ps1", "-o", out, "-q").CombinedOutput()
+	if e == nil {
+		// The tool can exit 0 without producing a package; never report that as success.
+		if _, statErr := os.Stat(filepath.Join(out, PreparedPackageName)); statErr != nil {
+			e = fmt.Errorf("content prep tool finished but %s was not created in %s", PreparedPackageName, out)
+		}
+	}
 	return string(data), e
 }

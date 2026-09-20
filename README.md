@@ -487,9 +487,12 @@ the desktop GUI’s Tools tab → **Build an Intune printer app...**. The GUI ha
 pages: settings and review/export, with optional metadata and policy under
 **Advanced settings**. Both wizards retain the reviewed payload pins until export.
 
-`--content-prep-tool`/`--content-prep-output` additionally run Microsoft’s own
-`IntuneWinAppUtil.exe` locally to produce the `.intunewin` file; without them,
-`README.txt` in the export names the exact command to run it yourself.
+When Microsoft’s own `IntuneWinAppUtil.exe` sits beside `spoolsmith.exe` (or
+`spoolsmith-gui.exe`), the CLI, `intune wizard` and the desktop wizard find it and
+also produce the `.intunewin` file, in a new `<export folder>-intunewin` folder.
+`--content-prep-tool`/`--content-prep-output` (or the desktop review page’s tool
+and output fields) point elsewhere; `--no-content-prep` skips it. Without the
+tool, `README.txt` in the export names the exact command to run it yourself.
 The CLI must be a Windows x64 SpoolSmith build with the `intune-endpoint-v1`
 capability marker (`spoolsmith capabilities`); older, unrelated and GUI binaries
 are refused. Payload hashes are pinned and rechecked at export.
