@@ -22,7 +22,7 @@ func runIntune(ctx context.Context, args []string, input io.Reader, stdout, stde
 	}
 	var opts intune.Options
 	var output, prepTool, prepOutput string
-	var dryRun bool
+	var dryRun, noPrep bool
 	if args[0] == "wizard" {
 		if len(args) != 1 || !app.inputTerminal {
 			return usageError(stdout, stderr, "intune wizard", errors.New("wizard requires an interactive terminal; use intune build for automation"))
@@ -89,6 +89,30 @@ func runIntune(ctx context.Context, args []string, input io.Reader, stdout, stde
 		if advanced == "yes" {
 			output = askDefault("Export folder (must not already exist)", output)
 		}
+		prepTool = intune.FindContentPrepTool(app.prepToolDirs...)
+		if advanced == "yes" {
+			shown := prepTool
+			if shown == "" {
+				shown = "none"
+			}
+			chosen := askDefault("Microsoft Content Prep tool to also create the .intunewin (path, or none)", shown)
+			if strings.EqualFold(chosen, "none") {
+				prepTool = ""
+			} else {
+				prepTool = chosen
+			}
+		}
+		if prepTool != "" {
+			prepOutput = intune.SuggestPrepOutput(output)
+			if advanced == "yes" {
+				prepOutput = askDefault(".intunewin output folder", prepOutput)
+			}
+			if promptErr == nil {
+				if _, _, err = intune.CheckContentPrep(prepTool, output, prepOutput); err != nil {
+					return commandError(stdout, stderr, "intune wizard", err, 2)
+				}
+			}
+		}
 		if promptErr != nil {
 			return commandError(stdout, stderr, "intune wizard", promptErr, 2)
 		}
@@ -103,6 +127,11 @@ func runIntune(ctx context.Context, args []string, input io.Reader, stdout, stde
 		if err = enc.Encode(prepared.Manifest); err != nil {
 			return 1
 		}
+		if prepTool != "" {
+			fmt.Fprintf(stderr, "Then create %s with Microsoft's tool %s in %s\n", intune.PreparedPackageName, prepTool, prepOutput)
+		} else {
+			fmt.Fprintf(stderr, "Tip: put %s beside spoolsmith.exe and this wizard also creates the .intunewin file for you.\n", intune.ContentPrepToolName)
+		}
 		if ask("Type export to create this local package") != "export" || promptErr != nil {
 			fmt.Fprintln(stderr, "Export cancelled.")
 			return 5
@@ -110,7 +139,13 @@ func runIntune(ctx context.Context, args []string, input io.Reader, stdout, stde
 		if err = prepared.Export(output); err != nil {
 			return commandError(stdout, stderr, "intune wizard", err, 1)
 		}
-		fmt.Fprintln(stderr, "Exported. Follow README.txt to prepare and upload the Win32 app.")
+		if prepTool != "" {
+			if e := runContentPrep(ctx, stderr, prepTool, output, prepOutput); e != nil {
+				return commandError(stdout, stderr, "intune wizard", e, 1)
+			}
+		} else {
+			fmt.Fprintln(stderr, "Exported. Follow README.txt to prepare and upload the Win32 app.")
+		}
 		return encodeSuccess(stdout, stderr, "intune wizard", prepared.Manifest)
 	}
 	if args[0] != "build" {
@@ -131,16 +166,17 @@ func runIntune(ctx context.Context, args []string, input io.Reader, stdout, stde
 	flags.BoolVar(&opts.Adopt, "adopt", false, "allow adoption of an exactly matching unmanaged queue")
 	flags.BoolVar(&dryRun, "dry-run", false, "preview manifest without creating files or invoking content prep")
 	flags.StringVar(&output, "output", "", "new bundle directory (default: unused <id>-r<revision> folder beside profile)")
-	flags.StringVar(&prepTool, "content-prep-tool", "", "optional path to Microsoft IntuneWinAppUtil.exe")
-	flags.StringVar(&prepOutput, "content-prep-output", "", "separate .intunewin output directory")
+	flags.StringVar(&prepTool, "content-prep-tool", "", "path to Microsoft IntuneWinAppUtil.exe (default: the copy beside spoolsmith.exe, if present)")
+	flags.StringVar(&prepOutput, "content-prep-output", "", "separate .intunewin output directory (default: <export folder>-intunewin)")
+	flags.BoolVar(&noPrep, "no-content-prep", false, "export the bundle only; do not run Microsoft's tool even if it is beside spoolsmith.exe")
 	if err := flags.Parse(args[1:]); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return 0
 		}
 		return 2
 	}
-	if flags.NArg() != 0 || (prepTool == "") != (prepOutput == "") {
-		return usageError(stdout, stderr, "intune build", errors.New("provide no positional arguments, and both content-prep options if used"))
+	if flags.NArg() != 0 {
+		return usageError(stdout, stderr, "intune build", errors.New("provide no positional arguments"))
 	}
 	defaults, err := intune.ProfileDefaults(opts.ProfilePath)
 	if err != nil {
@@ -166,26 +202,71 @@ func runIntune(ctx context.Context, args []string, input io.Reader, stdout, stde
 		return usageError(stdout, stderr, "intune build", errors.New("--output must name a new bundle directory"))
 	}
 
+	// Content prep is on whenever the tool is named or sits beside this program;
+	// a bad tool or output is refused here, before anything is exported.
+	toolGiven, outputGiven := provided["content-prep-tool"], provided["content-prep-output"]
+	switch {
+	case toolGiven && prepTool == "", outputGiven && prepOutput == "":
+		return usageError(stdout, stderr, "intune build", errors.New("--content-prep-tool and --content-prep-output must name a path"))
+	case noPrep && (toolGiven || outputGiven):
+		return usageError(stdout, stderr, "intune build", errors.New("--no-content-prep cannot be combined with the other content-prep options"))
+	case noPrep:
+		prepTool, prepOutput = "", ""
+	default:
+		autoTool := false
+		if prepTool == "" {
+			prepTool = intune.FindContentPrepTool(app.prepToolDirs...)
+			autoTool = prepTool != ""
+		}
+		if prepTool == "" && outputGiven {
+			return usageError(stdout, stderr, "intune build", fmt.Errorf("--content-prep-output needs %s: pass --content-prep-tool or put it beside spoolsmith.exe", intune.ContentPrepToolName))
+		}
+		if prepTool != "" {
+			if prepOutput == "" {
+				prepOutput = intune.SuggestPrepOutput(output)
+			}
+			if _, _, err = intune.CheckContentPrep(prepTool, output, prepOutput); err != nil {
+				return commandError(stdout, stderr, "intune build", err, 2)
+			}
+			if autoTool {
+				fmt.Fprintf(stderr, "Using %s (--no-content-prep to skip)\n", prepTool)
+			}
+		}
+	}
+
 	prepared, err := intune.Prepare(opts)
 	if err != nil {
 		return commandError(stdout, stderr, "intune build", err, 2)
 	}
 	fmt.Fprintln(stderr, "Export folder:", output)
+	if prepTool != "" {
+		fmt.Fprintf(stderr, "%s folder: %s\n", intune.PreparedPackageName, prepOutput)
+	}
 	if !dryRun {
 		if err = prepared.Export(output); err != nil {
 			return commandError(stdout, stderr, "intune build", err, 1)
 		}
 		if prepTool != "" {
-			prepCtx, cancel := context.WithTimeout(ctx, 10*time.Minute)
-			defer cancel()
-			result, e := intune.PrepareContent(prepCtx, prepTool, output, prepOutput)
-			fmt.Fprint(stderr, result)
-			if e != nil {
-				return commandError(stdout, stderr, "intune build", fmt.Errorf("bundle exported; content prep failed: %w", e), 1)
+			if e := runContentPrep(ctx, stderr, prepTool, output, prepOutput); e != nil {
+				return commandError(stdout, stderr, "intune build", e, 1)
 			}
 		} else {
-			fmt.Fprintln(stderr, "Bundle exported. Microsoft Win32 Content Prep Tool is still required; see README.txt for the command.")
+			fmt.Fprintf(stderr, "Bundle exported. To create the .intunewin, put %s beside spoolsmith.exe or pass --content-prep-tool; README.txt has the manual command.\n", intune.ContentPrepToolName)
 		}
 	}
 	return encodeSuccess(stdout, stderr, "intune build", prepared.Manifest)
+}
+
+// runContentPrep runs Microsoft's tool over an already exported folder. The
+// export is never rolled back: a failure here leaves a complete, usable bundle.
+func runContentPrep(ctx context.Context, stderr io.Writer, tool, exported, output string) error {
+	prepCtx, cancel := context.WithTimeout(ctx, 10*time.Minute)
+	defer cancel()
+	result, err := intune.PrepareContent(prepCtx, tool, exported, output)
+	fmt.Fprint(stderr, result)
+	if err != nil {
+		return fmt.Errorf("bundle exported; content prep failed: %w", err)
+	}
+	fmt.Fprintln(stderr, "Created", filepath.Join(output, intune.PreparedPackageName))
+	return nil
 }

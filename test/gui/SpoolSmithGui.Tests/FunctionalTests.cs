@@ -393,6 +393,64 @@ public sealed class FunctionalTests : IDisposable
         }
     }
 
+    /// <summary>
+    /// The review page can also run Microsoft's Win32 Content Prep Tool to make the
+    /// .intunewin. That needs the real IntuneWinAppUtil.exe, which the repo does not
+    /// carry, so this runs only when SPOOLSMITH_CONTENT_PREP_EXE points at it.
+    /// </summary>
+    [StaFact]
+    public void Intune_wizard_creates_the_intunewin_with_the_content_prep_tool()
+    {
+        var tool = Environment.GetEnvironmentVariable("SPOOLSMITH_CONTENT_PREP_EXE");
+        if (string.IsNullOrEmpty(tool)) return;
+        Assert.True(File.Exists(tool), $"SPOOLSMITH_CONTENT_PREP_EXE does not exist: {tool}");
+        var profilePath = Path.Combine(_fixture.RepoRoot, "examples", "intune", "accounting.json");
+        var outputDir = Path.Combine(Path.GetTempPath(), "spoolsmith-intune-prep-" + Guid.NewGuid().ToString("N"));
+        var prepDir = outputDir + "-intunewin";
+
+        var dialog = OpenIntuneWizard();
+        try
+        {
+            SetText(Find(dialog, "intune-profile").AsTextBox(), profilePath);
+            SetText(Find(dialog, "intune-binary").AsTextBox(), _fixture.CliExePath);
+            Find(dialog, "Driver is managed separately and will be registered before installation").AsCheckBox().Click();
+            WaitForText(Find(dialog, "intune-display-name").AsTextBox(), t => t == "Example — Accounting Copier");
+            SetText(Find(dialog, "intune-output").AsTextBox(), outputDir);
+            FindButton(dialog, "Validate and preview package").Invoke();
+            WaitForText(FindVisibleIntuneControl(dialog, "intune-preview").AsTextBox(),
+                t => t.Contains("example-accounting-copier-", StringComparison.Ordinal));
+
+            // The package folder is suggested beside the export folder, and nothing runs yet.
+            var prepOutput = FindVisibleIntuneControl(dialog, "intune-prep-output").AsTextBox();
+            WaitForText(prepOutput, t => t == prepDir);
+            SetText(FindVisibleIntuneControl(dialog, "intune-prep-tool").AsTextBox(), tool);
+            Assert.False(FindButton(dialog, "Create .intunewin from the exported folder").IsEnabled);
+
+            FindButton(dialog, "Export reviewed package").Invoke();
+            Window? ready = null;
+            WaitUntil(() => (ready = _fixture.MainWindow.ModalWindows.Concat(_fixture.App.GetAllTopLevelWindows(_fixture.Automation))
+                .FirstOrDefault(w => w.Title == "Package ready" || w.Title == "Content prep failed")) != null,
+                "Content prep did not finish.", timeoutMs: 120_000);
+            Assert.Equal("Package ready", ready!.Title);
+            FindButton(ready, "OK").Invoke();
+
+            Assert.True(File.Exists(Path.Combine(outputDir, "deployment.json")), "the export folder was not written");
+            Assert.True(File.Exists(Path.Combine(prepDir, "install.intunewin")), "the .intunewin was not created");
+            // Once exported, the package can be re-created without exporting again.
+            WaitUntil(() => FindButton(dialog, "Create .intunewin from the exported folder").IsEnabled,
+                "the re-create button never became available after export");
+            Assert.False(FindButton(dialog, "Export reviewed package").IsEnabled);
+
+            FindButton(dialog, "Close").Invoke();
+            WaitUntil(() => !_fixture.MainWindow.ModalWindows.Any(), "Close did not dismiss the Intune wizard.");
+        }
+        finally
+        {
+            if (Directory.Exists(outputDir)) Directory.Delete(outputDir, recursive: true);
+            if (Directory.Exists(prepDir)) Directory.Delete(prepDir, recursive: true);
+        }
+    }
+
     private static readonly string[] IntuneAdvancedFields =
     {
         "intune-id", "intune-revision", "intune-location", "intune-description", "intune-binary-sha256",

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -25,6 +26,9 @@ type application struct {
 	discover       func(context.Context, string) (probe.Discovery, error)
 	inputTerminal  bool
 	outputTerminal bool
+	// prepToolDirs are searched (only directly, never recursively or via PATH)
+	// for Microsoft's IntuneWinAppUtil.exe. Empty in tests.
+	prepToolDirs []string
 }
 
 type errorResponse struct {
@@ -41,6 +45,7 @@ func main() {
 		discover:       probe.Discover,
 		inputTerminal:  isTerminal(os.Stdin),
 		outputTerminal: isTerminal(os.Stdout),
+		prepToolDirs:   executableDir(),
 	}
 	args := os.Args[1:]
 	started := time.Now()
@@ -429,6 +434,8 @@ var commandUsage = map[string]string{
 		"spoolsmith intune build --profile <file> --binary <exe> [--revision <n>] [--dry-run]\n" +
 		"--binary-sha256, --id, --name, --description and --output are all derived from the profile\n" +
 		"when omitted; give them explicitly only to override the suggested value.\n" +
+		"If Microsoft's IntuneWinAppUtil.exe is beside spoolsmith.exe it also creates the .intunewin\n" +
+		"(--content-prep-tool/--content-prep-output override it; --no-content-prep skips it).\n" +
 		"Never signs in to a tenant or uploads anything; `intune build --help` lists every flag.\n",
 }
 
@@ -477,12 +484,22 @@ func printUsage(writer io.Writer) {
 	fmt.Fprintln(writer, "  --binary-sha256, --id, --name, --description and --output are all derived from the")
 	fmt.Fprintln(writer, "  profile when omitted; give them explicitly only to override the suggested value.")
 	fmt.Fprintln(writer, "  Produces install.ps1/uninstall.ps1/detect.ps1 and a README with the exact commands")
-	fmt.Fprintln(writer, "  to paste into Intune's Win32 app. Add --content-prep-tool/--content-prep-output to")
-	fmt.Fprintln(writer, "  also run Microsoft's own IntuneWinAppUtil.exe. Uploading and assigning the app in")
+	fmt.Fprintln(writer, "  to paste into Intune's Win32 app. If Microsoft's IntuneWinAppUtil.exe is beside")
+	fmt.Fprintln(writer, "  spoolsmith.exe it also creates the .intunewin (--content-prep-tool/--content-prep-output")
+	fmt.Fprintln(writer, "  override it; --no-content-prep skips it). Uploading and assigning the app in")
 	fmt.Fprintln(writer, "  Intune remains a manual step; this does not sign in to a tenant.")
 	fmt.Fprintln(writer, "")
 	fmt.Fprintln(writer, "--dry-run/--what-if takes precedence over --yes and never prompts or mutates.")
 	fmt.Fprintln(writer, "--offline skips the live identity check; the plan says so before you confirm it.")
+}
+
+// executableDir is the folder holding this program, where an administrator
+// would naturally drop IntuneWinAppUtil.exe next to it.
+func executableDir() []string {
+	if exe, err := os.Executable(); err == nil {
+		return []string{filepath.Dir(exe)}
+	}
+	return nil
 }
 
 func isTerminal(file *os.File) bool {

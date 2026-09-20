@@ -1,6 +1,6 @@
 # Desktop / CLI parity
 
-Reconciled for v0.7.4. Where CLI and desktop genuinely differ rather than just
+Reconciled for v1.0.1. Where CLI and desktop genuinely differ rather than just
 using different words for the same thing, that's called out under the table instead
 of glossed over.
 
@@ -55,9 +55,13 @@ with the same relative directory layout. A collection is limited to 1,000 profil
 16 MiB; individual profiles retain the 1 MiB limit.
 
 Intune packaging (local-only Win32 app export) is available from both the CLI
-and the desktop GUI; see [Intune packaging](../README.md#intune-packaging). Both
-wizards produce the same source folder and README.txt naming the manual
-`IntuneWinAppUtil.exe` command; only the CLI's `intune build` exposes
-`--content-prep-tool`/`--content-prep-output` to run that packaging step itself
-rather than leaving it as the documented manual command. A local configuration
-check does not verify reachability or physical output.
+and the desktop GUI; see [Intune packaging](../README.md#intune-packaging). All
+three entry points (`intune build`, `intune wizard`, the desktop wizard) produce
+the same source folder and README.txt, and all three also create the
+`.intunewin` with Microsoft's `IntuneWinAppUtil.exe` when it sits beside the
+executable, defaulting the output to `<export folder>-intunewin`. Overrides differ
+only in spelling: `--content-prep-tool`/`--content-prep-output`/`--no-content-prep`
+on `build`, the advanced questions in `wizard`, and the tool and output fields
+on the desktop review page. (Through v1.0.0 the desktop wizard and `wizard` had
+no way to run the tool at all; only `build` did, and only with both flags.) A
+local configuration check does not verify reachability or physical output.
