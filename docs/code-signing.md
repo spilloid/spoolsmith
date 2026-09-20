@@ -106,12 +106,36 @@ the restriction was on ("Branch is not allowed to deploy to release due to envir
 protection rules"). A published release runs as its `vX.Y.Z` tag and a manual run as `main`,
 so both still work.
 
-```sh
-gh api --method PUT repos/spilloid/spoolsmith/environments/release \
-  --input <(echo '{"deployment_branch_policy":{"protected_branches":false,"custom_branch_policies":true}}')
-gh api --method POST repos/spilloid/spoolsmith/environments/release/deployment-branch-policies -f name=main -f type=branch
-gh api --method POST repos/spilloid/spoolsmith/environments/release/deployment-branch-policies -f name='v*' -f type=tag
+`setup-signing.ps1` applies this itself (`-DeploymentBranches`, `-DeploymentTags`) and removes
+any other rule, so the environment ends up allowing exactly what was asked for. The one time
+you want it off is proving a workflow from a throwaway branch before merging it: pass
+`-SkipDeploymentPolicy`, run the check, then re-run without it.
+
+## Using this for another repository
+
+The script is not specific to SpoolSmith. Run it once per repository that ships Windows
+executables:
+
+```powershell
+./scripts/setup-signing.ps1 -AccountName jdspille -ResourceGroup RG0 -ProfileName primary-profile `
+    -Repo Spillers-Technology/netviz -EnableImmutableSubject
 ```
+
+Each repository gets its **own** app registration (`<repo>-release-signing`), federated
+credential, role assignment and environment, and shares only the certificate profile. That
+costs a few more Azure objects and buys three things: access is revoked per repository, one
+repository's credential cannot sign for another, and a credential's subject names exactly one
+repository. `-EnableImmutableSubject` turns on GitHub's numeric-ID subject claims first, which
+is what this repository already has; the script reads whichever form GitHub is using.
+
+Then, in that repository: copy `.github/actions/sign-release` and `scripts/verify-signature.ps1`,
+call the action from the release job between building and packaging, and add a signing-check
+workflow. Only repositories that actually ship a Windows executable need any of this; a
+container image, a website or an Android package has nothing for Authenticode to sign.
+
+The certificate profile is one identity, `CN=Joseph Spillers`. Every repository signed this way
+publishes as that person, whoever owns the repository. A company publisher name needs
+organization validation and a second certificate profile, which is a separate decision.
 
 ## How the release pipeline uses it
 

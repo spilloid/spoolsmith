@@ -9,14 +9,21 @@ Does everything in docs/code-signing.md that can be scripted:
      unless the profile is Active.
   2. Creates an app registration and service principal for the release workflow.
   3. Adds a federated credential trusting exactly
-     repo:<Repo>:environment:<Environment>, so no secret is ever stored.
+     <GitHub's subject prefix for the repo>:environment:<Environment>, so no
+     secret is ever stored.
   4. Grants that service principal "Artifact Signing Certificate Profile Signer"
      on the certificate profile only — not the account, not the subscription.
   5. Creates the GitHub environment and sets the signing variables and the three
      Azure identifiers as environment-scoped values, so only a job that declares
      that environment can read them.
+  6. Restricts the environment to the default branch and version tags, so a
+     branch anyone with write access can push cannot sign as this identity.
 
 Each step checks before it creates, so a second run changes nothing.
+
+It works for any repository, not just this one: every repo gets its own app
+registration, named <repo>-release-signing, so access can be revoked per repo
+and one repo's credential cannot sign for another.
 
 What it deliberately does not do: create the signing account, or complete
 identity validation. Validation is a document check done in the Azure portal
@@ -36,12 +43,25 @@ param(
     [Parameter(Mandatory)][string]$ProfileName,
     [string]$Repo = 'spilloid/spoolsmith',
     [string]$Environment = 'release',
-    [string]$AppName = 'spoolsmith-release-signing',
+    # Defaults to <repo>-release-signing.
+    [string]$AppName,
     # Substring the signer subject must contain; defaults to the certificate
     # profile's common name so a binary signed by another profile fails CI.
-    [string]$ExpectedSubject
+    [string]$ExpectedSubject,
+    # Refs allowed to run jobs in the environment. A published release runs as
+    # its tag and a manual run as the default branch, so both are needed.
+    [string[]]$DeploymentBranches = @('main'),
+    [string[]]$DeploymentTags = @('v*'),
+    # Leave the environment open to every branch. Only for proving a workflow
+    # from a throwaway branch before it is merged; re-run without this after.
+    [switch]$SkipDeploymentPolicy,
+    # Turn on GitHub's immutable OIDC subject claims for the repository first,
+    # so the credential trusts numeric IDs and a renamed, deleted or re-created
+    # repository cannot inherit it.
+    [switch]$EnableImmutableSubject
 )
 $ErrorActionPreference = 'Stop'
+if (-not $AppName) { $AppName = "$($Repo.Split('/')[-1].ToLowerInvariant())-release-signing" }
 $signerRole = 'Artifact Signing Certificate Profile Signer'
 $armApi = '2024-09-30-preview'
 
@@ -100,6 +120,18 @@ Assert-GitHubAccess
 # the exact prefix it will present rather than assuming repo:<owner>/<repo>, or
 # Azure rejects every login with AADSTS700213. The ID form is the safer one: a
 # renamed, deleted or re-created repository cannot inherit this trust.
+if ($EnableImmutableSubject) {
+    $before = Invoke-Native gh @('api', "repos/$Repo/actions/oidc/customization/sub") | Out-String | ConvertFrom-Json
+    if ($before.use_immutable_subject) { Write-Host 'immutable subject claims already on' }
+    else {
+        $file = Join-Path ([IO.Path]::GetTempPath()) "$([guid]::NewGuid()).json"
+        try {
+            '{"use_default":true,"use_immutable_subject":true}' | Set-Content $file -Encoding ascii
+            Invoke-Native gh @('api', '--method', 'PUT', "repos/$Repo/actions/oidc/customization/sub", '--input', $file) | Out-Null
+            Write-Host 'turned immutable subject claims on'
+        } finally { Remove-Item $file -ErrorAction SilentlyContinue }
+    }
+}
 $customization = Invoke-Native gh @('api', "repos/$Repo/actions/oidc/customization/sub") | Out-String | ConvertFrom-Json
 $prefix = if ($customization.sub_claim_prefix) { $customization.sub_claim_prefix } else { "repo:$Repo" }
 $subjectClaim = "${prefix}:environment:$Environment"
@@ -131,6 +163,30 @@ else {
 
 Step "GitHub environment '$Environment' on $Repo"
 Invoke-Native gh @('api', '--method', 'PUT', "repos/$Repo/environments/$Environment") | Out-Null
+if ($SkipDeploymentPolicy) { Write-Host "deployment restriction skipped: EVERY branch can run in '$Environment' until you re-run without -SkipDeploymentPolicy" }
+else {
+    $file = Join-Path ([IO.Path]::GetTempPath()) "$([guid]::NewGuid()).json"
+    try {
+        '{"deployment_branch_policy":{"protected_branches":false,"custom_branch_policies":true}}' | Set-Content $file -Encoding ascii
+        Invoke-Native gh @('api', '--method', 'PUT', "repos/$Repo/environments/$Environment", '--input', $file) | Out-Null
+        $have = @((Invoke-Native gh @('api', "repos/$Repo/environments/$Environment/deployment-branch-policies") | Out-String | ConvertFrom-Json).branch_policies)
+        $wanted = @($DeploymentBranches | ForEach-Object { @{ name = $_; type = 'branch' } }) + @($DeploymentTags | ForEach-Object { @{ name = $_; type = 'tag' } })
+        foreach ($rule in $wanted) {
+            if ($have | Where-Object { $_.name -eq $rule.name -and $_.type -eq $rule.type }) { Write-Host "already allowed: $($rule.type) $($rule.name)"; continue }
+            ($rule | ConvertTo-Json -Compress) | Set-Content $file -Encoding ascii
+            Invoke-Native gh @('api', '--method', 'POST', "repos/$Repo/environments/$Environment/deployment-branch-policies", '--input', $file) | Out-Null
+            Write-Host "allowed: $($rule.type) $($rule.name)"
+        }
+        # Anything left over (for example a temporary test branch) is removed so
+        # the environment ends up allowing exactly what was asked for.
+        foreach ($existing in $have) {
+            if (-not ($wanted | Where-Object { $_.name -eq $existing.name -and $_.type -eq $existing.type })) {
+                Invoke-Native gh @('api', '--method', 'DELETE', "repos/$Repo/environments/$Environment/deployment-branch-policies/$($existing.id)") | Out-Null
+                Write-Host "removed stale rule: $($existing.type) $($existing.name)"
+            }
+        }
+    } finally { Remove-Item $file -ErrorAction SilentlyContinue }
+}
 $variables = [ordered]@{
     SIGNING_ENDPOINT         = $endpoint
     SIGNING_ACCOUNT          = $AccountName
@@ -148,4 +204,4 @@ foreach ($name in $secrets.Keys) {
 
 Step 'Done'
 Write-Host "Releases now sign as '$($signingProfile.properties.certificates[0].subjectName)'."
-Write-Host 'Nothing has been signed yet. Prove it end to end with a workflow_dispatch of Release Builds against a real tag.'
+Write-Host 'Nothing has been signed yet. Prove it with the repository''s signing-check workflow before tagging a release.'
