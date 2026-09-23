@@ -147,6 +147,11 @@ func run(ctx context.Context, args []string, input io.Reader, stdout, stderr io.
 		if len(args) != 2 {
 			return usageError(stdout, stderr, "inspect", errors.New("inspect requires exactly one target"))
 		}
+		// A .ssb target is the same job `bundle inspect` already does -- one
+		// command name, not two commands that overlap on one file type.
+		if strings.EqualFold(filepath.Ext(args[1]), ".ssb") {
+			return runBundle([]string{"inspect", args[1]}, stdout, stderr)
+		}
 		result, err := inspect.Target(ctx, args[1])
 		if err != nil {
 			return commandError(stdout, stderr, "inspect", err, int(install.ExitGeneralError))

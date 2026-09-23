@@ -131,7 +131,7 @@ func CreateAll(ctx context.Context, env install.Environment, collect Collector, 
 		} else {
 			outcome.Status, outcome.Bundle = "written", path
 			if created.Manifest.Profile.Evidence.Provenance != "captured" {
-				outcome.Reason = "written offline: the printer did not answer, so its identity was not confirmed"
+				outcome.Reason = UnconfirmedIdentityNotice
 			}
 			result.Written++
 		}

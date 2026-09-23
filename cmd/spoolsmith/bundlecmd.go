@@ -120,7 +120,7 @@ func runClone(ctx context.Context, args []string, input io.Reader, stdout, stder
 		fmt.Fprintln(stderr, "No driver payload: the target machine must already have this driver registered. Re-run with --include-driver to carry it.")
 	}
 	if manifest.Profile.Evidence.Provenance != "captured" {
-		fmt.Fprintln(stderr, "Degraded success: the printer did not answer, so its identity was not confirmed. Apply will set it up offline; check it once the printer is reachable.")
+		fmt.Fprintln(stderr, bundle.UnconfirmedIdentityNotice)
 	}
 	return encodeSuccess(stdout, stderr, "copy", manifest)
 }

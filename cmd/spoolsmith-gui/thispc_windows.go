@@ -152,6 +152,11 @@ func (a *app) onCopyQueue() {
 	var running bool
 
 	suggested := filepath.Join(defaultCopyDirectory(), bundleFileName(queue.PrinterName))
+	elevated := isElevated()
+	driverLabel := "Include the driver, so the other PC does not need it already"
+	if !elevated {
+		driverLabel = "Include the driver (needs administrator -- restart the app as administrator to use this)"
+	}
 
 	err := (Dialog{
 		AssignTo: &dialog, Title: "Copy " + queue.PrinterName,
@@ -173,7 +178,7 @@ func (a *app) onCopyQueue() {
 				Label{Text: "Note (optional):"},
 				LineEdit{AssignTo: &noteEdit, CueBanner: "For example: front desk, replaced 2026", Accessibility: name("copy-note"), ColumnSpan: 2},
 			}},
-			CheckBox{AssignTo: &includeDriver, Text: "Include the driver, so the other PC does not need it already (needs administrator)", Checked: true},
+			CheckBox{AssignTo: &includeDriver, Text: driverLabel, Checked: elevated, Enabled: elevated},
 			Label{AssignTo: &statusLabel, Text: "The printer is checked while copying, so the other PC can confirm it is the same one."},
 			VSpacer{},
 			Composite{Layout: row(), Children: []Widget{
@@ -242,7 +247,7 @@ func copySuccessMessage(path string, manifest bundle.Manifest) string {
 	text := fmt.Sprintf("Saved %s\r\n\r\nPrinter: %s\r\nAddress: %s\r\nDriver: %s\r\n\r\n",
 		path, manifest.Profile.PrinterName, manifest.Profile.Target, manifest.Profile.DriverName)
 	if manifest.Profile.Evidence.Provenance != "captured" {
-		text += "Degraded success: the printer did not answer, so its identity was not confirmed. Setting this up on the other PC will run offline; check the printer once it's reachable.\r\n\r\n"
+		text += bundle.UnconfirmedIdentityNotice + "\r\n\r\n"
 	}
 	if manifest.Driver == nil {
 		text += "The driver was not included, so the other PC must already have this driver installed.\r\n\r\n"

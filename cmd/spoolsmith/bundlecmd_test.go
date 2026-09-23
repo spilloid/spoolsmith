@@ -169,8 +169,8 @@ func TestCloneDegradesToOfflineWhenPrinterUnreachable(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("copy code=%d\n%s\n%s", code, stdout.String(), stderr.String())
 	}
-	if !strings.Contains(stderr.String(), "Degraded success") {
-		t.Fatalf("no degraded-success notice on stderr:\n%s", stderr.String())
+	if !strings.Contains(stderr.String(), bundle.UnconfirmedIdentityNotice) {
+		t.Fatalf("no unconfirmed-identity notice on stderr:\n%s", stderr.String())
 	}
 
 	opened, err := bundle.Open(bundlePath)
@@ -362,6 +362,36 @@ func TestBundleInspectReadsWithoutTouchingTheNetwork(t *testing.T) {
 		if !strings.Contains(stderr.String(), want) && !strings.Contains(stdout.String(), want) {
 			t.Fatalf("bundle inspect output is missing %q:\n%s", want, stderr.String())
 		}
+	}
+}
+
+// TestInspectRoutesABundleTargetToBundleInspect is the fix for `inspect
+// <file>.ssb` being advertised in CLI help and in the GUI's Tools -> Inspect,
+// yet only actually working on the GUI side: the generic `inspect` command
+// used to hand a .ssb straight to evidence.LoadFixture and fail to decode it
+// as JSON. One target type, one behavior, matching what `bundle inspect`
+// already does for it.
+func TestInspectRoutesABundleTargetToBundleInspect(t *testing.T) {
+	app, _ := bundleTestApplication(t)
+	bundlePath := filepath.Join(t.TempDir(), "office.ssb")
+	var stdout, stderr bytes.Buffer
+	if code := run(context.Background(), []string{"clone", "Test Printer", bundlePath}, strings.NewReader(""), &stdout, &stderr, app); code != 0 {
+		t.Fatalf("clone code=%d %s", code, stderr.String())
+	}
+
+	offline := testApplication()
+	offline.collect = func(context.Context, string) (probe.Result, error) {
+		t.Fatal("inspect probed the network")
+		return probe.Result{}, nil
+	}
+	stdout.Reset()
+	stderr.Reset()
+	if code := run(context.Background(), []string{"inspect", bundlePath}, strings.NewReader(""), &stdout, &stderr, offline); code != 0 {
+		t.Fatalf("inspect code=%d %s", code, stderr.String())
+	}
+	assertValidJSON(t, stdout.Bytes())
+	if !strings.Contains(stderr.String(), "Test Printer") {
+		t.Fatalf("inspect on a bundle did not show its manifest: %s", stderr.String())
 	}
 }
 

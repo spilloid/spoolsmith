@@ -276,9 +276,10 @@ func (a *app) onPreview() {
 		}
 		outcome.Operation = string(op.Kind)
 		a.mw.Synchronize(func() { a.previewJSON = prettyJSON(outcome) })
-		for _, reason := range outcome.Uncertain {
-			fmt.Fprintln(&buf, "Evidence: "+reason)
-		}
+		// outcome.Uncertain is already printed as "Note: ..." straight into buf
+		// by the shared Workflow code (see writeInstallPlan) -- reprinting it
+		// here as "Evidence: ..." used to show every reason twice, once under
+		// each label.
 		var outcomeErr error
 		if outcome.Status == "dry-run" && !dryRunOnly {
 			outcomeErr = a.stagePending(op, outcome)

@@ -35,7 +35,7 @@ func bulkCopyResultText(result bundle.AllResult, includeDriver bool) string {
 		case "written":
 			fmt.Fprintf(&text, "Copied: %s\r\n  %s\r\n", q.Name, q.Bundle)
 			if q.Reason != "" {
-				fmt.Fprintf(&text, "  Degraded success: %s\r\n", q.Reason)
+				fmt.Fprintf(&text, "  %s\r\n", q.Reason)
 			}
 			text.WriteString("\r\n")
 		case "skipped":

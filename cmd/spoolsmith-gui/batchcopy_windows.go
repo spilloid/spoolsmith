@@ -106,6 +106,12 @@ func (a *app) onCopyAllQueues() {
 		}()
 	}
 
+	elevated := isElevated()
+	driverLabel := "Include drivers (otherwise the other PC needs them installed)"
+	if !elevated {
+		driverLabel = "Include drivers (needs administrator -- restart the app as administrator to use this)"
+	}
+
 	err := (Dialog{
 		AssignTo: &dialog, Title: "Copy all printers", MinSize: Size{Width: 720, Height: 480},
 		Size: Size{Width: 820, Height: 560}, Layout: pagePadding(), CancelButton: &closeBtn,
@@ -125,7 +131,7 @@ func (a *app) onCopyAllQueues() {
 				Label{Text: "Note (optional):"},
 				LineEdit{AssignTo: &noteEdit, ColumnSpan: 2, CueBanner: "For example: front office PC replacement", Accessibility: name("copy-all-note")},
 			}},
-			CheckBox{AssignTo: &driverCheck, Text: "Include drivers (requires administrator; otherwise the other PC needs them installed)", Checked: true, Accessibility: name("copy-all-drivers")},
+			CheckBox{AssignTo: &driverCheck, Text: driverLabel, Checked: elevated, Enabled: elevated, Accessibility: name("copy-all-drivers")},
 			TextEdit{AssignTo: &detail, ReadOnly: true, VScroll: true, Text: bulkCopyInventoryText(a.queues), Accessibility: name("copy-all-details")},
 			Label{AssignTo: &status, Text: "Existing files will not be replaced. Windows printer settings will not change."},
 			Composite{Layout: row(), Children: []Widget{

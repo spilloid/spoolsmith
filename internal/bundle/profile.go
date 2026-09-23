@@ -10,6 +10,13 @@ import (
 	"github.com/spilloid/spoolsmith/internal/install"
 )
 
+// UnconfirmedIdentityNotice is the one plain sentence every surface (CLI and
+// desktop, a single copy or a batch) uses when a profile's printer never
+// answered during copy, so its identity was never confirmed. Descriptive, not
+// a coined term: it says what happened and what follows from it, once,
+// instead of each surface phrasing the same fact its own way.
+const UnconfirmedIdentityNotice = "The printer did not answer, so its identity was not confirmed. Applying it will run offline; check the printer once it is reachable."
+
 // SaveProfile writes a standalone profile as a bundle carrying no driver
 // payload -- the file `profile capture` produces. It never overwrites an
 // existing file: an operator's captured setup is inventory, and silently
