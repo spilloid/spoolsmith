@@ -48,8 +48,8 @@ func TestMain(m *testing.M) {
 func testOptions(t *testing.T) Options {
 	t.Helper()
 	p := install.Profile{Version: 1, Target: "192.0.2.40", PrinterName: "Accounting's $copier “West”", DriverName: "Exact OEM Driver", Evidence: evidence.Evidence{Provenance: "captured", HTTPTitle: "Example Model"}}
-	path := filepath.Join(t.TempDir(), "profile.json")
-	if err := install.SaveProfile(path, p); err != nil {
+	path := filepath.Join(t.TempDir(), "profile.ssb")
+	if err := bundle.SaveProfile(path, p); err != nil {
 		t.Fatal(err)
 	}
 	return Options{ProfilePath: path, BinaryPath: testBinary, BinarySHA256: testBinaryHash, ID: "accounting", Revision: 1, DisplayName: "Accounting copier", Offline: true, DriverPrerequisite: true}
@@ -314,13 +314,13 @@ function Invoke-SpoolSmith([string]$Directory,[string]$Operation,[bool]$Offline,
 	if err := execute(filepath.Join(export(other), "install.ps1"), false); err == nil {
 		t.Fatal("adopted another deployment's queue")
 	}
-	p, err := install.LoadProfile(o.ProfilePath)
+	p, err := bundle.LoadProfile(o.ProfilePath)
 	if err != nil {
 		t.Fatal(err)
 	}
 	p.Target = "192.0.2.41"
-	nextProfile := filepath.Join(t.TempDir(), "next.json")
-	install.SaveProfile(nextProfile, p)
+	nextProfile := filepath.Join(t.TempDir(), "next.ssb")
+	bundle.SaveProfile(nextProfile, p)
 	next := o
 	next.ProfilePath = nextProfile
 	if err := execute(filepath.Join(export(next), "install.ps1"), false); err == nil {
@@ -581,25 +581,62 @@ func TestPrepareRejectsBundleAndPrerequisiteTogether(t *testing.T) {
 	}
 }
 
-func TestPrepareRejectsBundleProfileWithVendorArchive(t *testing.T) {
+// TestPrepareNoLongerBlanketRejectsBundleProfileWithVendorArchive is the case
+// merging the two on-disk formats into one made newly possible: a profile
+// carrying a driver_package reference used to be limited to the bare-JSON
+// format, purely to avoid ambiguity with a bundle's own embedded-payload
+// mechanism. There is only one format now, so a bundle naming a local vendor
+// archive -- and carrying no embedded payload of its own -- is no longer
+// rejected outright at load time; verifying the referenced archive itself
+// (needing the real, signed Brother installer) is exercised elsewhere and out
+// of reach of a unit test, so this only confirms the failure mode changed
+// from "ambiguous format" to "archive does not verify".
+func TestPrepareNoLongerBlanketRejectsBundleProfileWithVendorArchive(t *testing.T) {
+	archive := filepath.Join(t.TempDir(), "driver.EXE")
+	if err := os.WriteFile(archive, []byte("not the real signed installer"), 0600); err != nil {
+		t.Fatal(err)
+	}
 	p := install.Profile{
-		Version: 1, Target: "192.0.2.42", PrinterName: "Ambiguous copier", DriverName: "Brother HL-L2315D series",
+		Version: 1, Target: "192.0.2.42", PrinterName: "Vendor-archive copier", DriverName: "Brother HL-L2315D series",
 		Evidence:      evidence.Evidence{Provenance: "captured", HTTPTitle: "Example Model"},
-		DriverPackage: &install.PackageSelection{ID: "brother-y14a-c1-hostm-1110", Archive: ".packages/brother/driver.EXE"},
+		DriverPackage: &install.PackageSelection{ID: "brother-y14a-c1-hostm-1110", Archive: archive},
 	}
 	path := writeTestBundle(t, p, false)
 	o := testBundleOptions(t, false)
 	o.ProfilePath = path
 	o.DriverPrerequisite = false
-	if _, err := Prepare(o); err == nil {
-		t.Fatal("accepted a bundle whose embedded profile also names a local vendor archive")
+	_, err := Prepare(o)
+	if err == nil {
+		t.Fatal("expected the local archive's own verification to fail (it is not the real signed installer)")
+	}
+	if strings.Contains(err.Error(), "recapture") || strings.Contains(err.Error(), "vendor archive") {
+		t.Fatalf("still blanket-rejected a bundle naming a vendor archive: %v", err)
 	}
 }
 
-func TestHasLocalPayloadDispatchesOnExtension(t *testing.T) {
+// TestPrepareRejectsBundleWithBothDriverMechanisms is the conflict that
+// remains real regardless of format: a bundle cannot name a local vendor
+// archive and also carry its own embedded driver payload -- packaging would
+// have to silently pick one.
+func TestPrepareRejectsBundleWithBothDriverMechanisms(t *testing.T) {
+	p := install.Profile{
+		Version: 1, Target: "192.0.2.42", PrinterName: "Ambiguous copier", DriverName: "Brother HL-L2315D series",
+		Evidence:      evidence.Evidence{Provenance: "captured", HTTPTitle: "Example Model"},
+		DriverPackage: &install.PackageSelection{ID: "brother-y14a-c1-hostm-1110", Archive: ".packages/brother/driver.EXE"},
+	}
+	path := writeTestBundle(t, p, true)
+	o := testBundleOptions(t, true)
+	o.ProfilePath = path
+	o.DriverPrerequisite = false
+	if _, err := Prepare(o); err == nil {
+		t.Fatal("accepted a bundle naming both an embedded payload and a separate vendor archive")
+	}
+}
+
+func TestHasLocalPayloadOnAPlainProfileBundle(t *testing.T) {
 	jsonOpts := testOptions(t)
 	if has, err := HasLocalPayload(jsonOpts.ProfilePath); err != nil || has {
-		t.Fatalf("has=%v err=%v, want false for a driverless profile JSON", has, err)
+		t.Fatalf("has=%v err=%v, want false for a driverless profile bundle", has, err)
 	}
 	driverless := testBundleOptions(t, false)
 	if has, err := HasLocalPayload(driverless.ProfilePath); err != nil || has {

@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/spilloid/spoolsmith/internal/bundle"
 	"github.com/spilloid/spoolsmith/internal/install"
 	"github.com/tailscale/walk"
 	. "github.com/tailscale/walk/declarative"
@@ -29,7 +30,8 @@ func (a *app) onOpenSavedSetup() {
 	a.showSavedSetups(paths, "", err)
 }
 
-// savedSetupPaths lists JSON candidates in a folder, in filename order. A
+// savedSetupPaths lists saved-printer candidates in a folder, in filename
+// order. A
 // folder that does not exist yet is the ordinary first-run case, not an
 // error -- SpoolSmith has never had reason to create it. Anything else
 // os.ReadDir reports (permission denied, the path is a file, a network
@@ -46,7 +48,7 @@ func savedSetupPaths(dir string) ([]string, error) {
 	}
 	var paths []string
 	for _, entry := range entries {
-		if entry.IsDir() || !strings.EqualFold(filepath.Ext(entry.Name()), ".json") {
+		if entry.IsDir() || !strings.EqualFold(filepath.Ext(entry.Name()), ".ssb") {
 			continue
 		}
 		paths = append(paths, filepath.Join(dir, entry.Name()))
@@ -57,7 +59,7 @@ func savedSetupPaths(dir string) ([]string, error) {
 
 // savedSetupLabel describes one setup in a single line.
 func savedSetupLabel(path string) string {
-	profile, err := install.LoadProfile(path)
+	profile, err := bundle.LoadProfile(path)
 	if err != nil {
 		return filepath.Base(path) + "  ·  cannot be used"
 	}
@@ -94,7 +96,7 @@ func (a *app) showSavedSetups(paths []string, message string, readErr error) {
 			case folderErr != nil:
 				detail.SetText("Couldn't read this folder: " + folderErr.Error() + "\r\n\r\nUse Open another folder to choose a different location.")
 			case len(current) == 0:
-				detail.SetText("No saved setups in this folder yet.\r\n\r\nImport a JSON collection, open another folder, or save a printer from Add a printer.")
+				detail.SetText("No saved setups in this folder yet.\r\n\r\nImport a collection, open another folder, or save a printer from Add a printer.")
 			default:
 				detail.SetText("Choose a saved setup.")
 			}
@@ -103,7 +105,7 @@ func (a *app) showSavedSetups(paths []string, message string, readErr error) {
 			}
 			return
 		}
-		profile, err := install.LoadProfile(path)
+		profile, err := bundle.LoadProfile(path)
 		if err != nil {
 			detail.SetText("This setup cannot be used:\r\n\r\n" + err.Error())
 			setupBtn.SetEnabled(false)
@@ -161,8 +163,8 @@ func (a *app) showSavedSetups(paths []string, message string, readErr error) {
 				}},
 			}},
 			Composite{Layout: row(), Children: []Widget{
-				PushButton{Text: "Export all JSON...", OnClicked: func() { a.exportSetups(dialog) }},
-				PushButton{Text: "Import all JSON...", OnClicked: func() {
+				PushButton{Text: "Export all...", OnClicked: func() { a.exportSetups(dialog) }},
+				PushButton{Text: "Import all...", OnClicked: func() {
 					if a.importSetups(dialog) {
 						status.SetText("Folder: " + a.profilesDirectory())
 						current, folderErr = savedSetupPaths(a.profilesDirectory())
@@ -215,9 +217,9 @@ func (a *app) showSavedSetups(paths []string, message string, readErr error) {
 // dirty check and a discard prompt to cope. A modal dialog makes that state
 // impossible instead of guarding against it.
 func (a *app) editSavedSetup(owner walk.Form, path string) bool {
-	profile, loadErr := install.LoadProfile(path)
+	profile, loadErr := bundle.LoadProfile(path)
 	if loadErr != nil {
-		showErr(owner, "Cannot edit setup", fmt.Errorf("this setup could not be read; fix the JSON or capture a new setup before editing: %w", loadErr))
+		showErr(owner, "Cannot edit setup", fmt.Errorf("this setup could not be read; capture a new setup before editing: %w", loadErr))
 		return false
 	}
 	var dialog *walk.Dialog
@@ -270,7 +272,7 @@ func (a *app) editSavedSetup(owner walk.Form, path string) bool {
 					default:
 						updated.DriverPackage = &install.PackageSelection{ID: id, Archive: archivePath}
 					}
-					backup, err := install.EditProfile(path, updated)
+					backup, err := bundle.EditProfile(path, updated)
 					if err != nil {
 						status.SetText("Couldn't save: " + err.Error())
 						return

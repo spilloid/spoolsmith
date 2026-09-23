@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/spilloid/spoolsmith/internal/actionlog"
+	"github.com/spilloid/spoolsmith/internal/bundle"
 	"github.com/spilloid/spoolsmith/internal/catalog"
 	"github.com/spilloid/spoolsmith/internal/inspect"
 	"github.com/spilloid/spoolsmith/internal/install"
@@ -164,6 +165,9 @@ func run(ctx context.Context, args []string, input io.Reader, stdout, stderr io.
 			}
 			options.UpdateExisting = true
 		}
+		if options.BundleDriver != nil {
+			fmt.Fprintf(stderr, "Verified %d driver files from the bundle (%s)\n", options.BundleDriver.FileCount, options.BundleDriver.StageDirName)
+		}
 		options.Compact = app.outputTerminal && !options.JSON
 		outcome, code := app.workflow.RunInstall(ctx, app.environment, input, stderr, app.inputTerminal, options)
 		outcome.Operation = args[0]
@@ -250,14 +254,12 @@ func parseInstallArgs(args []string) (install.InstallOptions, error) {
 			}
 			seen[arg] = true
 			index++
-			p, err := install.LoadProfile(args[index])
+			p, driver, err := loadProfileFile(args[index])
 			if err != nil {
 				return options, err
 			}
-			if err := p.ResolvePackagePath(args[index]); err != nil {
-				return options, err
-			}
 			options.Profile = &p
+			options.BundleDriver = driver
 		case "--force-family":
 			if seen[arg] || index+1 >= len(args) {
 				return options, errors.New("--force-family requires one non-empty family ID")
@@ -315,7 +317,7 @@ func parseUninstallArgs(args []string) (install.UninstallOptions, error) {
 			}
 			seen[arg] = true
 			index++
-			p, err := install.LoadProfile(args[index])
+			p, err := bundle.LoadProfile(args[index])
 			if err != nil {
 				return options, err
 			}

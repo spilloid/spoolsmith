@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.IO.Compression;
 using System.Linq;
 using System.Threading;
 using FlaUI.Core.AutomationElements;
@@ -199,8 +200,8 @@ public sealed class FunctionalTests : IDisposable
         var dialog = OpenSavedSetups();
         Assert.Contains("No saved setups", Find(dialog, "saved-detail").AsTextBox().Text);
         Assert.False(FindButton(dialog, "Set up this printer").IsEnabled);
-        Assert.True(FindButton(dialog, "Import all JSON...").IsEnabled);
-        Assert.True(FindButton(dialog, "Export all JSON...").IsEnabled);
+        Assert.True(FindButton(dialog, "Import all...").IsEnabled);
+        Assert.True(FindButton(dialog, "Export all...").IsEnabled);
         FindButton(dialog, "Close").Invoke();
         WaitUntil(() => !_fixture.MainWindow.ModalWindows.Any(), "Close did not dismiss saved setups.");
         Assert.False(Directory.Exists(_testDirectory));
@@ -210,14 +211,30 @@ public sealed class FunctionalTests : IDisposable
     public void Invalid_saved_setup_cannot_be_edited_or_applied()
     {
         var path = CreateSavedPrinter();
-        var invalid = File.ReadAllText(path).Replace("\"version\": 1", "\"unknown_future_field\": true, \"version\": 1");
-        File.WriteAllText(path, invalid);
+        var invalid = ReadManifestEntry(path).Replace("\"version\": 1", "\"unknown_future_field\": true, \"version\": 1");
+        WriteManifestEntry(path, invalid);
         var dialog = OpenSavedSetups();
         Assert.Contains("cannot be used", Find(dialog, "saved-detail").AsTextBox().Text);
         foreach (var caption in new[] { "Set up this printer", "Update to match", "Check status", "Remove printer from this PC...", "Edit..." })
             Assert.False(FindButton(dialog, caption).IsEnabled);
         FindButton(dialog, "Close").Invoke();
-        Assert.Equal(invalid, File.ReadAllText(path));
+        // Merely listing/viewing the corrupted file must not have "fixed" it.
+        Assert.Equal(invalid, ReadManifestEntry(path));
+    }
+
+    private static string ReadManifestEntry(string bundlePath)
+    {
+        using var archive = ZipFile.OpenRead(bundlePath);
+        using var reader = new StreamReader(archive.GetEntry("manifest.json")!.Open());
+        return reader.ReadToEnd();
+    }
+
+    private static void WriteManifestEntry(string bundlePath, string manifestJson)
+    {
+        using var archive = ZipFile.Open(bundlePath, ZipArchiveMode.Update);
+        archive.GetEntry("manifest.json")!.Delete();
+        using var writer = new StreamWriter(archive.CreateEntry("manifest.json").Open());
+        writer.Write(manifestJson);
     }
 
     [StaTheory]
@@ -310,7 +327,7 @@ public sealed class FunctionalTests : IDisposable
     {
         Assert.True(File.Exists(_fixture.CliExePath),
             $"expected the Windows CLI binary at {_fixture.CliExePath} (build with: go build -o dist/spoolsmith.exe ./cmd/spoolsmith, or set SPOOLSMITH_CLI_EXE)");
-        var profilePath = Path.Combine(_fixture.RepoRoot, "examples", "intune", "accounting.json");
+        var profilePath = Path.Combine(_fixture.RepoRoot, "examples", "intune", "accounting.ssb");
         Assert.True(File.Exists(profilePath), $"expected example profile at {profilePath}");
         var outputDir = Path.Combine(Path.GetTempPath(), "spoolsmith-intune-test-" + Guid.NewGuid().ToString("N"));
 
@@ -404,7 +421,7 @@ public sealed class FunctionalTests : IDisposable
         var tool = Environment.GetEnvironmentVariable("SPOOLSMITH_CONTENT_PREP_EXE");
         if (string.IsNullOrEmpty(tool)) return;
         Assert.True(File.Exists(tool), $"SPOOLSMITH_CONTENT_PREP_EXE does not exist: {tool}");
-        var profilePath = Path.Combine(_fixture.RepoRoot, "examples", "intune", "accounting.json");
+        var profilePath = Path.Combine(_fixture.RepoRoot, "examples", "intune", "accounting.ssb");
         var outputDir = Path.Combine(Path.GetTempPath(), "spoolsmith-intune-prep-" + Guid.NewGuid().ToString("N"));
         var prepDir = outputDir + "-intunewin";
 
@@ -498,8 +515,8 @@ public sealed class FunctionalTests : IDisposable
     private string CreateSavedPrinter()
     {
         Directory.CreateDirectory(_testDirectory);
-        var path = Path.Combine(_testDirectory, "office-printer.json");
-        File.WriteAllText(path, """
+        var path = Path.Combine(_testDirectory, "office-printer.ssb");
+        WriteProfileBundle(path, """
             {
               "version": 1,
               "target": "127.0.0.1",
@@ -513,6 +530,26 @@ public sealed class FunctionalTests : IDisposable
             }
             """);
         return path;
+    }
+
+    /// <summary>
+    /// Builds a minimal, valid printer file directly -- a zip carrying
+    /// manifest.json with no driver payload, the same shape
+    /// internal/bundle.SaveProfile produces -- without a live network probe
+    /// or running the Go CLI as a fixture-building step.
+    /// </summary>
+    private static void WriteProfileBundle(string path, string profileJson)
+    {
+        var manifest = $$"""
+            {
+              "version": 1,
+              "created_utc": "2026-01-01T00:00:00Z",
+              "profile": {{profileJson.Trim()}}
+            }
+            """;
+        using var archive = ZipFile.Open(path, ZipArchiveMode.Create);
+        using var writer = new StreamWriter(archive.CreateEntry("manifest.json").Open());
+        writer.Write(manifest);
     }
 
     internal static void WaitUntil(Func<bool> ready, string failure, int timeoutMs = 10_000)

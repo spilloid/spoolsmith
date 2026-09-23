@@ -2,6 +2,7 @@ package bundle
 
 import (
 	"archive/zip"
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -181,24 +182,48 @@ func hashFile(p string) (string, error) {
 // verified until Verify or Extract runs.
 type Bundle struct {
 	Manifest Manifest
-	Path     string
-	reader   *zip.ReadCloser
+	// Path is the source file's path, empty for a bundle opened from memory
+	// (OpenBytes) rather than from disk.
+	Path   string
+	reader *zip.Reader
+	closer io.Closer // nil for a bundle opened from memory
 }
 
-// Open reads and validates a bundle's manifest. It does not extract anything.
+// Open reads and validates a bundle's manifest from a file. It does not
+// extract anything.
 func Open(bundlePath string) (*Bundle, error) {
-	reader, err := zip.OpenReader(bundlePath)
+	rc, err := zip.OpenReader(bundlePath)
 	if err != nil {
 		return nil, fmt.Errorf("bundle: open %q: %w", bundlePath, err)
 	}
+	b, err := openReader(&rc.Reader)
+	if err != nil {
+		rc.Close()
+		return nil, err
+	}
+	b.Path = bundlePath
+	b.closer = rc
+	return b, nil
+}
+
+// OpenBytes reads and validates a bundle already held in memory, such as one
+// member of a saved-setups collection extracted without ever touching disk.
+// It shares every check Open makes; only the source differs.
+func OpenBytes(data []byte) (*Bundle, error) {
+	reader, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		return nil, fmt.Errorf("bundle: open: %w", err)
+	}
+	return openReader(reader)
+}
+
+func openReader(reader *zip.Reader) (*Bundle, error) {
 	manifestFile, err := findEntry(reader, ManifestName)
 	if err != nil {
-		reader.Close()
 		return nil, err
 	}
 	rc, err := manifestFile.Open()
 	if err != nil {
-		reader.Close()
 		return nil, err
 	}
 	defer rc.Close()
@@ -206,37 +231,34 @@ func Open(bundlePath string) (*Bundle, error) {
 	decoder.DisallowUnknownFields()
 	var m Manifest
 	if err := decoder.Decode(&m); err != nil {
-		reader.Close()
 		return nil, fmt.Errorf("bundle: decode manifest: %w", err)
 	}
 	var extra any
 	if err := decoder.Decode(&extra); err != io.EOF {
-		reader.Close()
 		return nil, errors.New("bundle: manifest has trailing data or is oversized")
 	}
 	if err := m.Validate(); err != nil {
-		reader.Close()
 		return nil, err
 	}
 	if err := checkEntries(reader, m); err != nil {
-		reader.Close()
 		return nil, err
 	}
-	return &Bundle{Manifest: m, Path: bundlePath, reader: reader}, nil
+	return &Bundle{Manifest: m, reader: reader}, nil
 }
 
-// Close releases the underlying archive.
+// Close releases the underlying archive. A bundle opened with OpenBytes has
+// nothing to release.
 func (b *Bundle) Close() error {
-	if b == nil || b.reader == nil {
+	if b == nil || b.closer == nil {
 		return nil
 	}
-	return b.reader.Close()
+	return b.closer.Close()
 }
 
 // checkEntries confirms the archive contains exactly what the manifest
 // describes: no unlisted entries an operator would not see in `bundle inspect`,
 // and no listed entry that is missing.
-func checkEntries(reader *zip.ReadCloser, m Manifest) error {
+func checkEntries(reader *zip.Reader, m Manifest) error {
 	expected := map[string]bool{ManifestName: false}
 	if m.Driver != nil {
 		for _, f := range m.Driver.Files {
@@ -264,7 +286,7 @@ func checkEntries(reader *zip.ReadCloser, m Manifest) error {
 	return nil
 }
 
-func findEntry(reader *zip.ReadCloser, name string) (*zip.File, error) {
+func findEntry(reader *zip.Reader, name string) (*zip.File, error) {
 	for _, entry := range reader.File {
 		if entry.Name == name {
 			return entry, nil

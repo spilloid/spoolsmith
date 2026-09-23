@@ -38,9 +38,10 @@ See Microsoft's [Win32 prerequisites and setup](https://learn.microsoft.com/en-u
    compatibility by installing and printing. Review the exact queue name, literal
    IP address, and registered driver name. Captured identity is descriptive evidence,
    not device authentication.
-2. Supply a profile (`.json`) referencing the supported pinned Brother local
-   archive recipe, a `.ssb` bundle written by `spoolsmith copy --include-driver`,
-   or explicitly accept a separately managed registered-driver prerequisite.
+2. Supply a profile (`.ssb`, written by `profile capture` or `spoolsmith copy`)
+   referencing the supported pinned Brother local archive recipe, carrying its
+   own embedded driver payload (from `spoolsmith copy --include-driver`), or
+   explicitly accept a separately managed registered-driver prerequisite.
    Arbitrary OEM installers and downloaded payloads are still not supported by
    this packaging path. Both the archive hash and Windows signature checks
    remain mandatory when staging the supported archive; a bundle's driver
@@ -117,7 +118,7 @@ files or running Microsoft’s tool:
 
 ```powershell
 .\spoolsmith.exe intune build `
-  --profile .\profiles\accounting.json `
+  --profile .\profiles\accounting.ssb `
   --binary .\spoolsmith.exe --driver-prerequisite --dry-run
 ```
 
@@ -132,7 +133,7 @@ Override defaults when needed, especially when updating an existing deployment:
 
 ```powershell
 .\spoolsmith.exe intune build `
-  --profile .\profiles\accounting.json `
+  --profile .\profiles\accounting.ssb `
   --binary .\spoolsmith.exe --binary-sha256 '<approved SHA-256>' `
   --id indy-accounting --revision 2 --name 'Accounting Copier' `
   --location Indianapolis --description 'Accounting department copier' `
@@ -174,7 +175,7 @@ The export contains `profile.json`, `deployment.json`, `spoolsmith.exe`,
 `install.ps1`, `uninstall.ps1`, `runtime.ps1`, `detect.ps1`, and `README.txt`,
 plus `driver.exe` when using the supported archive or `bundle.ssb` when
 packaging from a bundle with a driver payload. Existing output directories
-are refused. The sample [profile](../examples/intune/accounting.json) is illustrative
+are refused. The sample [profile](../examples/intune/accounting.ssb) is illustrative
 and must be replaced with an actual captured, validated profile before deployment.
 
 ## Prepare and upload

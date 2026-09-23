@@ -215,7 +215,7 @@ func (a *app) reviewSavedPrinter(target string) bool {
 // startProfileOperation validates a saved setup before it can become an
 // operation, so a corrupt file is reported where it was chosen.
 func (a *app) startProfileOperation(path string, kind operationKind) bool {
-	profile, err := install.LoadProfile(path)
+	profile, err := bundle.LoadProfile(path)
 	if err != nil {
 		showErr(a.mw, "Saved setup", fmt.Errorf("this saved setup cannot be used: %w", err))
 		return false
@@ -295,7 +295,7 @@ func (a *app) suggestCaptureFields() {
 // suggestCaptureFile fills in a destination the operator has not chosen. A path
 // they typed, or one carried over from a previous printer, is left alone.
 func (a *app) suggestCaptureFile(ip string) {
-	if file := a.captureFile.Text(); file == "" || file == a.captureSuggestedFile || file == "profiles/printer.json" {
+	if file := a.captureFile.Text(); file == "" || file == a.captureSuggestedFile || file == "profiles/printer.ssb" {
 		a.captureSuggestedFile = suggestedProfileFile(a.profilesDirectory(), ip)
 		a.captureFile.SetText(a.captureSuggestedFile)
 	}
@@ -362,7 +362,7 @@ func (a *app) setCaptureBusy(busy bool) {
 }
 
 func (a *app) onBrowseCapture() {
-	dialog := walk.FileDialog{Title: "Save printer setup", Filter: "Printer setups (*.json)|*.json|All files (*.*)|*.*", FilePath: a.captureFile.Text()}
+	dialog := walk.FileDialog{Title: "Save printer setup", Filter: "Printer setups (*.ssb)|*.ssb|All files (*.*)|*.*", FilePath: a.captureFile.Text()}
 	accepted, err := dialog.ShowSave(a.mw)
 	if err != nil {
 		showErr(a.mw, "Save printer setup", err)
@@ -439,8 +439,8 @@ func (a *app) onCaptureProfile() {
 			return
 		}
 	}
-	if !strings.EqualFold(filepath.Ext(file), ".json") {
-		a.captureStatus.SetText("Choose a filename ending in .json so this setup can be reused later.")
+	if !strings.EqualFold(filepath.Ext(file), ".ssb") {
+		a.captureStatus.SetText("Choose a filename ending in .ssb so this setup can be reused later.")
 		a.captureFile.SetFocus()
 		return
 	}
@@ -463,7 +463,7 @@ func (a *app) onCaptureProfile() {
 		savingFailed := false
 		if finalErr == nil {
 			p := install.Profile{Version: 1, Target: result.Evidence.IP, Evidence: result.Evidence, PrinterName: name, DriverName: driver}
-			if finalErr = install.SaveProfile(file, p); finalErr != nil {
+			if finalErr = bundle.SaveProfile(file, p); finalErr != nil {
 				savingFailed = true
 			}
 		}

@@ -127,23 +127,26 @@ backup, or **Check status** against local Windows configuration. Status does not
 prove reachability or printing. **Open another folder** switches the profile library.
 The default library sits beside the executable; `SPOOLSMITH_PROFILES_DIR` can override it.
 
-**Export all JSON** saves every profile in the current folder into one versioned
-collection. **Import all JSON** validates the entire collection, preserves all profile
-properties and evidence, and refuses existing filenames (including case-only clashes).
+**Export all...** saves every printer file in the current folder into one versioned
+collection (a set — the same bundle container, carrying each `.ssb` member verbatim).
+**Import all...** validates the entire collection, preserves every member byte for
+byte, and refuses existing filenames (including case-only clashes).
 In the source build, both actions show a review of filenames, printer settings,
 external archive references and destination conflicts. Choose another destination
 within the review; importing switches the library to that folder after saving.
 Import saves files only; each Windows change still needs review and confirmation.
-Driver archives are not embedded: carry them separately and preserve their relative
-paths beside the imported profiles. Keep collection exports outside the profile folder.
+A saved printer carrying its own embedded driver payload (from `copy --include-driver`)
+is not eligible for this transfer — copy it to a file directly instead. A referenced
+vendor archive is not embedded either: carry it separately and preserve its relative
+path beside the imported profiles. Keep collection exports outside the profile folder.
 
 The CLI exposes the same transfer:
 
 ```powershell
-spoolsmith profile export-all profiles printer-setups.json --dry-run
-spoolsmith profile export-all profiles printer-setups.json
-spoolsmith profile import-all printer-setups.json imported-profiles --dry-run
-spoolsmith profile import-all printer-setups.json imported-profiles
+spoolsmith profile export-all profiles printer-setups.ssb --dry-run
+spoolsmith profile export-all profiles printer-setups.ssb
+spoolsmith profile import-all printer-setups.ssb imported-profiles --dry-run
+spoolsmith profile import-all printer-setups.ssb imported-profiles
 ```
 
 Transfer `--dry-run` is also new in the source build. It writes no files and reports
@@ -194,22 +197,22 @@ compatibility; an LLM-generated name or a catalog family is not that verificatio
 
 ```powershell
 New-Item -ItemType Directory -Force profiles
-.\spoolsmith.exe profile capture 192.168.1.50 profiles\office.json --name "Office Printer" --driver "EXACT REGISTERED OEM DRIVER NAME"
+.\spoolsmith.exe profile capture 192.168.1.50 profiles\office.ssb --name "Office Printer" --driver "EXACT REGISTERED OEM DRIVER NAME"
 
 # In an Administrator PowerShell, preview and then confirm the mapping:
-.\spoolsmith.exe add --profile profiles\office.json --dry-run
-.\spoolsmith.exe add --profile profiles\office.json
+.\spoolsmith.exe add --profile profiles\office.ssb --dry-run
+.\spoolsmith.exe add --profile profiles\office.ssb
 
 # Change the saved settings, then review/apply them to the named queue:
-.\spoolsmith.exe profile edit profiles\office.json --driver "NEW REGISTERED DRIVER NAME"
-.\spoolsmith.exe configure --profile profiles\office.json --dry-run
-.\spoolsmith.exe configure --profile profiles\office.json
+.\spoolsmith.exe profile edit profiles\office.ssb --driver "NEW REGISTERED DRIVER NAME"
+.\spoolsmith.exe configure --profile profiles\office.ssb --dry-run
+.\spoolsmith.exe configure --profile profiles\office.ssb
 
 # Remove the queue, retaining shared ports and drivers:
-.\spoolsmith.exe remove --profile profiles\office.json
+.\spoolsmith.exe remove --profile profiles\office.ssb
 ```
 
-Keep one JSON per printer and copy it to the workstation where you need the queue.
+Keep one printer file (`.ssb`) per printer and copy it to the workstation where you need the queue.
 The `profiles/` directory is ignored by Git. Capture never overwrites a file.
 Profiles support printers outside the built-in family catalog through an explicit
 operator-selected driver. They contain configuration and observed evidence, never
@@ -229,7 +232,7 @@ changing the queue name creates a separate queue rather than renaming the old on
 Moving a queue to another IP retains its previous port.
 `remove --profile` checks the installed endpoint and driver against the profile;
 use explicit removal by queue name if you intend to remove a differently configured queue.
-Edit backups live under `.backups/` with a `.bak` extension, outside normal JSON globs.
+Edit backups live under `.backups/` with a `.bak` extension, outside normal `.ssb` globs.
 
 Terminal add/configure/remove commands show concise plans and results. Use
 `--dry-run --json` to inspect the complete commands and metadata. Redirected output
@@ -248,12 +251,12 @@ the reviewed package recipe and a locally downloaded archive. Keep the archive n
 to your profiles; relative paths resolve from the profile directory, not your shell.
 
 ```powershell
-.\spoolsmith.exe profile edit profiles\brother-home.json --package brother-y14a-c1-hostm-1110 --archive .packages\brother\Y14A_C1-hostm-1110.EXE
-.\spoolsmith.exe add --profile profiles\brother-home.json --dry-run
-.\spoolsmith.exe add --profile profiles\brother-home.json
+.\spoolsmith.exe profile edit profiles\brother-home.ssb --package brother-y14a-c1-hostm-1110 --archive .packages\brother\Y14A_C1-hostm-1110.EXE
+.\spoolsmith.exe add --profile profiles\brother-home.ssb --dry-run
+.\spoolsmith.exe add --profile profiles\brother-home.ssb
 
 # Return to using an already-installed driver only:
-.\spoolsmith.exe profile edit profiles\brother-home.json --clear-package
+.\spoolsmith.exe profile edit profiles\brother-home.ssb --clear-package
 ```
 
 The optional `driver_package` object contains `id` and `archive`. The shown plan
@@ -440,10 +443,10 @@ identity-checking the printer, and use a saved profile's settings as-is.
 Prevalidated profiles can provision a queue before the printer is reachable:
 
 ```powershell
-spoolsmith add --profile .\profiles\accounting.json --offline --dry-run --json
-spoolsmith add --profile .\profiles\accounting.json --offline --yes --json
-spoolsmith configure --profile .\profiles\accounting.json --offline --yes --json
-spoolsmith status --profile .\profiles\accounting.json --json
+spoolsmith add --profile .\profiles\accounting.ssb --offline --dry-run --json
+spoolsmith add --profile .\profiles\accounting.ssb --offline --yes --json
+spoolsmith configure --profile .\profiles\accounting.ssb --offline --yes --json
+spoolsmith status --profile .\profiles\accounting.ssb --json
 ```
 
 `--offline` explicitly skips live identity checks and requires a valid saved
@@ -467,7 +470,7 @@ SpoolSmith draws everywhere else (see [How it's built to
 behave](#how-its-built-to-behave)).
 
 ```powershell
-spoolsmith intune build --profile printer-setups\accounting.json `
+spoolsmith intune build --profile printer-setups\accounting.ssb `
   --binary spoolsmith.exe --driver-prerequisite --dry-run
 ```
 

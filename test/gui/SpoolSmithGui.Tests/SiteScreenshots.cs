@@ -76,7 +76,7 @@ public sealed class SiteScreenshots
     /// </summary>
     private static void CaptureIntuneWizard(AppFixture fixture, string images)
     {
-        var profilePath = Path.Combine(fixture.RepoRoot, "examples", "intune", "accounting.json");
+        var profilePath = Path.Combine(fixture.RepoRoot, "examples", "intune", "accounting.ssb");
         var outputDir = Path.Combine(Path.GetTempPath(), "spoolsmith-intune-screenshot-" + Guid.NewGuid().ToString("N"));
         fixture.SelectTab("Tools");
         FunctionalTests.FindButton(fixture.MainWindow, "Build an Intune printer app...").Invoke();

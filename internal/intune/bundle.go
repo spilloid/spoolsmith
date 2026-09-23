@@ -63,13 +63,16 @@ type Manifest struct {
 	ProfileSHA256      string `json:"profile_sha256"`
 	DriverSHA256       string `json:"driver_sha256,omitempty"`
 	ConfigSHA256       string `json:"configuration_sha256"`
-	// ProfileSource is "json" or "bundle", recording which local file format the
-	// reviewed profile and, when present, driver payload came from.
+	// ProfileSource records the reviewed profile's origin for the README. It
+	// is always "bundle" now that a profile has exactly one on-disk shape
+	// (internal/bundle, extension .ssb); kept as a field rather than a
+	// literal in the template so a future distinct source is a one-line
+	// change here, not a template rewrite.
 	ProfileSource string `json:"profile_source"`
-	// BundleSHA256 pins the original .ssb file when the profile source is a
-	// bundle carrying a driver payload; empty otherwise. The bundle itself
-	// (not an extracted copy) travels with the package so `apply`'s own
-	// catalog-signature trust chain runs unchanged at install time.
+	// BundleSHA256 pins the original .ssb file when it carries a driver
+	// payload; empty otherwise. The bundle itself (not an extracted copy)
+	// travels with the package so `apply`'s own catalog-signature trust chain
+	// runs unchanged at install time.
 	BundleSHA256 string `json:"bundle_sha256,omitempty"`
 	// BundleSourceHost is the bundle manifest's own recorded source host, shown
 	// for operator provenance only; it is never part of the trust decision.
@@ -90,58 +93,48 @@ type Prepared struct {
 
 var identifier = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,63}$`)
 
-// loadedProfile is a validated profile plus, when it came from a .ssb bundle,
-// the provenance and driver-payload facts Prepare needs to package it.
+// loadedProfile is a validated profile plus the provenance and driver-payload
+// facts Prepare needs to package it.
 type loadedProfile struct {
 	Profile    install.Profile
-	Source     string // "json" or "bundle"
-	SourceHost string // bundle.Manifest.SourceHost; "" for a plain profile
+	SourceHost string // bundle.Manifest.SourceHost
 	HasDriver  bool   // bundle.Manifest.Driver != nil
 	BundleHash string // sha256 of the .ssb file itself; "" unless HasDriver
 }
 
-// loadProfileSource accepts either a plain administrator-prevalidated profile
-// JSON or a .ssb bundle written by `spoolsmith copy`. Dispatch is by
-// extension, matching how the CLI and GUI already recognize a bundle
-// elsewhere. Both paths return an install.Profile that has already passed
-// Profile.Validate() — a bundle's embedded profile is validated identically,
-// both when the bundle was written (bundle.Write calls Manifest.Validate)
-// and again here on open; it carries no weaker evidence requirement than a
-// standalone profile JSON.
+// loadProfileSource opens the .ssb bundle written by `profile capture` or
+// `spoolsmith copy` -- there is exactly one on-disk profile format now, so
+// there is nothing left to dispatch on. It returns an install.Profile that
+// has already passed Profile.Validate(), both when the bundle was written
+// (bundle.Write calls Manifest.Validate) and again here on open.
 func loadProfileSource(path string) (loadedProfile, error) {
-	if strings.EqualFold(filepath.Ext(path), ".ssb") {
-		b, err := bundle.Open(path)
-		if err != nil {
-			return loadedProfile{}, err
-		}
-		defer b.Close()
-		if b.Manifest.Profile.DriverPackage != nil {
-			return loadedProfile{}, errors.New("intune: this bundle's profile also names a local vendor driver archive, which the bundle does not carry; recapture without a referenced archive or package the plain profile JSON instead")
-		}
-		result := loadedProfile{Profile: b.Manifest.Profile, Source: "bundle", SourceHost: b.Manifest.SourceHost, HasDriver: b.Manifest.Driver != nil}
-		if result.HasDriver {
-			hash, err := HashBinary(path)
-			if err != nil {
-				return loadedProfile{}, err
-			}
-			result.BundleHash = hash
-		}
-		return result, nil
-	}
-	p, err := install.LoadProfile(path)
+	b, err := bundle.Open(path)
 	if err != nil {
 		return loadedProfile{}, err
 	}
-	if err = p.ResolvePackagePath(path); err != nil {
+	defer b.Close()
+	if b.Manifest.Profile.DriverPackage != nil && b.Manifest.Driver != nil {
+		return loadedProfile{}, errors.New("intune: this bundle carries both a driver payload and a separate vendor-archive reference; run profile edit --clear-package to drop one before packaging")
+	}
+	profile := b.Manifest.Profile
+	if err := profile.ResolvePackagePath(path); err != nil {
 		return loadedProfile{}, err
 	}
-	return loadedProfile{Profile: p, Source: "json"}, nil
+	result := loadedProfile{Profile: profile, SourceHost: b.Manifest.SourceHost, HasDriver: b.Manifest.Driver != nil}
+	if result.HasDriver {
+		hash, err := HashBinary(path)
+		if err != nil {
+			return loadedProfile{}, err
+		}
+		result.BundleHash = hash
+	}
+	return result, nil
 }
 
-// HasLocalPayload reports whether the profile or bundle at path already
-// carries a driver payload (a vendor archive or a bundle-exported driver
-// store), so callers can decide whether to ask for the separately managed
-// registered-driver prerequisite without duplicating the .json/.ssb dispatch.
+// HasLocalPayload reports whether the bundle at path already carries a driver
+// payload (a vendor archive reference or an embedded exported driver store),
+// so callers can decide whether to ask for the separately managed
+// registered-driver prerequisite instead.
 func HasLocalPayload(path string) (bool, error) {
 	loaded, err := loadProfileSource(path)
 	if err != nil {
@@ -220,7 +213,7 @@ func Prepare(o Options) (*Prepared, error) {
 		sources["driver.exe"] = p.DriverPackage.Archive
 		p.DriverPackage = &install.PackageSelection{ID: p.DriverPackage.ID, Archive: "driver.exe"}
 	}
-	m.ProfileSource = loaded.Source
+	m.ProfileSource = "bundle"
 	m.BundleSourceHost = loaded.SourceHost
 	if loaded.HasDriver {
 		m.BundleSHA256 = loaded.BundleHash

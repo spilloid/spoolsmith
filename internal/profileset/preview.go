@@ -5,11 +5,15 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/spilloid/spoolsmith/internal/bundle"
 )
 
 // TransferScope is the same handoff guidance in CLI previews and desktop review.
-const TransferScope = "Saves JSON settings and captured evidence only; no printers are installed or changed. Driver archives are separate: copy them too, preserving paths relative to the destination setup folder. Absolute archive paths must remain available or be updated before use."
+const TransferScope = "Saves printer settings and captured evidence only; no printers are installed or changed. A saved printer carrying an embedded driver payload is not eligible for this transfer -- copy it to a file directly instead. A driver_package reference (a separate local vendor archive) travels as a path only: copy the archive too, preserving its path relative to the destination folder. Absolute archive paths must remain available or be updated before use."
 
+// ProfilePreview describes one member for review, without exposing its raw
+// bundle bytes.
 type ProfilePreview struct {
 	File        string `json:"file"`
 	PrinterName string `json:"printer_name"`
@@ -29,21 +33,14 @@ type Preview struct {
 }
 
 // Transfer owns a validated snapshot. Neither previews nor destination changes
-// expose or reload the profiles that the operator reviewed.
+// expose or reload the printers that the operator reviewed.
 type Transfer struct {
 	operation   string
 	source      string
 	destination string
-	collection  Collection
+	members     []bundle.SetMember
+	previews    []ProfilePreview
 	conflicts   []string
-}
-
-func PrepareImport(path, directory string) (*Transfer, error) {
-	c, err := Load(path)
-	if err != nil {
-		return nil, err
-	}
-	return (&Transfer{operation: "import-all", source: path, collection: c}).WithDestination(directory)
 }
 
 // WithDestination checks all names without creating a folder or writing files.
@@ -56,7 +53,7 @@ func (t *Transfer) WithDestination(destination string) (*Transfer, error) {
 	next.destination = destination
 	next.conflicts = nil
 	directory := destination
-	names := make([]string, 0, len(t.collection.Profiles))
+	names := make([]string, 0, len(t.members))
 	if t.operation == "export-all" {
 		directory = filepath.Dir(destination)
 		source, err := os.Stat(t.source)
@@ -72,8 +69,8 @@ func (t *Transfer) WithDestination(destination string) (*Transfer, error) {
 		}
 		names = append(names, filepath.Base(destination))
 	} else {
-		for _, entry := range t.collection.Profiles {
-			names = append(names, entry.File)
+		for _, m := range t.members {
+			names = append(names, m.Name)
 		}
 	}
 	entries, err := os.ReadDir(directory)
@@ -93,20 +90,12 @@ func (t *Transfer) WithDestination(destination string) (*Transfer, error) {
 }
 
 func (t *Transfer) Preview() Preview {
-	p := Preview{
+	return Preview{
 		Operation: t.operation, Source: t.source, Destination: t.destination,
-		Count: len(t.collection.Profiles), Scope: TransferScope,
-		Profiles:  make([]ProfilePreview, 0, len(t.collection.Profiles)),
+		Count: len(t.members), Scope: TransferScope,
+		Profiles:  append([]ProfilePreview{}, t.previews...),
 		Conflicts: append([]string{}, t.conflicts...),
 	}
-	for _, entry := range t.collection.Profiles {
-		profile := ProfilePreview{File: entry.File, PrinterName: entry.Profile.PrinterName, Target: entry.Profile.Target, DriverName: entry.Profile.DriverName}
-		if entry.Profile.DriverPackage != nil {
-			profile.Archive = entry.Profile.DriverPackage.Archive
-		}
-		p.Profiles = append(p.Profiles, profile)
-	}
-	return p
 }
 
 // Execute rechecks destination collisions and uses exclusive file creation.
@@ -120,7 +109,45 @@ func (t *Transfer) Execute() (int, error) {
 		return 0, fmt.Errorf("saved setups: files already exist: %s; choose another destination", strings.Join(checked.conflicts, ", "))
 	}
 	if t.operation == "export-all" {
-		return exportCollection(t.collection, t.destination)
+		if err := bundle.WriteSet(t.destination, bundle.SetIndex{}, t.members); err != nil {
+			return 0, err
+		}
+		return len(t.members), nil
 	}
-	return importCollection(t.collection, t.destination)
+	return importMembers(t.members, t.destination)
+}
+
+// importMembers writes each member's bytes verbatim, preserving filenames and
+// refusing all collisions, including case-only ones. On a write failure it
+// removes only files created by this attempt.
+func importMembers(members []bundle.SetMember, directory string) (int, error) {
+	if err := os.MkdirAll(directory, 0700); err != nil {
+		return 0, err
+	}
+	created := []string{}
+	rollback := func() {
+		for _, p := range created {
+			_ = os.Remove(p)
+		}
+	}
+	for _, m := range members {
+		target := filepath.Join(directory, m.Name)
+		f, err := os.OpenFile(target, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+		if err != nil {
+			rollback()
+			return 0, err
+		}
+		created = append(created, target)
+		_, writeErr := f.Write(m.Data)
+		closeErr := f.Close()
+		if writeErr != nil {
+			rollback()
+			return 0, writeErr
+		}
+		if closeErr != nil {
+			rollback()
+			return 0, closeErr
+		}
+	}
+	return len(created), nil
 }

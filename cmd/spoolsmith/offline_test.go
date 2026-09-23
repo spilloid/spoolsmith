@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"github.com/spilloid/spoolsmith/internal/bundle"
 	"github.com/spilloid/spoolsmith/internal/evidence"
 	"github.com/spilloid/spoolsmith/internal/install"
 	"github.com/spilloid/spoolsmith/internal/probe"
@@ -14,8 +15,8 @@ import (
 
 func TestOfflineCLIRequiresProfileAndRejectsMixedInputs(t *testing.T) {
 	p := install.Profile{Version: 1, Target: "192.0.2.10", PrinterName: "Accounting", DriverName: "OEM Driver", Evidence: evidence.Evidence{Provenance: "captured", HTTPTitle: "Example"}}
-	path := filepath.Join(t.TempDir(), "profile.json")
-	if err := install.SaveProfile(path, p); err != nil {
+	path := filepath.Join(t.TempDir(), "profile.ssb")
+	if err := bundle.SaveProfile(path, p); err != nil {
 		t.Fatal(err)
 	}
 	for _, args := range [][]string{{"--offline", "192.0.2.10"}, {"--offline"}, {"--offline", "--profile", path, "192.0.2.10"}, {"--offline", "--profile", path, "--force-family", "brother-hl-l2xxx"}, {"--profile", path, "--offline", "--offline"}} {

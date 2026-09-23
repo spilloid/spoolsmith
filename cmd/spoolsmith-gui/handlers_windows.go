@@ -290,6 +290,27 @@ func (a *app) onPreview() {
 	}()
 }
 
+// loadPrinterFile opens a printer file -- a bundle, always -- for a review or
+// execute step that installs or configures a queue. There is one on-disk
+// format now, so a chosen saved-printer file and an applied bundle behave
+// identically, embedded driver payload included.
+func loadPrinterFile(path string) (install.Profile, *install.BundleDriver, error) {
+	opened, err := bundle.Open(path)
+	if err != nil {
+		return install.Profile{}, nil, err
+	}
+	defer opened.Close()
+	profile := opened.Manifest.Profile
+	if err := profile.ResolvePackagePath(path); err != nil {
+		return install.Profile{}, nil, err
+	}
+	driver, _, err := opened.PrepareDriver()
+	if err != nil {
+		return install.Profile{}, nil, err
+	}
+	return profile, driver, nil
+}
+
 // previewOperation runs exactly the operation described, always as a dry run.
 //
 // Preview calls the identical Workflow code the CLI's --dry-run does, so the
@@ -302,7 +323,7 @@ func (a *app) previewOperation(op operation, buf *bytes.Buffer) (install.Outcome
 		options := install.UninstallOptions{DryRun: true, PurgeDriver: op.PurgeDriver, Compact: true}
 		args := []string{op.PrinterName}
 		if op.ProfilePath != "" {
-			profile, err := install.LoadProfile(op.ProfilePath)
+			profile, err := bundle.LoadProfile(op.ProfilePath)
 			if err != nil {
 				return install.Outcome{}, args, err
 			}
@@ -330,30 +351,24 @@ func (a *app) previewOperation(op operation, buf *bytes.Buffer) (install.Outcome
 		}
 		var args []string
 		switch {
-		case op.Kind == opApply:
-			opened, err := bundle.Open(op.BundlePath)
-			if err != nil {
-				return install.Outcome{}, []string{op.BundlePath}, err
+		case op.Kind == opApply || op.ProfilePath != "":
+			// The same file shape either way now (a bundle, .ssb): apply and
+			// an install/configure chosen from a saved printer file load and
+			// stage identically, embedded driver payload included.
+			path := op.BundlePath
+			if op.ProfilePath != "" {
+				path = op.ProfilePath
 			}
-			defer opened.Close()
-			profile := opened.Manifest.Profile
+			profile, driver, err := loadPrinterFile(path)
+			if err != nil {
+				return install.Outcome{}, []string{path}, err
+			}
 			options.Profile = &profile
-			driver, _, err := opened.PrepareDriver()
-			if err != nil {
-				return install.Outcome{}, []string{op.BundlePath}, err
-			}
 			options.BundleDriver = driver
-			args = []string{op.BundlePath}
-		case op.ProfilePath != "":
-			profile, err := install.LoadProfile(op.ProfilePath)
-			if err != nil {
-				return install.Outcome{}, []string{op.ProfilePath}, err
+			args = []string{path}
+			if op.Kind != opApply {
+				args = []string{"--profile", path}
 			}
-			if err := profile.ResolvePackagePath(op.ProfilePath); err != nil {
-				return install.Outcome{}, []string{op.ProfilePath}, err
-			}
-			options.Profile = &profile
-			args = []string{"--profile", op.ProfilePath}
 		default:
 			options.Target = op.Target
 			args = []string{op.Target}
@@ -370,7 +385,7 @@ func (a *app) stagePending(op operation, outcome install.Outcome) error {
 	case opRemove:
 		options := install.UninstallOptions{PurgeDriver: op.PurgeDriver, Compact: true, PrinterName: op.PrinterName, ExpectedPlan: outcome.Plan}
 		if op.ProfilePath != "" {
-			profile, err := install.LoadProfile(op.ProfilePath)
+			profile, err := bundle.LoadProfile(op.ProfilePath)
 			if err != nil {
 				return err
 			}
@@ -384,28 +399,17 @@ func (a *app) stagePending(op operation, outcome install.Outcome) error {
 	default:
 		options := install.InstallOptions{ForceFamily: op.ForceFamily, UpdateExisting: op.Kind == opConfigure || (op.Kind == opApply && op.UpdateExisting), Offline: op.Offline, Compact: true, ExpectedPlan: outcome.Plan}
 		switch {
-		case op.Kind == opApply:
-			opened, err := bundle.Open(op.BundlePath)
+		case op.Kind == opApply || op.ProfilePath != "":
+			path := op.BundlePath
+			if op.ProfilePath != "" {
+				path = op.ProfilePath
+			}
+			profile, driver, err := loadPrinterFile(path)
 			if err != nil {
 				return err
 			}
-			defer opened.Close()
-			profile := opened.Manifest.Profile
 			options.Profile = &profile
-			driver, _, err := opened.PrepareDriver()
-			if err != nil {
-				return err
-			}
 			options.BundleDriver = driver
-		case op.ProfilePath != "":
-			profile, err := install.LoadProfile(op.ProfilePath)
-			if err != nil {
-				return err
-			}
-			if err := profile.ResolvePackagePath(op.ProfilePath); err != nil {
-				return err
-			}
-			options.Profile = &profile
 		default:
 			options.Target = op.Target
 		}

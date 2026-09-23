@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/spilloid/spoolsmith/internal/bundle"
 	"github.com/spilloid/spoolsmith/internal/evidence"
 	"github.com/spilloid/spoolsmith/internal/install"
 	"github.com/spilloid/spoolsmith/internal/probe"
@@ -19,14 +20,14 @@ func TestCaptureThenInstallCLI(t *testing.T) {
 	e := evidence.Evidence{IP: "192.0.2.10", Provenance: "captured", HTTPTitle: "Uncataloged printer 123", PJLID: "Uncataloged printer 123"}
 	app.collect = func(context.Context, string) (probe.Result, error) { return probe.Result{Evidence: e}, nil }
 	app.workflow.Collect = app.collect
-	path := filepath.Join(t.TempDir(), "printer.json")
+	path := filepath.Join(t.TempDir(), "printer.ssb")
 	var stdout, stderr bytes.Buffer
 	code := run(context.Background(), []string{"profile", "capture", e.IP, path, "--name", "Accounting", "--driver", "Verified OEM driver"}, strings.NewReader(""), &stdout, &stderr, app)
 	if code != 0 {
 		t.Fatalf("capture code=%d %s %s", code, stdout.String(), stderr.String())
 	}
 	assertValidJSON(t, stdout.Bytes())
-	p, err := install.LoadProfile(path)
+	p, err := bundle.LoadProfile(path)
 	if err != nil || p.DriverName != "Verified OEM driver" {
 		t.Fatalf("profile=%#v %v", p, err)
 	}
@@ -56,7 +57,7 @@ func TestCaptureThenInstallCLI(t *testing.T) {
 func TestCaptureInvalidFlagsDoNotProbeOrWrite(t *testing.T) {
 	app := testApplication()
 	app.collect = func(context.Context, string) (probe.Result, error) { panic("invalid args probed network") }
-	path := filepath.Join(t.TempDir(), "printer.json")
+	path := filepath.Join(t.TempDir(), "printer.ssb")
 	for _, flags := range [][]string{{}, {"--name", "Q"}, {"--name", "Q", "--driver", "D", "--driver", "E"}} {
 		args := append([]string{"profile", "capture", "192.0.2.10", path}, flags...)
 		var stdout, stderr bytes.Buffer
@@ -89,8 +90,8 @@ func TestHumanAddAndConfigureUseConcisePlans(t *testing.T) {
 		app := testApplication()
 		app.outputTerminal = true
 		p := install.Profile{Version: 1, Target: "192.0.2.10", PrinterName: "Office", DriverName: "OEM driver", Evidence: evidence.Evidence{IP: "192.0.2.10", Provenance: "captured", HTTPTitle: "Printer Model"}}
-		path := filepath.Join(t.TempDir(), "profile.json")
-		if err := install.SaveProfile(path, p); err != nil {
+		path := filepath.Join(t.TempDir(), "profile.ssb")
+		if err := bundle.SaveProfile(path, p); err != nil {
 			t.Fatal(err)
 		}
 		app.workflow.Collect = func(context.Context, string) (probe.Result, error) { return probe.Result{Evidence: p.Evidence}, nil }
@@ -109,15 +110,15 @@ func TestHumanAddAndConfigureUseConcisePlans(t *testing.T) {
 
 func TestProfilePackageEditAndClear(t *testing.T) {
 	p := install.Profile{Version: 1, Target: "192.0.2.10", PrinterName: "Office", DriverName: "Brother HL-L2315D series", Evidence: evidence.Evidence{Provenance: "captured", HTTPTitle: "Brother HL-L2315D series"}}
-	profilePath := filepath.Join(t.TempDir(), "printer.json")
-	if err := install.SaveProfile(profilePath, p); err != nil {
+	profilePath := filepath.Join(t.TempDir(), "printer.ssb")
+	if err := bundle.SaveProfile(profilePath, p); err != nil {
 		t.Fatal(err)
 	}
 	var stdout, stderr bytes.Buffer
 	if code := runProfileEdit([]string{profilePath, "--package", "brother-y14a-c1-hostm-1110", "--archive", "driver.EXE"}, &stdout, &stderr); code != 0 {
 		t.Fatalf("%d %s", code, stderr.String())
 	}
-	loaded, err := install.LoadProfile(profilePath)
+	loaded, err := bundle.LoadProfile(profilePath)
 	if err != nil || loaded.DriverPackage == nil || loaded.DriverPackage.Archive != "driver.EXE" {
 		t.Fatalf("%#v %v", loaded, err)
 	}
@@ -133,7 +134,7 @@ func TestProfilePackageEditAndClear(t *testing.T) {
 	if code := runProfileEdit([]string{profilePath, "--clear-package"}, &stdout, &stderr); code != 0 {
 		t.Fatalf("%d %s", code, stderr.String())
 	}
-	loaded, err = install.LoadProfile(profilePath)
+	loaded, err = bundle.LoadProfile(profilePath)
 	if err != nil || loaded.DriverPackage != nil {
 		t.Fatalf("%#v %v", loaded, err)
 	}
@@ -142,10 +143,10 @@ func TestProfilePackageEditAndClear(t *testing.T) {
 func TestProfileCollectionCLI(t *testing.T) {
 	source, dest := t.TempDir(), t.TempDir()
 	p := install.Profile{Version: 1, Target: "192.0.2.10", PrinterName: "Test Printer", DriverName: "Test Driver", Evidence: evidence.Evidence{IP: "192.0.2.10", Provenance: "captured", HTTPTitle: "Test printer"}}
-	if err := install.SaveProfile(filepath.Join(source, "office.json"), p); err != nil {
+	if err := bundle.SaveProfile(filepath.Join(source, "office.ssb"), p); err != nil {
 		t.Fatal(err)
 	}
-	collection := filepath.Join(t.TempDir(), "all.json")
+	collection := filepath.Join(t.TempDir(), "all.ssb")
 	for _, args := range [][]string{{"profile", "export-all", source, collection}, {"profile", "import-all", collection, dest}} {
 		var stdout, stderr bytes.Buffer
 		if code := run(context.Background(), args, strings.NewReader(""), &stdout, &stderr, testApplication()); code != 0 {
@@ -155,7 +156,7 @@ func TestProfileCollectionCLI(t *testing.T) {
 			t.Fatalf("missing result: %s", stdout.String())
 		}
 	}
-	if _, err := install.LoadProfile(filepath.Join(dest, "office.json")); err != nil {
+	if _, err := bundle.LoadProfile(filepath.Join(dest, "office.ssb")); err != nil {
 		t.Fatal(err)
 	}
 }

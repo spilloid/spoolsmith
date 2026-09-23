@@ -10,8 +10,7 @@ import (
 // ProfileDefaults suggests presentation and identity for a new deployment. The
 // queue name alone determines identity: changing its address, driver or profile
 // filename must not silently create a different deployment. Existing deployments
-// with a custom ID must continue to use that ID. path may be a profile JSON or
-// a .ssb bundle; both carry the same install.Profile shape.
+// with a custom ID must continue to use that ID. path is a .ssb bundle.
 func ProfileDefaults(path string) (Options, error) {
 	loaded, err := loadProfileSource(path)
 	if err != nil {

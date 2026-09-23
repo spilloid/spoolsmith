@@ -13,6 +13,29 @@ import (
 	"github.com/spilloid/spoolsmith/internal/install"
 )
 
+// loadProfileFile opens a printer file for install/add/configure's --profile
+// flag. There is exactly one on-disk format now (a bundle, extension .ssb),
+// so this shares apply's own driver-payload handling instead of being a
+// separate, weaker path: a profile loaded this way stages an embedded driver
+// payload exactly as `apply` does, rather than only supporting the
+// external driver_package reference a bare profile JSON used to be limited to.
+func loadProfileFile(path string) (install.Profile, *install.BundleDriver, error) {
+	opened, err := bundle.Open(path)
+	if err != nil {
+		return install.Profile{}, nil, err
+	}
+	defer opened.Close()
+	profile := opened.Manifest.Profile
+	if err := profile.ResolvePackagePath(path); err != nil {
+		return install.Profile{}, nil, err
+	}
+	driver, _, err := opened.PrepareDriver()
+	if err != nil {
+		return install.Profile{}, nil, err
+	}
+	return profile, driver, nil
+}
+
 // runClone backs `spoolsmith copy`: it reads one already-working queue off
 // this machine and writes a bundle another machine can apply.
 //

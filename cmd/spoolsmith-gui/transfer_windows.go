@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/spilloid/spoolsmith/internal/bundle"
 	"github.com/spilloid/spoolsmith/internal/install"
 	"github.com/spilloid/spoolsmith/internal/profileset"
 	"github.com/tailscale/walk"
@@ -16,7 +17,7 @@ import (
 )
 
 func (a *app) exportSetups(owner walk.Form) {
-	picker := walk.FileDialog{Title: "Export saved setup JSON", Filter: "JSON collections (*.json)|*.json", FilePath: "printer-setups.json", InitialDirPath: filepath.Dir(a.profilesDirectory())}
+	picker := walk.FileDialog{Title: "Export saved setups", Filter: "Saved-setup collections (*.ssb)|*.ssb", FilePath: "printer-setups.ssb", InitialDirPath: filepath.Dir(a.profilesDirectory())}
 	ok, err := picker.ShowSave(owner)
 	if err != nil {
 		showErr(owner, "Export setups", err)
@@ -27,13 +28,13 @@ func (a *app) exportSetups(owner walk.Form) {
 	}
 	path := picker.FilePath
 	if filepath.Ext(path) == "" {
-		path += ".json"
+		path += ".ssb"
 	}
 	a.reviewSetupTransfer(owner, false, a.profilesDirectory(), path)
 }
 
 func (a *app) importSetups(owner walk.Form) bool {
-	picker := walk.FileDialog{Title: "Import saved setup JSON", Filter: "JSON collections (*.json)|*.json"}
+	picker := walk.FileDialog{Title: "Import saved setups", Filter: "Saved-setup collections (*.ssb)|*.ssb"}
 	ok, err := picker.ShowOpen(owner)
 	if err != nil {
 		showErr(owner, "Import setups", err)
@@ -73,7 +74,7 @@ func (a *app) reviewSetupTransfer(owner walk.Form, importing bool, source, desti
 		}
 		path := strings.TrimSpace(destinationEdit.Text())
 		if !importing && path != "" && filepath.Ext(path) == "" {
-			path += ".json"
+			path += ".ssb"
 			destinationEdit.SetText(path)
 		}
 		setBusy(true)
@@ -132,7 +133,7 @@ func (a *app) reviewSetupTransfer(owner walk.Form, importing bool, source, desti
 					if importing {
 						ok, err = picker.ShowBrowseFolder(dialog)
 					} else {
-						picker.Filter = "JSON collections (*.json)|*.json"
+						picker.Filter = "Saved-setup collections (*.ssb)|*.ssb"
 						picker.InitialDirPath = filepath.Dir(destinationEdit.Text())
 						ok, err = picker.ShowSave(dialog)
 					}
@@ -150,14 +151,14 @@ func (a *app) reviewSetupTransfer(owner walk.Form, importing bool, source, desti
 				PushButton{AssignTo: &previewButton, Text: "Review destination", OnClicked: prepare},
 				HSpacer{},
 				PushButton{AssignTo: &cancelButton, Text: "Cancel", OnClicked: func() { dialog.Cancel() }},
-				PushButton{AssignTo: &saveButton, Text: verb + " JSON files", Enabled: false, OnClicked: func() {
+				PushButton{AssignTo: &saveButton, Text: verb + " setups", Enabled: false, OnClicked: func() {
 					if running || transfer == nil || strings.TrimSpace(destinationEdit.Text()) != transfer.Preview().Destination {
 						return
 					}
 					reviewed := transfer
 					preview := reviewed.Preview()
 					setBusy(true)
-					status.SetText("Saving JSON files...")
+					status.SetText("Saving setups...")
 					start := time.Now()
 					go func() {
 						count, err := reviewed.Execute()
@@ -222,7 +223,7 @@ func setupTransferSummary(preview profileset.Preview) string {
 }
 
 func (a *app) checkSavedStatus(owner walk.Form, path string) {
-	p, err := install.LoadProfile(path)
+	p, err := bundle.LoadProfile(path)
 	if err != nil {
 		showErr(owner, "Check local status", err)
 		return

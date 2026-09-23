@@ -30,10 +30,10 @@ const (
 )
 
 func pagePadding() VBox {
-	return VBox{Margins: Margins{Left: 16, Top: 14, Right: 16, Bottom: 14}, Spacing: 10}
+	return VBox{Margins: Margins{Left: 12, Top: 10, Right: 12, Bottom: 10}, Spacing: 7}
 }
-func row() HBox                 { return HBox{Spacing: 8, MarginsZero: true} }
-func formGrid(columns int) Grid { return Grid{Columns: columns, Spacing: 8} }
+func row() HBox                 { return HBox{Spacing: 6, MarginsZero: true} }
+func formGrid(columns int) Grid { return Grid{Columns: columns, Spacing: 6} }
 
 // Set an MSAA name for captionless controls so keyboard and UI Automation
 // clients can identify them independently of their current values.
@@ -59,7 +59,7 @@ func main() {
 		AssignTo: &a.mw, Title: "SpoolSmith",
 		Background: SolidColorBrush{Color: walk.RGB(245, 247, 251)},
 		Font:       Font{Family: "Segoe UI", PointSize: 10},
-		MinSize:    Size{Width: 820, Height: 620}, Size: Size{Width: 980, Height: 740},
+		MinSize:    Size{Width: 820, Height: 620}, Size: Size{Width: 900, Height: 660},
 		Layout: VBox{MarginsZero: true, Spacing: 0},
 		Children: []Widget{
 			Composite{Background: SolidColorBrush{Color: walk.RGB(24, 76, 133)}, Layout: pagePadding(), Children: []Widget{
@@ -71,7 +71,7 @@ func main() {
 			TabWidget{AssignTo: &a.tabs, Pages: []TabPage{
 				thisPCPage(a), addPage(a), mutatePage(a), toolsPage(a),
 			}},
-			Composite{Layout: HBox{Margins: Margins{Left: 16, Top: 6, Right: 16, Bottom: 8}}, Children: []Widget{
+			Composite{Layout: HBox{Margins: Margins{Left: 12, Top: 4, Right: 12, Bottom: 6}}, Children: []Widget{
 				Label{AssignTo: &a.accessStatus, Text: "You can find printers and save settings without changing Windows."},
 			}},
 		},

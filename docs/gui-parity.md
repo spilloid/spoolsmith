@@ -18,7 +18,7 @@ of glossed over.
 | Add / update / remove a saved setup | `add`, `configure`, `remove --profile` | Open a saved setup → Set up / Update to match / Remove |
 | Edit saved settings | `profile edit` | Saved setups → Edit; preserves a backup |
 | Local configuration check | `status --profile` (JSON on stdout plus a one-line stderr summary) | Saved setups → Check status |
-| Bulk saved JSON transfer | `profile export-all`, `profile import-all`; `--dry-run` reviews files and conflicts | Saved setups → Export all JSON / Import all JSON → destination and file review |
+| Bulk saved-setup transfer | `profile export-all`, `profile import-all`; `--dry-run` reviews files and conflicts | Saved setups → Export all / Import all → destination and file review |
 | Move an existing queue | `repoint` | This PC → Change address |
 | Remove by queue name | `uninstall` | This PC → Remove printer |
 | Offline setup | `--offline` | Review → More options → Offline setup |

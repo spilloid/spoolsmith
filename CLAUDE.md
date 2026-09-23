@@ -2,6 +2,51 @@
 
 ## Project Mission
 
+**Operator update, 2026-09-22 (later same day):** there is exactly one on-disk
+printer-file format now: a bundle (package `internal/bundle`, extension
+`.ssb`), optionally carrying a driver payload. The bare-JSON profile format
+`profile capture`/`install --profile` used to write and read is gone —
+`internal/install.Profile` is now a pure in-memory struct with no file I/O of
+its own; `internal/bundle.SaveProfile`/`LoadProfile`/`EditProfile` are the one
+place a profile is ever written to or read from disk, always as a
+zero-or-more-driver-file bundle. This was the operator's own standing
+complaint made concrete: a saved profile and a handed-off bundle were the same
+document in two different file shapes, for no stated reason.
+- `profile capture`, `copy`, `install`/`add`/`configure`/`remove --profile`,
+  `apply`, `status --profile`, `intune build --profile`, and the desktop
+  GUI's saved-setup/copy/apply/Intune pickers all read and write `.ssb` now.
+  `install --profile`/`add --profile` gained `apply`'s embedded-driver-payload
+  staging in the process, since the two are now the same file shape end to
+  end — they share one loader (`loadProfileFile` in `cmd/spoolsmith`,
+  `loadPrinterFile` in `cmd/spoolsmith-gui`).
+- `internal/intune`'s `loadProfileSource` no longer dispatches on extension
+  (there is nothing left to dispatch on); a bundle naming a local
+  `driver_package` vendor archive is now accepted as long as it carries no
+  *embedded* payload of its own — that dual-mechanism conflict remains
+  refused, the old blanket "bundle can never name a vendor archive" rule
+  does not.
+- The "saved setups" bulk transfer (`profile export-all`/`import-all`, the
+  desktop GUI's Export/Import all) is now a **set** — package
+  `internal/bundle`'s `WriteSet`/`OpenSet`/`SetMember` — a zip carrying the
+  member `.ssb` files verbatim plus a small `set.json` index, not a bespoke
+  JSON document re-encoding every profile inline. A member carrying an
+  embedded driver payload is refused outright (settings-only transfer, always
+  was) rather than silently carried or silently dropped.
+- `examples/intune/accounting.json` is gone; `examples/intune/accounting.ssb`
+  is the one example file, and the README shows the schema inline as
+  documentation instead of shipping a second, now-unusable format.
+- Deliberately untouched: evidence fixtures (`fixtures/*.json`, milestone-one
+  testing) are a different, internal-only format and were never part of this
+  duality — an operator never hands one between machines. `copy --all` still
+  writes a folder of `.ssb` files rather than a set; unifying that (and giving
+  `apply` a set's per-member plan-and-confirm loop) is a deliberately separate,
+  not-yet-decided follow-up, not an oversight.
+- See `internal/bundle/profile.go` and `internal/bundle/set.go` for the exact
+  mechanics, and their tests (plus `internal/profileset`'s rewritten suite)
+  for the boundary between what's safe to condense and what still fails
+  closed (an embedded-driver-payload conflict, an unsafe or duplicate member
+  name, a set whose index disagrees with its own archive contents).
+
 **Operator update, 2026-09-22:** offline fallback is now first-class across
 `install`/`apply`/`copy`, on both the CLI and desktop, instead of a manual
 `--offline` flag the operator had to already know to reach for. A printer

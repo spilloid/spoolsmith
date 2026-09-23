@@ -38,6 +38,19 @@ product hardening, with additional protocols as future scope.
    powering the printer back on and re-running `status`/`check-status` reports
    the mismatch (or match) correctly. Only unit tests with fake environments
    exist today.
+6. **Decide whether `copy --all` and a set follow the same container.** The
+   2026-09-22 (later) format merge (see CLAUDE.md) made every single printer
+   file a bundle (`.ssb`) and made saved-setup bulk transfer a **set** (a zip
+   of `.ssb` members plus an index, `internal/bundle`'s `WriteSet`/`OpenSet`).
+   `copy --all` still writes a **folder** of `.ssb` files, which is now the
+   one remaining bulk-container inconsistency the same complaint would flag.
+   Closing it means: `copy --all` writes one set instead of a folder, and
+   `apply` (CLI and GUI) gains the ability to open a set and run its existing
+   single-bundle plan-and-confirm loop once per member, aggregating partial
+   success the way `copy --all`/`CreateAll` already does. This is a real,
+   if bounded, new interaction (a multi-step confirm flow), not a rename —
+   deliberately left for its own explicit decision rather than folded into
+   the format merge unasked.
 
 ## Known behavior to harden
 

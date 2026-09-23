@@ -88,14 +88,14 @@ func TestIntuneContentPrepErgonomics(t *testing.T) {
 	fakePrepTool(t, badDir, false)
 	emptyDir := t.TempDir()
 
-	profileBytes, err := os.ReadFile("../../examples/intune/accounting.json")
+	profileBytes, err := os.ReadFile("../../examples/intune/accounting.ssb")
 	if err != nil {
 		t.Fatal(err)
 	}
 	// Each case gets its own profile folder so export and package folders never collide.
 	newProfile := func(t *testing.T) string {
 		t.Helper()
-		profile := filepath.Join(t.TempDir(), "printer.json")
+		profile := filepath.Join(t.TempDir(), "printer.ssb")
 		if err := os.WriteFile(profile, profileBytes, 0o600); err != nil {
 			t.Fatal(err)
 		}

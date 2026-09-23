@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/spilloid/spoolsmith/internal/bundle"
 	"github.com/spilloid/spoolsmith/internal/evidence"
 	"github.com/spilloid/spoolsmith/internal/install"
 	"github.com/spilloid/spoolsmith/internal/profileset"
@@ -17,10 +18,10 @@ import (
 func TestProfileTransferDryRunAndExecutionContracts(t *testing.T) {
 	source := t.TempDir()
 	p := install.Profile{Version: 1, Target: "192.0.2.10", PrinterName: "Office", DriverName: "Test driver", Evidence: evidence.Evidence{IP: "192.0.2.10", Provenance: "captured", HTTPTitle: "Test printer"}}
-	if err := install.SaveProfile(filepath.Join(source, "office.json"), p); err != nil {
+	if err := bundle.SaveProfile(filepath.Join(source, "office.ssb"), p); err != nil {
 		t.Fatal(err)
 	}
-	collection := filepath.Join(t.TempDir(), "all.json")
+	collection := filepath.Join(t.TempDir(), "all.ssb")
 	dest := filepath.Join(t.TempDir(), "new-folder")
 	for _, step := range []struct{ operation, source, destination string }{
 		{"export-all", source, collection},
@@ -50,7 +51,7 @@ func TestProfileTransferDryRunAndExecutionContracts(t *testing.T) {
 		if err := json.Unmarshal(stdout.Bytes(), &result); err != nil || len(result) != 2 || result["count"] != float64(1) || result["destination"] != step.destination {
 			t.Fatalf("execution JSON contract changed: %s %v", stdout.String(), err)
 		}
-		for _, text := range []string{"JSON", "no printers are installed", "Driver archives are separate"} {
+		for _, text := range []string{"no printers are installed", "copy the archive too"} {
 			if !strings.Contains(stderr.String(), text) {
 				t.Fatalf("missing completion guidance %q: %s", text, stderr.String())
 			}
@@ -61,7 +62,7 @@ func TestProfileTransferDryRunAndExecutionContracts(t *testing.T) {
 		t.Fatalf("conflicting preview should fail: %d %s", code, stderr.String())
 	}
 	var preview profileset.Preview
-	if err := json.Unmarshal(stdout.Bytes(), &preview); err != nil || len(preview.Conflicts) != 1 || preview.Conflicts[0] != "office.json" {
+	if err := json.Unmarshal(stdout.Bytes(), &preview); err != nil || len(preview.Conflicts) != 1 || preview.Conflicts[0] != "office.ssb" {
 		t.Fatalf("missing structured conflicts: %#v %v", preview, err)
 	}
 }
@@ -69,7 +70,7 @@ func TestProfileTransferDryRunAndExecutionContracts(t *testing.T) {
 func TestProfileTransferRejectsUnknownAndDuplicateOptionsBeforeWriting(t *testing.T) {
 	for _, options := range [][]string{{"--dry-run", "--dry-run"}, {"--yes"}} {
 		destination := filepath.Join(t.TempDir(), "not-created")
-		args := append([]string{"profile", "import-all", "missing.json", destination}, options...)
+		args := append([]string{"profile", "import-all", "missing.ssb", destination}, options...)
 		var stdout, stderr bytes.Buffer
 		if code := run(context.Background(), args, strings.NewReader(""), &stdout, &stderr, testApplication()); code != 2 || !json.Valid(stdout.Bytes()) {
 			t.Fatalf("expected JSON usage failure: %d %s %s", code, stdout.String(), stderr.String())
