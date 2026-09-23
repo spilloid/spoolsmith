@@ -31,11 +31,20 @@ type reviewUI struct {
 
 func (a *app) initializeReview() {
 	a.updateReviewControls()
-	if windows.GetCurrentProcessToken().IsElevated() {
+	if isElevated() {
 		a.accessStatus.SetText("Administrator mode. Printer changes always require your confirmation.")
 	} else {
 		a.accessStatus.SetText("To install or remove printers, close the app and choose Run as administrator.")
 	}
+}
+
+// isElevated reports whether this process is running as Administrator. Every
+// screen that offers to carry a driver payload -- which needs the protected
+// driver store -- checks this up front, so the checkbox that can never
+// succeed is disabled with its reason instead of failing after the operator
+// has already committed to it.
+func isElevated() bool {
+	return windows.GetCurrentProcessToken().IsElevated()
 }
 
 // startOperation hands one fully described intention to the review screen.
@@ -62,7 +71,7 @@ func (a *app) startOperation(op operation) {
 	}
 	a.planOut.SetText(planText)
 	a.reviewHint.SetText("Nothing has changed yet.")
-	a.tabs.SetCurrentIndex(tabReview)
+	a.goTo(pageReview)
 	if a.previewBtn != nil {
 		a.previewBtn.SetFocus()
 	}
@@ -212,12 +221,33 @@ func (a *app) invalidateReview() {
 	}
 }
 
+// friendlyOperationError translates the handful of errors an operator hits
+// often into plain guidance, with the original message kept underneath as a
+// detail line -- translated, not replaced, so a case this doesn't recognize
+// (or a report sent along with a ticket) still carries the real text.
 func friendlyOperationError(message string) string {
-	if strings.Contains(message, "administrator") || strings.Contains(message, "Administrator") {
-		return "Administrator access is needed. Close SpoolSmith, right-click the app and choose Run as administrator. Your saved printer settings will still be available."
+	lead, ok := friendlyErrorLead(message)
+	if !ok {
+		return message
 	}
-	if strings.Contains(message, "driver not found") {
-		return "This driver is not installed on this computer. Install the exact compatible Windows driver, then use Preview changes again."
+	return lead + "\r\n\r\nDetails: " + message
+}
+
+func friendlyErrorLead(message string) (string, bool) {
+	switch {
+	case strings.Contains(message, "administrator") || strings.Contains(message, "Administrator"):
+		return "Administrator access is needed. Close SpoolSmith, right-click the app and choose Run as administrator. Your saved printer settings will still be available.", true
+	case strings.Contains(message, "driver not found"):
+		return "This driver is not installed on this computer. Install the exact compatible Windows driver, then use Preview changes again.", true
+	case strings.Contains(message, "already exists"):
+		return "A file with that name already exists. Choose a different name or location -- nothing here is ever overwritten automatically.", true
+	case strings.Contains(message, "changed: saved"):
+		return "This printer answered, but its identity does not match what was saved. Confirm it's still the same device -- a different printer may now be at this address -- before recapturing.", true
+	case strings.Contains(message, "collect evidence") || strings.Contains(message, "did not identify itself") || strings.Contains(message, "could not be contacted"):
+		return "The printer could not be reached. Check that it's powered on and connected to the network, then try again.", true
+	case strings.Contains(message, "bundle:") || strings.Contains(message, "zip:"):
+		return "This file could not be read as a printer file. It may be damaged, or not a SpoolSmith printer file at all.", true
+	default:
+		return "", false
 	}
-	return message
 }

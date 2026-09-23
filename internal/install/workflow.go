@@ -108,6 +108,9 @@ func NewWorkflow() Workflow {
 // over Yes and never reaches confirmation or a mutating Environment.Run call.
 func (w Workflow) RunInstall(ctx context.Context, env Environment, input io.Reader, interactive io.Writer, inputIsTerminal bool, options InstallOptions) (Outcome, ExitCode) {
 	outcome := Outcome{Operation: "install", Status: "error", DryRun: options.DryRun}
+	if err := ctx.Err(); err != nil {
+		return failOutcome(outcome, err, ExitGeneralError)
+	}
 	if err := w.validate(); err != nil {
 		return failOutcome(outcome, err, ExitGeneralError)
 	}
@@ -136,10 +139,35 @@ func (w Workflow) RunInstall(ctx context.Context, env Environment, input io.Read
 
 	var probeResult probe.Result
 	var err error
+	// autoOffline distinguishes a fallback this run chose for itself from an
+	// --offline the operator typed. Both end up running the same offline path
+	// below; only the notice and the recorded resolution tell them apart.
+	autoOffline := false
 	if options.Offline {
 		probeResult.Evidence.IP = options.Target
 	} else {
 		probeResult, err = w.Collect(ctx, options.Target)
+		if ctx.Err() != nil {
+			return failOutcome(outcome, ctx.Err(), ExitGeneralError)
+		}
+		if errors.Is(err, context.Canceled) {
+			return failOutcome(outcome, err, ExitGeneralError)
+		}
+		if err != nil && options.Profile != nil {
+			// A Profile means an operator already reviewed and approved this
+			// exact printer once -- that trust doesn't expire because the
+			// printer won't answer right this second (still booting after a
+			// move, a cable not yet seated, DHCP settling on a new subnet).
+			// Falling back to the offline path this run already supports beats
+			// sending the operator away empty-handed to go learn about
+			// --offline and start over.
+			fmt.Fprintf(interactive, "Could not contact the printer at %s (%v). Setting up offline from the saved profile instead; reachability and printing will need to be checked once it answers.\n", options.Target, err)
+			options.Offline = true
+			autoOffline = true
+			err = nil
+			probeResult = probe.Result{}
+			probeResult.Evidence.IP = options.Target
+		}
 	}
 	if err != nil {
 		return failOutcome(outcome, fmt.Errorf("install: collect evidence: %w", err), ExitGeneralError)
@@ -150,19 +178,48 @@ func (w Workflow) RunInstall(ctx context.Context, env Environment, input io.Read
 	forced := forcedFamily != nil
 	if options.Offline {
 		resolution = options.Profile.selectedResolution()
-		resolution.Uncertain = append(resolution.Uncertain, "offline provisioning: live identity was not checked; reachability and printing are unverified")
+		reason := "offline provisioning: live identity was not checked; reachability and printing are unverified"
+		if autoOffline {
+			reason = "offline fallback: the printer could not be contacted, so live identity was not checked; reachability and printing are unverified"
+		}
+		resolution.Uncertain = append(resolution.Uncertain, reason)
 		forced = true
 	} else if options.Profile != nil {
-		resolution, err = options.Profile.resolution(probeResult.Evidence)
-		if errors.Is(err, errIdentityUnavailable) {
-			fmt.Fprintln(interactive, "Identity probes were unavailable; retrying once for a sleeping printer.")
-			probeResult, err = w.Collect(ctx, options.Target)
-			if err == nil {
-				resolution, err = options.Profile.resolution(probeResult.Evidence)
+		if !options.Profile.hasCapturedIdentity() {
+			// This profile was itself captured offline (see bundle.Create) and
+			// carries nothing to ever compare against a live probe. There is no
+			// "retry" that could change that outcome, so go straight to the
+			// same offline fallback rather than pretending a check happened.
+			fmt.Fprintln(interactive, "This profile has no confirmed printer identity (captured offline). Setting up offline; reachability and printing will need to be checked once it answers.")
+			options.Offline = true
+			autoOffline = true
+			resolution = options.Profile.selectedResolution()
+			resolution.Uncertain = append(resolution.Uncertain, "offline fallback: this profile has no captured identity to confirm; reachability and printing are unverified")
+		} else {
+			resolution, err = options.Profile.resolution(probeResult.Evidence)
+			if errors.Is(err, errIdentityUnavailable) {
+				fmt.Fprintln(interactive, "Identity probes were unavailable; retrying once for a sleeping printer.")
+				retryResult, retryErr := w.Collect(ctx, options.Target)
+				if ctx.Err() != nil {
+					return failOutcome(outcome, ctx.Err(), ExitGeneralError)
+				}
+				if errors.Is(retryErr, context.Canceled) {
+					return failOutcome(outcome, retryErr, ExitGeneralError)
+				}
+				if retryErr == nil {
+					probeResult = retryResult
+					resolution, err = options.Profile.resolution(probeResult.Evidence)
+				}
 			}
-		}
-		if err != nil {
-			return failOutcome(outcome, err, ExitUnresolved)
+			if errors.Is(err, errIdentityUnavailable) {
+				fmt.Fprintln(interactive, "Still no identity answer after retrying. Setting up offline from the saved profile instead; reachability and printing will need to be checked once it answers.")
+				options.Offline = true
+				autoOffline = true
+				resolution = options.Profile.selectedResolution()
+				resolution.Uncertain = append(resolution.Uncertain, "offline fallback: the printer never confirmed its identity, so live identity was not checked; reachability and printing are unverified")
+			} else if err != nil {
+				return failOutcome(outcome, err, ExitUnresolved)
+			}
 		}
 		forced = true
 	} else if forced {
@@ -201,9 +258,12 @@ func (w Workflow) RunInstall(ctx context.Context, env Environment, input io.Read
 	if options.Profile != nil {
 		outcome.Resolution = "operator-profile"
 		outcome.Uncertain = append([]string(nil), resolution.Uncertain...)
-		if options.Offline {
+		switch {
+		case autoOffline:
+			outcome.Resolution = "offline-fallback-operator-profile"
+		case options.Offline:
 			outcome.Resolution = "offline-operator-profile"
-		} else {
+		default:
 			fmt.Fprintln(interactive, "Profile: driver compatibility was selected by the operator; live model evidence matches the capture.")
 		}
 	}

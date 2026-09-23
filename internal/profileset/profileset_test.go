@@ -1,13 +1,15 @@
 package profileset
 
 import (
-	"encoding/json"
+	"archive/zip"
+	"bytes"
 	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
 
+	"github.com/spilloid/spoolsmith/internal/bundle"
 	"github.com/spilloid/spoolsmith/internal/evidence"
 	"github.com/spilloid/spoolsmith/internal/install"
 )
@@ -19,12 +21,12 @@ func sample() install.Profile {
 func TestTransferPreservesAllPropertiesAndNeverOverwrites(t *testing.T) {
 	source, dest := t.TempDir(), t.TempDir()
 	p := sample()
-	for _, name := range []string{"office.json", "second.json"} {
-		if err := install.SaveProfile(filepath.Join(source, name), p); err != nil {
+	for _, name := range []string{"office.ssb", "second.ssb"} {
+		if err := bundle.SaveProfile(filepath.Join(source, name), p); err != nil {
 			t.Fatal(err)
 		}
 	}
-	output := filepath.Join(t.TempDir(), "all.json")
+	output := filepath.Join(t.TempDir(), "all.zip")
 	if n, err := Export(source, output); err != nil || n != 2 {
 		t.Fatalf("export %d %v", n, err)
 	}
@@ -39,7 +41,7 @@ func TestTransferPreservesAllPropertiesAndNeverOverwrites(t *testing.T) {
 	if n, err := Import(output, dest); err != nil || n != 2 {
 		t.Fatalf("import %d %v", n, err)
 	}
-	got, err := install.LoadProfile(filepath.Join(dest, "office.json"))
+	got, err := bundle.LoadProfile(filepath.Join(dest, "office.ssb"))
 	if err != nil || !reflect.DeepEqual(got, p) {
 		t.Fatalf("properties changed: %#v %v", got, err)
 	}
@@ -48,13 +50,87 @@ func TestTransferPreservesAllPropertiesAndNeverOverwrites(t *testing.T) {
 	}
 }
 
+// TestEmbeddedDriverTravelsVerbatim: drivers are preferred, so a saved
+// printer carrying its own embedded driver is exported and imported
+// byte-for-byte, and the review says it carries one.
+func TestEmbeddedDriverTravelsVerbatim(t *testing.T) {
+	source := t.TempDir()
+	payload := t.TempDir()
+	if err := os.WriteFile(filepath.Join(payload, "driver.inf"), []byte("[Version]\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(payload, "driver.dll"), make([]byte, 2<<20), 0600); err != nil {
+		t.Fatal(err)
+	}
+	p := sample()
+	p.DriverPackage = nil
+	manifest := bundle.Manifest{Profile: p, Driver: &bundle.DriverPayload{WindowsDriverName: p.DriverName, INF: "driver.inf"}}
+	original := filepath.Join(source, "office.ssb")
+	if err := bundle.Write(original, manifest, payload); err != nil {
+		t.Fatal(err)
+	}
+	output := filepath.Join(t.TempDir(), "all.zip")
+	transfer, err := PrepareExport(source, output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if preview := transfer.Preview(); !preview.Profiles[0].Driver {
+		t.Fatalf("preview does not show the embedded driver: %#v", preview.Profiles[0])
+	}
+	if _, err := transfer.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	dest := t.TempDir()
+	imported, err := PrepareImport(output, dest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !imported.Preview().Profiles[0].Driver {
+		t.Fatal("import preview does not show the embedded driver")
+	}
+	if _, err := imported.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(readSaved(t, original), readSaved(t, filepath.Join(dest, "office.ssb"))) {
+		t.Fatal("printer file with an embedded driver changed on the way through the set")
+	}
+}
+
+func TestExportRequiresAZipDestination(t *testing.T) {
+	source := t.TempDir()
+	writeSaved(t, source, "office.ssb", sample())
+	output := filepath.Join(t.TempDir(), "all.ssb")
+	if _, err := PrepareExport(source, output); err == nil || !strings.Contains(err.Error(), ".zip") {
+		t.Fatalf("accepted a non-.zip export destination: %v", err)
+	}
+}
+
 func TestInvalidCollectionNeverPartiallyImports(t *testing.T) {
-	for _, bad := range []string{"../outside.json", `..\outside.json`, "C:bad.json", "CON.json", "bad\n.json", "OFFICE.json"} {
+	office := readSaved(t, writeSaved(t, t.TempDir(), "office.ssb", sample()))
+	for _, bad := range []string{"../outside.ssb", `..\outside.ssb`, "C:bad.ssb", "CON.ssb", "bad\n.ssb", "OFFICE.ssb", "notes.txt"} {
 		t.Run(bad, func(t *testing.T) {
-			c := Collection{Version: 1, Profiles: []Entry{{"office.json", sample()}, {bad, sample()}}}
-			data, _ := json.Marshal(c)
-			path := filepath.Join(t.TempDir(), "all.json")
-			os.WriteFile(path, data, 0600)
+			// A hand-built zip with an unsafe or colliding member name never
+			// comes from PrepareExport (it only ever lists real files it just
+			// read); this models a hand-edited or corrupted set.
+			path := filepath.Join(t.TempDir(), "all.zip")
+			f, err := os.Create(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			zw := zip.NewWriter(f)
+			for _, name := range []string{"office.ssb", bad} {
+				w, err := zw.Create(name)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if _, err := w.Write(office); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := zw.Close(); err != nil {
+				t.Fatal(err)
+			}
+			f.Close()
 			dest := t.TempDir()
 			if _, err := Import(path, dest); err == nil {
 				t.Fatal("accepted unsafe/duplicate filename")
@@ -67,24 +143,21 @@ func TestInvalidCollectionNeverPartiallyImports(t *testing.T) {
 	}
 }
 
-func TestLoadRejectsUnknownFieldsTrailingDataAndInvalidProfile(t *testing.T) {
-	data, _ := json.Marshal(Collection{Version: 1, Profiles: []Entry{{"office.json", sample()}}})
-	for _, bad := range []string{string(data) + " {}", strings.Replace(string(data), `"version":1`, `"version":2`, 1), strings.Replace(string(data), `"file":`, `"unknown":1,"file":`, 1), strings.Replace(string(data), `"captured"`, `"synthetic"`, 1)} {
-		path := filepath.Join(t.TempDir(), "all.json")
-		os.WriteFile(path, []byte(bad), 0600)
-		if _, err := Load(path); err == nil {
-			t.Fatalf("accepted %s", bad)
+func TestCollisionIsCheckedBeforeWritingAnyProfile(t *testing.T) {
+	source := t.TempDir()
+	for _, name := range []string{"first.ssb", "taken.ssb"} {
+		if err := bundle.SaveProfile(filepath.Join(source, name), sample()); err != nil {
+			t.Fatal(err)
 		}
 	}
-}
-
-func TestCollisionIsCheckedBeforeWritingAnyProfile(t *testing.T) {
-	c := Collection{Version: 1, Profiles: []Entry{{"first.json", sample()}, {"taken.json", sample()}}}
-	data, _ := json.Marshal(c)
-	path := filepath.Join(t.TempDir(), "all.json")
-	os.WriteFile(path, data, 0600)
+	path := filepath.Join(t.TempDir(), "all.zip")
+	if _, err := Export(source, path); err != nil {
+		t.Fatal(err)
+	}
 	dest := t.TempDir()
-	os.WriteFile(filepath.Join(dest, "TAKEN.json"), []byte("keep me"), 0600)
+	if err := os.WriteFile(filepath.Join(dest, "TAKEN.ssb"), []byte("keep me"), 0600); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := Import(path, dest); err == nil {
 		t.Fatal("accepted case-insensitive collision")
 	}
@@ -92,7 +165,7 @@ func TestCollisionIsCheckedBeforeWritingAnyProfile(t *testing.T) {
 	if len(entries) != 1 {
 		t.Fatal("partial import")
 	}
-	kept, _ := os.ReadFile(filepath.Join(dest, "TAKEN.json"))
+	kept, _ := os.ReadFile(filepath.Join(dest, "TAKEN.ssb"))
 	if string(kept) != "keep me" {
 		t.Fatal("changed existing file")
 	}
@@ -100,17 +173,17 @@ func TestCollisionIsCheckedBeforeWritingAnyProfile(t *testing.T) {
 
 func TestExportCannotPolluteSourceFolder(t *testing.T) {
 	source := t.TempDir()
-	if err := install.SaveProfile(filepath.Join(source, "office.json"), sample()); err != nil {
+	if err := bundle.SaveProfile(filepath.Join(source, "office.ssb"), sample()); err != nil {
 		t.Fatal(err)
 	}
-	output := filepath.Join(source, "all.json")
+	output := filepath.Join(source, "all.zip")
 	if _, err := Export(source, output); err == nil || !strings.Contains(err.Error(), "outside") {
 		t.Fatalf("expected actionable folder error, got %v", err)
 	}
 	if _, err := os.Stat(output); !os.IsNotExist(err) {
 		t.Fatalf("collection was created: %v", err)
 	}
-	if n, err := Export(source, filepath.Join(t.TempDir(), "all.json")); err != nil || n != 1 {
+	if n, err := Export(source, filepath.Join(t.TempDir(), "all.zip")); err != nil || n != 1 {
 		t.Fatalf("source must remain exportable: %d %v", n, err)
 	}
 }
@@ -121,7 +194,32 @@ func TestExportRejectsSourceDirectoryAlias(t *testing.T) {
 	if err := os.Symlink(source, alias); err != nil {
 		t.Skipf("directory symlinks unavailable: %v", err)
 	}
-	if _, err := Export(source, filepath.Join(alias, "all.json")); err == nil || !strings.Contains(err.Error(), "outside") {
+	// A real printer to export, so the refusal is about the destination alias
+	// rather than an empty source.
+	writeSaved(t, source, "office.ssb", sample())
+	if _, err := Export(source, filepath.Join(alias, "all.zip")); err == nil || !strings.Contains(err.Error(), "outside") {
 		t.Fatalf("expected source-directory alias to be rejected, got %v", err)
 	}
+}
+
+// writeSaved saves a profile as a .ssb under dir/name and returns its path.
+func writeSaved(t *testing.T, dir, name string, p install.Profile) string {
+	t.Helper()
+	path := filepath.Join(dir, name)
+	if err := bundle.SaveProfile(path, p); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+// readSaved returns a saved profile file's raw bytes, for building a
+// hand-crafted set the same way PrepareExport would have, without going
+// through it.
+func readSaved(t *testing.T, path string) []byte {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return data
 }

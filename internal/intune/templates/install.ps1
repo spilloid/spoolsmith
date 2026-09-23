@@ -44,7 +44,7 @@ try {
     if (-not (Test-Path -LiteralPath $destination)) {
         $stage=Join-Path $stateDir ('stage-' + [Guid]::NewGuid().ToString('N'))
         New-Item -ItemType Directory -Path $stage | Out-Null
-        foreach ($file in @('deployment.json','profile.json','spoolsmith.exe','runtime.ps1','uninstall.ps1')) { Copy-Item -LiteralPath (Join-Path $PSScriptRoot $file) -Destination (Join-Path $stage $file) }
+        foreach ($file in @('deployment.json','profile.ssb','spoolsmith.exe','runtime.ps1','uninstall.ps1')) { Copy-Item -LiteralPath (Join-Path $PSScriptRoot $file) -Destination (Join-Path $stage $file) }
         if ($manifest.driver_sha256) { Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'driver.exe') -Destination (Join-Path $stage 'driver.exe') }
         if ($manifest.bundle_sha256) { Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'bundle.ssb') -Destination (Join-Path $stage 'bundle.ssb') }
         Assert-Payload $stage $manifest
@@ -68,6 +68,7 @@ try {
     $operation='add'; if ($current) { $operation='configure' }
     $result=Invoke-SpoolSmith $destination $operation ([bool]$manifest.offline) $logs
     if ($result.Code -ne 0) { Add-Content -LiteralPath $log -Value $result.Error; exit $result.Code }
+    if ($result.Data.resolution -like 'offline-fallback*') { Add-Content -LiteralPath $log -Value ((Get-Date -Format o) + ' offline fallback: live identity unconfirmed; using reviewed saved settings') }
     if (-not (Is-Matching $destination $logs)) { throw 'Post-install local configuration does not match' }
     Save-JSON $currentPath $manifest
     Remove-Item -LiteralPath $pendingPath

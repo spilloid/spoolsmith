@@ -11,9 +11,12 @@ Separately managed registered driver required: {{.DriverPrerequisite}}
 Adopt an existing exactly matching queue: {{.Adopt}}
 Profile source: {{.ProfileSource}}{{if .BundleSourceHost}} (SpoolSmith bundle exported from {{.BundleSourceHost}}){{end}}
 
-Review deployment.json, profile.json and all PowerShell scripts before delivery.
+Review deployment.json, profile.ssb and all PowerShell scripts before delivery.
 Pin this locally built CLI by SHA-256: {{.BinarySHA256}}
-It must include the offline and status commands (v0.4.0 does not).
+Use the v1.1.0 or newer CLI with capability SpoolSmith:intune-endpoint-v2:ssb,offline,status.
+New packages use manifest format 2 and profile.ssb. Retained format 1 revisions
+use their original profile.json and pinned older CLI for status and removal.
+Keep those protected revision files intact when updating an existing deployment.
 
 1. Download Microsoft's current Win32 Content Prep Tool from its official source.
    Keep it outside this folder. Run from the parent folder:
@@ -49,7 +52,12 @@ review. No recursive endpoint cleanup is performed. Run removal before deleting
 retained binaries, payloads or logs. Old unused ports after updates remain for
 manual reviewed cleanup.
 
-Provisioning is not a print test. Offline skips live identity verification and
+Provisioning is not a print test. Without explicit offline mode, setup attempts
+live identity verification when captured evidence is available. If the printer is
+unreachable or identity is unconfirmed, setup can succeed using offline fallback;
+the lifecycle log records this. A conflicting live identity still stops setup.
+Detection checks local configuration, not printer reachability or printed output.
+Explicit offline mode skips live identity verification and
 requires a profile prevalidated by an administrator. Printing requires connectivity.
 Drivers must already be registered, supplied through the supported pinned local
 archive recipe, or carried in this package's bundle.ssb (see below). Arbitrary

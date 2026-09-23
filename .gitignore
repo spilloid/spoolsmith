@@ -43,3 +43,6 @@ test/gui/**/obj/
 
 # Product-site browser checks
 /test/site/node_modules/
+
+# .NET test run artifacts (test/gui/SpoolSmithGui.Tests)
+TestResults/

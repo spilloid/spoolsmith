@@ -110,8 +110,41 @@ func TestLocalStatusRejectsEachMismatch(t *testing.T) {
 		}
 	}
 }
-func TestDefaultStillRejectsUnreachablePrinter(t *testing.T) {
+
+// TestDefaultDegradesToOfflineWhenPrinterUnreachable is the fix for the actual
+// operator complaint this file's other tests were written against: a Profile
+// means the printer was already reviewed and approved once, so a printer that
+// won't answer today -- still booting after a physical move, a cable not yet
+// seated -- should not throw that trust away. install (and apply, which
+// shares this exact code path for a bundle's Profile) now falls back to the
+// same offline path --offline already offers, and says so plainly, rather
+// than failing outright.
+func TestDefaultDegradesToOfflineWhenPrinterUnreachable(t *testing.T) {
 	p := sampleProfile()
+	e := &offlineEnvironment{fakeEnvironment: workflowEnvironment(true, true), actual: matchingLocal(p)}
+	w := NewWorkflow()
+	calls := 0
+	w.Collect = func(context.Context, string) (probe.Result, error) {
+		calls++
+		return probe.Result{}, errors.New("unreachable")
+	}
+	out, code := w.RunInstall(context.Background(), e, panicReader{}, io.Discard, false, InstallOptions{Profile: &p, Yes: true})
+	if code != ExitSuccess || calls != 1 || len(e.ran) == 0 {
+		t.Fatalf("%+v code=%d calls=%d", out, code, calls)
+	}
+	if out.Resolution != "offline-fallback-operator-profile" || out.LocalStatus == nil || !out.LocalStatus.Compliant {
+		t.Fatalf("did not record an offline fallback: %+v", out)
+	}
+	if !containsSubstring(out.Uncertain, "could not be contacted") {
+		t.Fatalf("no operator-visible reason for the fallback: %+v", out.Uncertain)
+	}
+}
+
+// TestNoFallbackWithoutAProfile is the boundary on the fix above: with no
+// Profile there is nothing already-approved to fall back to -- automatic
+// catalog resolution needs live evidence, so an unreachable printer still
+// fails outright here, exactly as it always has.
+func TestNoFallbackWithoutAProfile(t *testing.T) {
 	w := NewWorkflow()
 	calls := 0
 	w.Collect = func(context.Context, string) (probe.Result, error) {
@@ -119,8 +152,51 @@ func TestDefaultStillRejectsUnreachablePrinter(t *testing.T) {
 		return probe.Result{}, errors.New("unreachable")
 	}
 	e := workflowEnvironment(true, true)
-	out, code := w.RunInstall(context.Background(), e, panicReader{}, io.Discard, false, InstallOptions{Profile: &p, Yes: true})
+	out, code := w.RunInstall(context.Background(), e, panicReader{}, io.Discard, false, InstallOptions{Target: "192.0.2.10", Yes: true})
 	if code == 0 || calls != 1 || len(e.ran) > 0 || !strings.Contains(out.Error, "unreachable") {
 		t.Fatalf("%+v code=%d calls=%d", out, code, calls)
+	}
+}
+
+func containsSubstring(values []string, substr string) bool {
+	for _, v := range values {
+		if strings.Contains(v, substr) {
+			return true
+		}
+	}
+	return false
+}
+
+// Cancellation must never be converted into permission to provision offline.
+func TestOfflineFallbackPreservesCancellation(t *testing.T) {
+	for _, mode := range []string{"before probe", "first probe", "identity retry", "returned cancellation"} {
+		t.Run(mode, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			if mode == "before probe" {
+				cancel()
+			}
+			p := sampleProfile()
+			e := &offlineEnvironment{fakeEnvironment: workflowEnvironment(true, true), actual: matchingLocal(p)}
+			w := NewWorkflow()
+			calls := 0
+			w.Collect = func(context.Context, string) (probe.Result, error) {
+				calls++
+				if mode == "identity retry" && calls == 1 {
+					return probe.Result{}, nil
+				}
+				if mode != "returned cancellation" {
+					cancel()
+				}
+				return probe.Result{}, context.Canceled
+			}
+			out, code := w.RunInstall(ctx, e, panicReader{}, io.Discard, false, InstallOptions{Profile: &p, Yes: true})
+			if code == ExitSuccess || len(e.ran) != 0 || !strings.Contains(out.Error, "canceled") {
+				t.Fatalf("cancellation became setup: code=%d ran=%d out=%+v", code, len(e.ran), out)
+			}
+			if mode == "before probe" && calls != 0 {
+				t.Fatal("probed after cancellation")
+			}
+		})
 	}
 }

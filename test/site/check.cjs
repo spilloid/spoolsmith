@@ -7,7 +7,7 @@ const fs = require('fs');
  const page = await context.newPage();
  const errors=[]; page.on('pageerror', error => errors.push(error.message));
  const base=process.env.SITE_URL || 'http://127.0.0.1:8765/';
- const out=process.env.SITE_QC_OUTPUT || 'dist/web-qc';fs.mkdirSync(out,{recursive:true});
+ const out=process.env.SITE_QC_OUTPUT || require('path').resolve(__dirname, '../../dist/web-qc');fs.mkdirSync(out,{recursive:true});
  for (const width of [360,390,768,1440]) {
    await page.setViewportSize({width,height:1000});await page.goto(base);await page.locator('h1').waitFor();
    const overflow=await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth);
@@ -35,7 +35,7 @@ const fs = require('fs');
  await page.getByRole('tab').first().click();await page.getByText('Prefer PowerShell?',{exact:true}).click();
  await context.grantPermissions(['clipboard-read','clipboard-write']);
  await page.getByRole('button',{name:'Copy source PC commands',exact:true}).click();
- if(!(await page.evaluate(()=>navigator.clipboard.readText())).includes('--include-driver')) throw Error('clipboard failed');
+ if(!(await page.evaluate(()=>navigator.clipboard.readText())).includes('copy "Accounting" accounting.ssb')) throw Error('clipboard failed');
  const nojs=await browser.newContext({javaScriptEnabled:false});const np=await nojs.newPage();await np.goto(base);
  if(await np.getByRole('tabpanel').count()!==5) throw Error('missing no-JS guides');
  for(const panel of await np.getByRole('tabpanel').all()) if(!await panel.isVisible()) throw Error('hidden no-JS guide');

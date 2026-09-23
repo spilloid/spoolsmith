@@ -1,107 +1,64 @@
-// Package profileset transfers saved printer JSON without applying Windows changes.
+// Package profileset transfers saved printer files as a single printer set,
+// without applying Windows changes.
+//
+// A printer set (package internal/bundle) is a plain .zip carrying the
+// operator's saved-printer .ssb files verbatim at its top level -- including
+// any driver a file embeds. A .ssb is one printer; a .zip is a set of them.
+// Members are streamed through, never held in memory, because an embedded
+// driver can be hundreds of megabytes.
 package profileset
 
 import (
-	"encoding/json"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
 
-	"github.com/spilloid/spoolsmith/internal/install"
+	"github.com/spilloid/spoolsmith/internal/bundle"
 )
 
-const maxSize = 16 << 20
-
-type Entry struct {
-	File    string          `json:"file"`
-	Profile install.Profile `json:"profile"`
-}
-
-type Collection struct {
-	Version  int     `json:"version"`
-	Profiles []Entry `json:"profiles"`
-}
-
-func (c Collection) validate() error {
-	if c.Version != 1 || len(c.Profiles) == 0 || len(c.Profiles) > 1000 {
-		return fmt.Errorf("saved setups: expected version 1 and between 1 and 1000 profiles")
-	}
-	seen := map[string]bool{}
-	for _, e := range c.Profiles {
-		stem := strings.Split(strings.ToUpper(e.File), ".")[0]
-		reserved := stem == "CON" || stem == "PRN" || stem == "AUX" || stem == "NUL" || (len(stem) == 4 && (strings.HasPrefix(stem, "COM") || strings.HasPrefix(stem, "LPT")) && stem[3] >= '0' && stem[3] <= '9')
-		if e.File == "" || len(e.File) > 200 || strings.ContainsAny(e.File, "/\\:<>\"|?*\x00") || strings.TrimSpace(e.File) != e.File || !strings.HasSuffix(strings.ToLower(e.File), ".json") || reserved {
-			return fmt.Errorf("saved setups: unsafe profile filename %q", e.File)
-		}
-		for _, r := range e.File {
-			if r < 32 {
-				return fmt.Errorf("saved setups: unsafe profile filename %q", e.File)
-			}
-		}
-		key := strings.ToLower(e.File)
-		if seen[key] {
-			return fmt.Errorf("saved setups: duplicate filename %q", e.File)
-		}
-		seen[key] = true
-		if err := e.Profile.Validate(); err != nil {
-			return fmt.Errorf("%s: %w", e.File, err)
-		}
-		data, err := json.MarshalIndent(e.Profile, "", "  ")
-		if err != nil {
-			return err
-		}
-		if len(data)+1 > 1<<20 {
-			return fmt.Errorf("%s: profile exceeds 1 MiB", e.File)
-		}
-	}
-	return nil
-}
-
-// PrepareExport reads and validates every top-level profile without writing files.
-// The prepared transfer retains exactly the profiles shown during review.
+// PrepareExport reads and validates every top-level .ssb in directory without
+// writing anything. The prepared transfer records a digest of each file shown
+// during review, and Execute refuses to export a file that changed since.
 func PrepareExport(directory, path string) (*Transfer, error) {
-	transfer, err := (&Transfer{operation: "export-all", source: directory}).WithDestination(path)
-	if err != nil {
-		return nil, err
-	}
+	transfer := &Transfer{operation: "export-all", source: directory}
 	entries, err := os.ReadDir(directory)
 	if err != nil {
-		return nil, fmt.Errorf("saved setups: cannot read profile folder %s; choose a folder containing saved setups: %w", directory, err)
+		return nil, fmt.Errorf("saved setups: cannot read printer folder %s; choose a folder containing saved printers: %w", directory, err)
 	}
-	c := Collection{Version: 1, Profiles: []Entry{}}
 	for _, e := range entries {
-		if e.IsDir() || !strings.EqualFold(filepath.Ext(e.Name()), ".json") {
+		if e.IsDir() || !strings.EqualFold(filepath.Ext(e.Name()), ".ssb") {
 			continue
 		}
 		if e.Type()&os.ModeSymlink != 0 {
-			return nil, fmt.Errorf("saved setups: symbolic link %q is not a profile", e.Name())
+			return nil, fmt.Errorf("saved setups: symbolic link %q is not a saved printer", e.Name())
 		}
-		p, err := install.LoadProfile(filepath.Join(directory, e.Name()))
+		source := filepath.Join(directory, e.Name())
+		info, err := os.Stat(source)
 		if err != nil {
 			return nil, fmt.Errorf("%s: %w", e.Name(), err)
 		}
-		c.Profiles = append(c.Profiles, Entry{File: e.Name(), Profile: p})
+		if !info.Mode().IsRegular() {
+			return nil, fmt.Errorf("%s: expected a regular file", e.Name())
+		}
+		preview, digest, err := describeMember(source, e.Name())
+		if err != nil {
+			return nil, err
+		}
+		transfer.members = append(transfer.members, member{name: e.Name(), path: source, digest: digest})
+		transfer.previews = append(transfer.previews, preview)
 	}
-	if len(c.Profiles) == 0 {
-		return nil, fmt.Errorf("saved setups: no JSON profiles in %s; choose a folder containing saved setups or save a printer first", directory)
+	if len(transfer.members) == 0 {
+		return nil, fmt.Errorf("saved setups: no saved printers (.ssb) in %s; choose a folder containing saved printers or save a printer first", directory)
 	}
-	if err := c.validate(); err != nil {
-		return nil, err
-	}
-	data, err := json.MarshalIndent(c, "", "  ")
-	if err != nil {
-		return nil, err
-	}
-	if len(data)+1 > maxSize {
-		return nil, fmt.Errorf("saved setups: export exceeds 16 MiB")
-	}
-	transfer.collection = c
-	return transfer, nil
+	return transfer.WithDestination(path)
 }
 
-// Export preserves the existing collection format and never replaces a file.
+// Export is PrepareExport immediately followed by Execute, for a caller that
+// does not need to review the set first.
 func Export(directory, path string) (int, error) {
 	transfer, err := PrepareExport(directory, path)
 	if err != nil {
@@ -110,57 +67,8 @@ func Export(directory, path string) (int, error) {
 	return transfer.Execute()
 }
 
-func exportCollection(c Collection, path string) (int, error) {
-	data, err := json.MarshalIndent(c, "", "  ")
-	if err != nil {
-		return 0, err
-	}
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
-	if err != nil {
-		return 0, err
-	}
-	_, writeErr := f.Write(append(data, '\n'))
-	closeErr := f.Close()
-	if writeErr != nil {
-		os.Remove(path)
-		return 0, writeErr
-	}
-	if closeErr != nil {
-		os.Remove(path)
-		return 0, closeErr
-	}
-	return len(c.Profiles), nil
-}
-
-// Load validates the entire collection before any files can be imported.
-func Load(path string) (Collection, error) {
-	var c Collection
-	f, err := os.Open(path)
-	if err != nil {
-		return c, err
-	}
-	defer f.Close()
-	info, err := f.Stat()
-	if err != nil {
-		return c, err
-	}
-	if !info.Mode().IsRegular() || info.Size() > maxSize {
-		return c, fmt.Errorf("saved setups: expected a regular JSON file no larger than 16 MiB")
-	}
-	dec := json.NewDecoder(io.LimitReader(f, maxSize+1))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&c); err != nil {
-		return c, err
-	}
-	var extra any
-	if err := dec.Decode(&extra); err != io.EOF {
-		return c, fmt.Errorf("saved setups: trailing JSON data")
-	}
-	return c, c.validate()
-}
-
-// Import preserves filenames and refuses all collisions, including case-only ones.
-// On a write failure it removes only files created by this attempt.
+// Import is PrepareImport immediately followed by Execute, for a caller that
+// does not need to review the set first.
 func Import(path, directory string) (int, error) {
 	transfer, err := PrepareImport(path, directory)
 	if err != nil {
@@ -169,43 +77,76 @@ func Import(path, directory string) (int, error) {
 	return transfer.Execute()
 }
 
-func importCollection(c Collection, directory string) (int, error) {
-	if err := os.MkdirAll(directory, 0700); err != nil {
-		return 0, err
+// PrepareImport opens a printer set and validates every member, without
+// writing anything to directory. Members are checked by extracting them into
+// a private working folder that is removed again before this returns.
+func PrepareImport(path, directory string) (*Transfer, error) {
+	set, err := bundle.OpenSet(path)
+	if err != nil {
+		return nil, err
 	}
-	created := []string{}
-	rollback := func() {
-		for _, p := range created {
-			_ = os.Remove(p)
-		}
+	defer set.Close()
+	work, err := os.MkdirTemp("", "spoolsmith-import-review-")
+	if err != nil {
+		return nil, err
 	}
-	for _, e := range c.Profiles {
-		data, err := json.MarshalIndent(e.Profile, "", "  ")
+	defer os.RemoveAll(work)
+	transfer := &Transfer{operation: "import-all", source: path}
+	for _, name := range set.Members {
+		extracted, err := set.Extract(name, work)
 		if err != nil {
-			rollback()
-			return 0, err
+			return nil, err
 		}
-		if len(data)+1 > 1<<20 {
-			rollback()
-			return 0, fmt.Errorf("%s: formatted profile exceeds 1 MiB", e.File)
-		}
-		target := filepath.Join(directory, e.File)
-		f, err := os.OpenFile(target, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+		preview, digest, err := describeMember(extracted, name)
+		os.Remove(extracted)
 		if err != nil {
-			rollback()
-			return 0, err
+			return nil, err
 		}
-		created = append(created, target)
-		_, writeErr := f.Write(append(data, '\n'))
-		closeErr := f.Close()
-		if writeErr != nil {
-			rollback()
-			return 0, writeErr
-		}
-		if closeErr != nil {
-			rollback()
-			return 0, closeErr
-		}
+		transfer.members = append(transfer.members, member{name: name, digest: digest})
+		transfer.previews = append(transfer.previews, preview)
 	}
-	return len(created), nil
+	return transfer.WithDestination(directory)
+}
+
+// describeMember validates a printer file on disk as a bundle, describes it
+// for review, and returns the digest of its exact bytes.
+func describeMember(path, name string) (ProfilePreview, string, error) {
+	opened, err := bundle.Open(path)
+	if err != nil {
+		return ProfilePreview{}, "", fmt.Errorf("%s: %w", name, err)
+	}
+	defer opened.Close()
+	if err := opened.Verify(); err != nil {
+		return ProfilePreview{}, "", fmt.Errorf("%s: %w", name, err)
+	}
+	profile := opened.Manifest.Profile
+	preview := ProfilePreview{
+		File: name, PrinterName: profile.PrinterName, Target: profile.Target, DriverName: profile.DriverName,
+		Driver: opened.Manifest.Driver != nil,
+	}
+	if profile.DriverPackage != nil {
+		preview.Archive = profile.DriverPackage.Archive
+	}
+	digest, err := fileDigest(path)
+	if err != nil {
+		return ProfilePreview{}, "", fmt.Errorf("%s: %w", name, err)
+	}
+	return preview, digest, nil
+}
+
+func fileDigest(path string) (string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	return readerDigest(f)
+}
+
+func readerDigest(r io.Reader) (string, error) {
+	digest := sha256.New()
+	if _, err := io.Copy(digest, r); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(digest.Sum(nil)), nil
 }

@@ -103,7 +103,7 @@ func writeQueueTable(writer io.Writer, queues []install.InstalledQueue) {
 			}
 		}
 	}
-	fmt.Fprintln(writer, "\nCopy one to another PC with: spoolsmith copy <name> <bundle-file> --include-driver")
+	fmt.Fprintln(writer, "\nCopy one to another PC with: spoolsmith copy <name> [--out <file.ssb>]  (or every printer: spoolsmith copy --all)")
 }
 
 // selectInstalledQueue resolves the queue to copy when the operator did not

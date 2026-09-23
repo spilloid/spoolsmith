@@ -2,8 +2,107 @@
 
 ## Project Mission
 
+**Operator update, 2026-09-23:** ".ssb is the first-class printer
+import/export representation, and zip is the collective of such." This
+supersedes the set/driver bullets of the 2026-09-22 update below (those were
+never released; v1.0.1 is the latest tag, so there is no compatibility shim):
+- A **set** is a plain `.zip` whose file entries are all top-level `.ssb`
+  bundles -- exactly what Explorer's "Compress to ZIP folder" makes from
+  `.ssb` files. No `set.json` index, no `members/` folder; the optional note is
+  the zip archive comment. `internal/bundle`'s `WriteSet`/`OpenSet`/
+  `Set.Extract`/`IsSet` stream members verbatim (never in memory) and fail
+  closed on nested paths, non-`.ssb` entries, unsafe/duplicate names, or an
+  empty/oversized set. Dispatch is on content (`IsSet`), not extension.
+- **Drivers are preferred, not opt-in.** `copy`/`bundle.Create` tries to embed
+  the driver by default and only falls back to a settings-only bundle -- still
+  a successful copy -- when it can't (not elevated, export failure), reporting
+  why in `CreateResult.DriverNotIncluded`. `--settings-only`/`SettingsOnly` is
+  the explicit opt-out; `--include-driver` is a deprecated no-op. Sets carry
+  members with embedded drivers verbatim (the old refusal is gone).
+- `copy --all` writes **one set** (`.zip`), never a folder; name collisions get
+  `-2`, `-3` suffixes. `apply <set.zip>` runs each member's own plan and own
+  single confirmation (`--member` picks one); a set never widens one
+  confirmation to cover several printers. `profile export-all`/`import-all`
+  read and write `.zip` sets.
+
+**Operator update, 2026-09-22 (later same day):** there is exactly one on-disk
+printer-file format now: a bundle (package `internal/bundle`, extension
+`.ssb`), optionally carrying a driver payload. The bare-JSON profile format
+`profile capture`/`install --profile` used to write and read is gone —
+`internal/install.Profile` is now a pure in-memory struct with no file I/O of
+its own; `internal/bundle.SaveProfile`/`LoadProfile`/`EditProfile` are the one
+place a profile is ever written to or read from disk, always as a
+zero-or-more-driver-file bundle. This was the operator's own standing
+complaint made concrete: a saved profile and a handed-off bundle were the same
+document in two different file shapes, for no stated reason.
+- `profile capture`, `copy`, `install`/`add`/`configure`/`remove --profile`,
+  `apply`, `status --profile`, `intune build --profile`, and the desktop
+  GUI's saved-setup/copy/apply/Intune pickers all read and write `.ssb` now.
+  `install --profile`/`add --profile` gained `apply`'s embedded-driver-payload
+  staging in the process, since the two are now the same file shape end to
+  end — they share one loader (`loadProfileFile` in `cmd/spoolsmith`,
+  `loadPrinterFile` in `cmd/spoolsmith-gui`).
+- `internal/intune`'s `loadProfileSource` no longer dispatches on extension
+  (there is nothing left to dispatch on); a bundle naming a local
+  `driver_package` vendor archive is now accepted as long as it carries no
+  *embedded* payload of its own — that dual-mechanism conflict remains
+  refused, the old blanket "bundle can never name a vendor archive" rule
+  does not.
+- The "saved setups" bulk transfer (`profile export-all`/`import-all`, the
+  desktop GUI's Export/Import all) is now a **set** — package
+  `internal/bundle`'s `WriteSet`/`OpenSet`/`SetMember` — a zip carrying the
+  member `.ssb` files verbatim plus a small `set.json` index, not a bespoke
+  JSON document re-encoding every profile inline. A member carrying an
+  embedded driver payload is refused outright (settings-only transfer, always
+  was) rather than silently carried or silently dropped.
+- `examples/intune/accounting.json` is gone; `examples/intune/accounting.ssb`
+  is the one example file, and the README shows the schema inline as
+  documentation instead of shipping a second, now-unusable format.
+- Deliberately untouched: evidence fixtures (`fixtures/*.json`, milestone-one
+  testing) are a different, internal-only format and were never part of this
+  duality — an operator never hands one between machines. `copy --all` still
+  writes a folder of `.ssb` files rather than a set; unifying that (and giving
+  `apply` a set's per-member plan-and-confirm loop) is a deliberately separate,
+  not-yet-decided follow-up, not an oversight.
+- See `internal/bundle/profile.go` and `internal/bundle/set.go` for the exact
+  mechanics, and their tests (plus `internal/profileset`'s rewritten suite)
+  for the boundary between what's safe to condense and what still fails
+  closed (an embedded-driver-payload conflict, an unsafe or duplicate member
+  name, a set whose index disagrees with its own archive contents).
+
+**Operator update, 2026-09-22:** offline fallback is now first-class across
+`install`/`apply`/`copy`, on both the CLI and desktop, instead of a manual
+`--offline` flag the operator had to already know to reach for. A printer
+that won't answer right now — still booting after a physical move, a cable
+not yet seated, DHCP settling on a new subnet — no longer fails the whole
+operation outright:
+- `install --profile` / `apply <bundle>`: if the live probe can't reach the
+  printer, or the printer answers but never confirms identity (even after the
+  existing one-retry-for-a-sleeping-printer path), the run now falls back to
+  the same offline path `--offline` already supported, and says so on the
+  transcript (`Note: offline fallback: ...`) and in `Outcome.Resolution`
+  (`offline-fallback-operator-profile`, distinct from an operator-requested
+  `offline-operator-profile`). A profile with no captured identity at all is
+  never retried against a live probe it can't possibly match. This never
+  skips the one required plan confirmation — see the trust model below.
+- `copy` (rip a bundle off an already-installed queue): if the source printer
+  never answers after the existing retry, `copy` no longer fails the whole
+  operation. It writes the bundle anyway from what Windows already knows
+  about the queue (name/driver/address), with the profile's evidence marked
+  `"provenance": "unconfirmed"` and a note explaining why. `copy --all`
+  reports this per queue rather than failing the batch. Applying such a
+  bundle always runs the offline path above — there is nothing in it to ever
+  confirm against a live printer. A canceled operation is still a hard
+  failure; only "the printer never answered" is degraded.
+- See `internal/install/workflow.go` (RunInstall), `internal/bundle/create.go`
+  (collectIdentity/Create) and their tests for the exact boundary between
+  "degrade to offline" and "still fail closed" — an identity *mismatch*
+  (saved vs. observed) is a conflict, never treated as unreachable, and always
+  still fails outright.
+
 **Operator update, 2026-09-17 (v0.7.0 track):** the desktop GUI's Intune wizard
-("Build an Intune printer app..." on the Tools tab) is now enabled — it calls the
+("Build an Intune printer app..." on the Tools tab — since v1.1.0, on the
+sidebar's **Intune package** page) is now enabled — it calls the
 same `internal/intune` `Prepare`/`Export` the CLI's `intune build`/`wizard` uses,
 so it's the same local-only packaging surface, not new scope. Real Windows
 validation is in `docs/validation/2026-09-17-gui-intune-wizard.md`. Tenant

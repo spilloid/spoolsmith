@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/spilloid/spoolsmith/internal/install"
+	"github.com/spilloid/spoolsmith/internal/bundle"
 )
 
 func TestProfileDefaultsKeepIdentityAcrossConfigurationChanges(t *testing.T) {
@@ -17,7 +17,7 @@ func TestProfileDefaultsKeepIdentityAcrossConfigurationChanges(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	p, err := install.LoadProfile(o.ProfilePath)
+	p, err := bundle.LoadProfile(o.ProfilePath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -29,8 +29,8 @@ func TestProfileDefaultsKeepIdentityAcrossConfigurationChanges(t *testing.T) {
 	}
 	p.Target = "192.0.2.41"
 	p.DriverName = "New driver"
-	other := filepath.Join(t.TempDir(), "renamed.json")
-	if err := install.SaveProfile(other, p); err != nil {
+	other := filepath.Join(t.TempDir(), "renamed.ssb")
+	if err := bundle.SaveProfile(other, p); err != nil {
 		t.Fatal(err)
 	}
 	next, err := ProfileDefaults(other)
@@ -41,12 +41,12 @@ func TestProfileDefaultsKeepIdentityAcrossConfigurationChanges(t *testing.T) {
 
 func TestProfileDefaultsProduceDistinctValidIDs(t *testing.T) {
 	o := testOptions(t)
-	p, _ := install.LoadProfile(o.ProfilePath)
+	p, _ := bundle.LoadProfile(o.ProfilePath)
 	seen := make(map[string]bool)
 	for _, name := range []string{"Office A", "Office-A", "OFFICE A", "打印机", "!!!", strings.Repeat("a", 150), strings.Repeat("a", 150) + "b"} {
 		p.PrinterName = name
-		o.ProfilePath = filepath.Join(t.TempDir(), "profile.json")
-		if err := install.SaveProfile(o.ProfilePath, p); err != nil {
+		o.ProfilePath = filepath.Join(t.TempDir(), "profile.ssb")
+		if err := bundle.SaveProfile(o.ProfilePath, p); err != nil {
 			t.Fatal(err)
 		}
 		d, err := ProfileDefaults(o.ProfilePath)
@@ -109,7 +109,7 @@ func TestAutomaticPinStillVerifiesCLIIdentity(t *testing.T) {
 		{"wrong command", "select the SpoolSmith CLI", func(b []byte) []byte {
 			return bytes.ReplaceAll(b, []byte("/cmd/spoolsmith"), []byte("/cmd/otherxxxxx"))
 		}},
-		{"old CLI", "lacks offline/status", func(b []byte) []byte {
+		{"old CLI", "lacks .ssb endpoint support", func(b []byte) []byte {
 			return bytes.ReplaceAll(b, []byte(EndpointCapability), bytes.Repeat([]byte("x"), len(EndpointCapability)))
 		}},
 	} {

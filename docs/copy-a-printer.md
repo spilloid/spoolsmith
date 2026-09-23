@@ -9,14 +9,17 @@ Download and extract the [Windows ZIP](https://github.com/spilloid/spoolsmith/re
 No build tools are needed. Open `spoolsmith-gui.exe`:
 
 1. On the source PC, use **This PC → Copy to a file** for a supported queue.
-   Run the app as administrator if including driver files.
+   **Include the driver where possible** is on by default; run the app as
+   administrator so the driver can actually be exported. Otherwise the copy is
+   saved with settings only and tells you why.
 2. Move the resulting `.ssb` file to the destination PC.
-3. Open the app as administrator there, then **Add a printer → Open a copied printer (.ssb)...**.
+3. Open the app as administrator there, then **Add a printer → Open a printer file...**.
+   A printer set (`.zip`) opens a list; pick one printer at a time.
 4. **Preview changes**, review the queue/address/driver plan, and confirm.
 
 **More options** offers offline setup and updating an existing queue.
-**This PC → Change address** reviews an address change; **Tools → Inspect**
-verifies and displays a bundle manifest. The CLI examples follow below.
+**This PC → Change address** reviews an address change; **Inspect** (under Tools
+in the sidebar) verifies and displays a bundle manifest. The CLI examples follow below.
 
 ## The short version
 
@@ -24,7 +27,7 @@ On the PC that already prints, in an elevated PowerShell:
 
 ```powershell
 spoolsmith printers
-spoolsmith copy "Accounting" accounting.ssb --include-driver
+spoolsmith copy "Accounting" accounting.ssb
 ```
 
 On the PC that needs the printer:
@@ -35,7 +38,8 @@ spoolsmith apply accounting.ssb
 ```
 
 Move `accounting.ssb` between them however you already move files. It is a plain zip and
-nothing in it executes.
+opening the archive does not install anything. Applying it can stage the included
+driver after you review and confirm the plan.
 
 ## Step 1 — see what the source PC has
 
@@ -66,7 +70,7 @@ naming a host instead of an address, and virtual printers are refused rather tha
 ## Step 2 — copy it
 
 ```powershell
-spoolsmith copy "Accounting" accounting.ssb --include-driver
+spoolsmith copy "Accounting" accounting.ssb
 ```
 
 Both arguments are optional:
@@ -81,50 +85,82 @@ spoolsmith copy            # pick from a list, write Accounting.ssb
 Without a terminal — a scheduled task, an RMM, an Intune script — `copy` with no queue name
 fails and tells you to name one. It does not choose on your behalf.
 
-### What `--include-driver` does, and when you need it
+### The driver comes along when it can
 
-It exports the driver package out of the source PC's Windows driver store with `pnputil`, and
-carries it inside the bundle. Use it whenever the target PC might not already have that exact
-driver registered.
+`copy` exports the driver package out of the source PC's Windows driver store with `pnputil`
+and carries it inside the bundle, so the target PC doesn't need that exact driver registered
+beforehand. This is the default; there is nothing to turn on.
 
-It needs an elevated prompt. SpoolSmith checks for Administrator *before* reading the queue or
-probing the printer, so you find out immediately rather than after a wait.
+Exporting needs an elevated prompt. SpoolSmith checks for Administrator before exporting. When
+the driver can't be carried (not elevated, the export fails, or the package is above the 1 GiB
+bundle limit), the copy still succeeds with the settings only and says why:
 
-Without it, the bundle carries the mapping only, and `apply` fails on a target PC that lacks
-the driver — telling you so rather than installing something else.
+```
+Driver not included: the driver needs administrator rights to copy; the other PC must already have "Brother HL-L2315D series" installed
+```
 
-Some drivers cannot be exported at all. An inbox or Windows Update driver has no driver-store
-package to copy, and SpoolSmith says exactly that: the target machine will need to obtain it the
-same way this one did.
+A settings-only bundle carries the mapping only, and `apply` fails on a target PC that lacks
+the driver — telling you so rather than installing something else. Some drivers cannot be
+exported at all: an inbox or Windows Update driver has no driver-store package to copy, and the
+target machine will need to obtain it the same way this one did.
+
+`--settings-only` always leaves the driver out, for example when the destination should use a
+driver you install and manage yourself. `--include-driver` from earlier releases is accepted as
+a no-op with a note.
+
+A driver exported from another PC is only as trustworthy as that PC. On the destination,
+`apply` verifies every payload file against the SHA-256 in the manifest and relies on Windows'
+own catalog signature check when `pnputil` stages the INF; a payload that fails either is not
+installed. See [What a bundle is, exactly](#what-a-bundle-is-exactly).
 
 ### Copying every queue at once
 
 ```powershell
-spoolsmith copy --all exports --include-driver
+spoolsmith copy --all printers.zip
 ```
 
-Bundles every copyable queue on this PC into `exports/`, one `.ssb` per queue, named the
-same way a single `copy` would name it. A queue `printers` would mark `!` is skipped and
-reported with its reason rather than stopping the batch — this is a set of independent
-exports, not one transaction, so one bad queue does not cost you the other twenty-nine.
-The command still fails (non-zero exit) if nothing at all got copied.
+Copies every copyable queue on this PC into one **printer set**: a plain `.zip` holding one
+`.ssb` per queue at its root, named the same way a single `copy` would name it (a duplicate
+name gets a `-2`, `-3` suffix). Omit the file name to get
+`SpoolSmith-printers-<date>-<time>.zip` in the current folder. Each printer carries its
+driver where possible, exactly like a single `copy`, and the result says which ones don't and
+why. `--settings-only` leaves every driver out; `--note` is stored as the zip comment.
 
-In the source desktop build, **This PC → Copy all printers...** runs the same batch
-operation. Review the inventory, choose a folder and whether to include drivers,
-then choose **Copy printers**. The dialog stays responsive and offers **Stop copying**;
-completed files remain available. **Copy results / JSON** copies the same result
-fields the CLI emits so you can attach the outcome to a ticket. This control shipped
-in v0.7.4.
+A queue `printers` would mark `!` is skipped and reported with its reason rather than stopping
+the batch, and one printer that fails doesn't cost you the other twenty-nine: the set is still
+saved with the printers that worked. The command fails (non-zero exit) and writes no file if
+nothing at all got copied. An existing file at the set's name is refused before anything runs.
+Ctrl+C stops further work, saves **no** set, and exits nonzero.
 
-Existing files and filename collisions are reported before the affected printer is
-probed or its driver is exported. Retry a failed printer with **Copy to a file** or
-`spoolsmith copy "Queue name" different-name.ssb --include-driver`.
+A set is nothing SpoolSmith-specific: selecting some `.ssb` files in Explorer and choosing
+**Compress to ZIP file** makes a valid one. SpoolSmith refuses a set with files inside folders, non-`.ssb`
+entries, unsafe or duplicate names, no printers, or more than 1,000 printers.
 
-The CLI preserves its existing partial-success convention: a batch with at least
-one successful copy exits zero even if another copy failed. Check `failed` and
-`skipped` in its JSON result. Ctrl+C stops further work and exits nonzero with the
-available results. Neither surface applies a whole folder at once; open each `.ssb`
-on the destination and review its plan before confirming.
+In the desktop app, **This PC → Copy all printers...** runs the same operation. Choose where to
+**Save set as** (a `.zip`), leave **Include each printer's driver where possible** on or clear
+it, then choose **Copy printers**. The dialog stays responsive and offers **Stop copying**,
+which saves no set. **Copy results** puts a plain-text report of every printer's outcome on the
+clipboard for a ticket. Retry a failed printer with **Copy to a file** or
+`spoolsmith copy "Queue name" different-name.ssb`.
+
+The CLI keeps its partial-success convention: a set with at least one printer exits zero even
+if another copy failed. Check `failed` and `skipped` in its JSON result on stdout.
+
+### Applying a set
+
+```powershell
+spoolsmith bundle inspect printers.zip      # lists each printer and whether it carries a driver
+spoolsmith apply printers.zip --dry-run
+spoolsmith apply printers.zip
+spoolsmith apply printers.zip --member Accounting
+```
+
+Each printer in the set gets its own plan and its own confirmation, exactly as if its `.ssb`
+had been applied alone; a set never widens one confirmation to cover several printers.
+`--member` picks one printer by file name. A `--plan-hash` fingerprint names one printer's plan,
+so with a multi-printer set it needs `--member` too. In the desktop app, **Add a printer → Open a
+printer file...** opens a set as a list; pick a printer, review it, confirm it, and come back for
+the next.
 
 ### What gets captured
 
@@ -133,8 +169,9 @@ identity, SNMP description — in the bundle. `apply` compares reported model ev
 with that capture. This is a consistency check, not authentication of a unique device.
 
 If the printer is asleep, the first probe can come back with nothing useful. SpoolSmith retries
-once before giving up, because a printer that answers thinly on first contact and fully a few
-seconds later is normal. A second empty answer is a real failure and stops the copy.
+once, because a printer that answers thinly on first contact and fully a few seconds later is
+normal. If the second answer is empty too, the copy still saves the Windows queue settings and
+marks the printer's identity unconfirmed, so applying it later falls back to offline setup.
 
 ## Step 3 — look at the bundle (optional)
 
@@ -175,6 +212,13 @@ One confirmation of the shown plan, and then it runs. Applying the same bundle t
 matching settings are reported unchanged rather than rebuilt.
 
 ### When the printer is not reachable
+
+Setup automatically falls back to offline if the printer cannot be reached or
+its identity remains unavailable after retrying. The plan explains the fallback
+before you confirm. An identity mismatch still stops setup. Copying an unreachable
+printer saves its Windows queue settings with identity marked unconfirmed.
+
+To skip the live check from the start:
 
 ```powershell
 spoolsmith apply accounting.ssb --offline
@@ -229,7 +273,8 @@ natively:
 
 - `manifest.json` — the queue, driver name, target address, captured evidence, and provenance.
   Configuration only. It contains no commands.
-- `payload/` — the exported driver files, present only with `--include-driver`. Every file is
+- `payload/` — the exported driver files, present whenever the driver could be exported (not
+  with `--settings-only`). Every file is
   listed with its size and SHA-256, and each is verified on extraction. Entries that are
   absolute, traversing, drive-relative, or duplicated are rejected before anything is written.
 
@@ -244,7 +289,7 @@ A bundle from a colleague's PC deserves exactly as much trust as that PC.
 On Windows 11 build 26200, against a real Brother HL-L2315D:
 
 - `printers` listing, and its copy-eligibility reasons.
-- `copy --include-driver` exporting a 115-file, 25.9 MB package out of the driver store.
+- `copy` with driver export exporting a 115-file, 25.9 MB package out of the driver store.
 - The bundle being written, re-read, and every payload file hash-verified.
 - `apply --dry-run` probing the live printer and matching its identity to the capture.
 - `apply` running idempotently against an already-correct machine.
@@ -258,6 +303,10 @@ These source and destination scenarios ran on **one PC**, with the absent-driver
 state simulated by removing its driver. Still unverified: transfer between two
 separate PCs, a live `repoint` mutation (only its preview has been run), and physical
 printing through a bundle-staged driver. See the [dated validation record](validation/2026-09-15-copy-workflow.md).
+
+Printer sets (`copy --all` into one `.zip`, per-printer `apply` of a set, `bundle inspect` of a
+set) are covered by automated Go tests; they have not yet been exercised against real printers
+or between two PCs.
 
 ## Current limitations
 

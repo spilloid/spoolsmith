@@ -48,8 +48,8 @@ func TestMain(m *testing.M) {
 func testOptions(t *testing.T) Options {
 	t.Helper()
 	p := install.Profile{Version: 1, Target: "192.0.2.40", PrinterName: "Accounting's $copier “West”", DriverName: "Exact OEM Driver", Evidence: evidence.Evidence{Provenance: "captured", HTTPTitle: "Example Model"}}
-	path := filepath.Join(t.TempDir(), "profile.json")
-	if err := install.SaveProfile(path, p); err != nil {
+	path := filepath.Join(t.TempDir(), "profile.ssb")
+	if err := bundle.SaveProfile(path, p); err != nil {
 		t.Fatal(err)
 	}
 	return Options{ProfilePath: path, BinaryPath: testBinary, BinarySHA256: testBinaryHash, ID: "accounting", Revision: 1, DisplayName: "Accounting copier", Offline: true, DriverPrerequisite: true}
@@ -97,7 +97,7 @@ func TestExportPinsContentsAndPreservesExistingFiles(t *testing.T) {
 	if err = verifyFile(filepath.Join(dest, "spoolsmith.exe"), testBinaryHash); err != nil {
 		t.Fatal(err)
 	}
-	if err = verifyFile(filepath.Join(dest, "profile.json"), prepared.Manifest.ProfileSHA256); err != nil {
+	if err = verifyFile(filepath.Join(dest, "profile.ssb"), prepared.Manifest.ProfileSHA256); err != nil {
 		t.Fatal(err)
 	}
 	for _, name := range prepared.Manifest.Files {
@@ -197,7 +197,7 @@ func TestGeneratedPowerShellParses(t *testing.T) {
 			path := filepath.Join(t.TempDir(), name)
 			os.WriteFile(path, data, 0600)
 			script := `$tokens=$null;$parseErrors=$null;[Management.Automation.Language.Parser]::ParseFile(` + psString(path) + `,[ref]$tokens,[ref]$parseErrors)|Out-Null;if($parseErrors.Count){$parseErrors|Out-String|Write-Output;exit 1}`
-			parse := exec.Command(shell, "-NoProfile", "-NonInteractive", "-Command", script)
+			parse := exec.Command(shell, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script)
 			parse.Env = shellEnv()
 			if out, err := parse.CombinedOutput(); err != nil {
 				t.Fatalf("%s: %v %s", name, err, out)
@@ -232,7 +232,7 @@ function Get-Printer { [CmdletBinding()]param();if($mode -eq 'spooler'){throw 's
 function Get-PrinterDriver { [CmdletBinding()]param();if($mode -ne 'registration'){[pscustomobject]@{Name=$m.profile.driver_name}} }
 function Get-PrinterPort { [CmdletBinding()]param();if($mode -eq 'port'){return};$address=$m.profile.target;$protocol=1;$number=9100;if($mode -eq 'address'){$address='192.0.2.41'};if($mode -eq 'protocol'){$protocol=2};if($mode -eq 'number'){$number=515};[pscustomobject]@{Name=('RAW9100-'+$m.profile.target);PrinterHostAddress=$address;Protocol=$protocol;PortNumber=$number} }
 & ` + psString(path)
-			cmd := exec.Command(shell, "-NoProfile", "-NonInteractive", "-Command", prelude)
+			cmd := exec.Command(shell, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", prelude)
 			cmd.Env = shellEnv()
 			out, err := cmd.CombinedOutput()
 			if failure == "" {
@@ -289,7 +289,7 @@ function Invoke-SpoolSmith([string]$Directory,[string]$Operation,[bool]$Offline,
 	}
 	execute := func(script string, fail bool) error {
 		t.Helper()
-		cmd := exec.Command(shell, "-NoProfile", "-NonInteractive", "-File", script)
+		cmd := exec.Command(shell, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", script)
 		cmd.Env = shellEnv("SPOOLSMITH_TEST_ROOT=" + root)
 		if fail {
 			cmd.Env = append(cmd.Env, "SPOOLSMITH_TEST_FAIL=after-mutation")
@@ -314,13 +314,13 @@ function Invoke-SpoolSmith([string]$Directory,[string]$Operation,[bool]$Offline,
 	if err := execute(filepath.Join(export(other), "install.ps1"), false); err == nil {
 		t.Fatal("adopted another deployment's queue")
 	}
-	p, err := install.LoadProfile(o.ProfilePath)
+	p, err := bundle.LoadProfile(o.ProfilePath)
 	if err != nil {
 		t.Fatal(err)
 	}
 	p.Target = "192.0.2.41"
-	nextProfile := filepath.Join(t.TempDir(), "next.json")
-	install.SaveProfile(nextProfile, p)
+	nextProfile := filepath.Join(t.TempDir(), "next.ssb")
+	bundle.SaveProfile(nextProfile, p)
 	next := o
 	next.ProfilePath = nextProfile
 	if err := execute(filepath.Join(export(next), "install.ps1"), false); err == nil {
@@ -362,8 +362,8 @@ func TestRuntimePreservesNativeExitAndJSON(t *testing.T) {
 	dir := t.TempDir()
 	helper := filepath.Join(dir, "helper.go")
 	code := `package main
-import("fmt";"os";"strconv")
-func main(){fmt.Print("{\"compliant\":true}");c,_:=strconv.Atoi(os.Getenv("SPOOLSMITH_TEST_EXIT"));os.Exit(c)}`
+import("fmt";"os";"strconv";"strings")
+func main(){fmt.Fprint(os.Stderr,strings.Repeat("diagnostic\n",32768));fmt.Print("{\"compliant\":true}");c,_:=strconv.Atoi(os.Getenv("SPOOLSMITH_TEST_EXIT"));os.Exit(c)}`
 	if err := os.WriteFile(helper, []byte(code), 0600); err != nil {
 		t.Fatal(err)
 	}
@@ -380,8 +380,8 @@ func main(){fmt.Print("{\"compliant\":true}");c,_:=strconv.Atoi(os.Getenv("SPOOL
 		t.Fatal(err)
 	}
 	p := []byte(`{}`)
-	os.WriteFile(filepath.Join(dir, "profile.json"), p, 0600)
-	m := Manifest{BinarySHA256: digest(b), ProfileSHA256: digest(p)}
+	os.WriteFile(filepath.Join(dir, "profile.ssb"), p, 0600)
+	m := Manifest{Format: 2, BinarySHA256: digest(b), ProfileSHA256: digest(p)}
 	data, _ := json.Marshal(m)
 	os.WriteFile(filepath.Join(dir, "deployment.json"), data, 0600)
 	script, err := templates.ReadFile("templates/runtime.ps1")
@@ -391,17 +391,18 @@ func main(){fmt.Print("{\"compliant\":true}");c,_:=strconv.Atoi(os.Getenv("SPOOL
 	runtimePath := filepath.Join(dir, "runtime.ps1")
 	os.WriteFile(runtimePath, script, 0600)
 	for _, want := range []int{0, 4} {
-		cmd := exec.Command(shell, "-NoProfile", "-NonInteractive", "-Command", ". "+psString(runtimePath)+"; Invoke-SpoolSmith "+psString(dir)+" 'status' $false "+psString(dir)+" | ConvertTo-Json -Depth 10")
+		cmd := exec.Command(shell, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", ". "+psString(runtimePath)+"; Invoke-SpoolSmith "+psString(dir)+" 'status' $false "+psString(dir)+" | ConvertTo-Json -Depth 10")
 		cmd.Env = shellEnv(fmt.Sprintf("SPOOLSMITH_TEST_EXIT=%d", want))
 		out, err := cmd.CombinedOutput()
 		if err != nil {
 			t.Fatalf("%v %s", err, out)
 		}
 		var result struct {
-			Code *int
-			Data struct{ Compliant bool }
+			Code  *int
+			Error string
+			Data  struct{ Compliant bool }
 		}
-		if err = json.Unmarshal(out, &result); err != nil || result.Code == nil || *result.Code != want || !result.Data.Compliant {
+		if err = json.Unmarshal(out, &result); err != nil || result.Code == nil || *result.Code != want || !result.Data.Compliant || len(result.Error) != len(strings.Repeat("diagnostic\n", 32768)) {
 			t.Fatalf("want=%d result=%s error=%v", want, out, err)
 		}
 	}
@@ -435,14 +436,14 @@ func main(){b,_:=json.Marshal(map[string]any{"argv":os.Args[1:]});fmt.Print(stri
 		t.Fatal(err)
 	}
 	profileBytes := []byte(`{}`)
-	if err := os.WriteFile(filepath.Join(dir, "profile.json"), profileBytes, 0600); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "profile.ssb"), profileBytes, 0600); err != nil {
 		t.Fatal(err)
 	}
 	bundleBytes := []byte("fake-bundle-bytes")
 	if err := os.WriteFile(filepath.Join(dir, "bundle.ssb"), bundleBytes, 0600); err != nil {
 		t.Fatal(err)
 	}
-	m := Manifest{BinarySHA256: digest(binaryBytes), ProfileSHA256: digest(profileBytes), BundleSHA256: digest(bundleBytes)}
+	m := Manifest{Format: 2, BinarySHA256: digest(binaryBytes), ProfileSHA256: digest(profileBytes), BundleSHA256: digest(bundleBytes)}
 	data, _ := json.Marshal(m)
 	if err := os.WriteFile(filepath.Join(dir, "deployment.json"), data, 0600); err != nil {
 		t.Fatal(err)
@@ -457,7 +458,7 @@ func main(){b,_:=json.Marshal(map[string]any{"argv":os.Args[1:]});fmt.Print(stri
 	}
 	run := func(operation string) []string {
 		t.Helper()
-		cmd := exec.Command(shell, "-NoProfile", "-NonInteractive", "-Command", ". "+psString(runtimePath)+"; Invoke-SpoolSmith "+psString(dir)+" "+psString(operation)+" $false "+psString(dir)+" | ConvertTo-Json -Depth 10")
+		cmd := exec.Command(shell, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", ". "+psString(runtimePath)+"; Invoke-SpoolSmith "+psString(dir)+" "+psString(operation)+" $false "+psString(dir)+" | ConvertTo-Json -Depth 10")
 		cmd.Env = shellEnv()
 		out, err := cmd.CombinedOutput()
 		if err != nil {
@@ -502,8 +503,8 @@ func main(){b,_:=json.Marshal(map[string]any{"argv":os.Args[1:]});fmt.Print(stri
 		if tc.wantApply && !contains(argv, "bundle.ssb") {
 			t.Fatalf("%s: argv=%v missing bundle.ssb", tc.operation, argv)
 		}
-		if !tc.wantApply && !contains(argv, "profile.json") {
-			t.Fatalf("%s: argv=%v missing profile.json", tc.operation, argv)
+		if !tc.wantApply && !contains(argv, "profile.ssb") {
+			t.Fatalf("%s: argv=%v missing profile.ssb", tc.operation, argv)
 		}
 	}
 }
@@ -581,25 +582,62 @@ func TestPrepareRejectsBundleAndPrerequisiteTogether(t *testing.T) {
 	}
 }
 
-func TestPrepareRejectsBundleProfileWithVendorArchive(t *testing.T) {
+// TestPrepareNoLongerBlanketRejectsBundleProfileWithVendorArchive is the case
+// merging the two on-disk formats into one made newly possible: a profile
+// carrying a driver_package reference used to be limited to the bare-JSON
+// format, purely to avoid ambiguity with a bundle's own embedded-payload
+// mechanism. There is only one format now, so a bundle naming a local vendor
+// archive -- and carrying no embedded payload of its own -- is no longer
+// rejected outright at load time; verifying the referenced archive itself
+// (needing the real, signed Brother installer) is exercised elsewhere and out
+// of reach of a unit test, so this only confirms the failure mode changed
+// from "ambiguous format" to "archive does not verify".
+func TestPrepareNoLongerBlanketRejectsBundleProfileWithVendorArchive(t *testing.T) {
+	archive := filepath.Join(t.TempDir(), "driver.EXE")
+	if err := os.WriteFile(archive, []byte("not the real signed installer"), 0600); err != nil {
+		t.Fatal(err)
+	}
 	p := install.Profile{
-		Version: 1, Target: "192.0.2.42", PrinterName: "Ambiguous copier", DriverName: "Brother HL-L2315D series",
+		Version: 1, Target: "192.0.2.42", PrinterName: "Vendor-archive copier", DriverName: "Brother HL-L2315D series",
 		Evidence:      evidence.Evidence{Provenance: "captured", HTTPTitle: "Example Model"},
-		DriverPackage: &install.PackageSelection{ID: "brother-y14a-c1-hostm-1110", Archive: ".packages/brother/driver.EXE"},
+		DriverPackage: &install.PackageSelection{ID: "brother-y14a-c1-hostm-1110", Archive: archive},
 	}
 	path := writeTestBundle(t, p, false)
 	o := testBundleOptions(t, false)
 	o.ProfilePath = path
 	o.DriverPrerequisite = false
-	if _, err := Prepare(o); err == nil {
-		t.Fatal("accepted a bundle whose embedded profile also names a local vendor archive")
+	_, err := Prepare(o)
+	if err == nil {
+		t.Fatal("expected the local archive's own verification to fail (it is not the real signed installer)")
+	}
+	if strings.Contains(err.Error(), "recapture") || strings.Contains(err.Error(), "vendor archive") {
+		t.Fatalf("still blanket-rejected a bundle naming a vendor archive: %v", err)
 	}
 }
 
-func TestHasLocalPayloadDispatchesOnExtension(t *testing.T) {
+// TestPrepareRejectsBundleWithBothDriverMechanisms is the conflict that
+// remains real regardless of format: a bundle cannot name a local vendor
+// archive and also carry its own embedded driver payload -- packaging would
+// have to silently pick one.
+func TestPrepareRejectsBundleWithBothDriverMechanisms(t *testing.T) {
+	p := install.Profile{
+		Version: 1, Target: "192.0.2.42", PrinterName: "Ambiguous copier", DriverName: "Brother HL-L2315D series",
+		Evidence:      evidence.Evidence{Provenance: "captured", HTTPTitle: "Example Model"},
+		DriverPackage: &install.PackageSelection{ID: "brother-y14a-c1-hostm-1110", Archive: ".packages/brother/driver.EXE"},
+	}
+	path := writeTestBundle(t, p, true)
+	o := testBundleOptions(t, true)
+	o.ProfilePath = path
+	o.DriverPrerequisite = false
+	if _, err := Prepare(o); err == nil {
+		t.Fatal("accepted a bundle naming both an embedded payload and a separate vendor archive")
+	}
+}
+
+func TestHasLocalPayloadOnAPlainProfileBundle(t *testing.T) {
 	jsonOpts := testOptions(t)
 	if has, err := HasLocalPayload(jsonOpts.ProfilePath); err != nil || has {
-		t.Fatalf("has=%v err=%v, want false for a driverless profile JSON", has, err)
+		t.Fatalf("has=%v err=%v, want false for a driverless profile bundle", has, err)
 	}
 	driverless := testBundleOptions(t, false)
 	if has, err := HasLocalPayload(driverless.ProfilePath); err != nil || has {
@@ -608,5 +646,35 @@ func TestHasLocalPayloadDispatchesOnExtension(t *testing.T) {
 	withDriver := testBundleOptions(t, true)
 	if has, err := HasLocalPayload(withDriver.ProfilePath); err != nil || !has {
 		t.Fatalf("has=%v err=%v, want true for a bundle with a driver payload", has, err)
+	}
+}
+
+// Open the actual exported profile instead of mocking the CLI file boundary.
+func TestExportedProfileIsReadablePrinterBundle(t *testing.T) {
+	for _, withDriver := range []bool{false, true} {
+		t.Run(fmt.Sprintf("driver=%v", withDriver), func(t *testing.T) {
+			prepared, err := Prepare(testBundleOptions(t, withDriver))
+			if err != nil {
+				t.Fatal(err)
+			}
+			dest := filepath.Join(t.TempDir(), "package")
+			if err := prepared.Export(dest); err != nil {
+				t.Fatal(err)
+			}
+			profilePath := filepath.Join(dest, "profile.ssb")
+			profile, err := bundle.LoadProfile(profilePath)
+			if err != nil {
+				t.Fatalf("exported profile is not usable by the CLI: %v", err)
+			}
+			if profile.PrinterName != prepared.Manifest.Profile.PrinterName || profile.DriverName != prepared.Manifest.Profile.DriverName || profile.Target != prepared.Manifest.Profile.Target {
+				t.Fatalf("exported profile differs from reviewed configuration: %+v", profile)
+			}
+			if runtime.GOOS == "windows" {
+				output, err := exec.Command(filepath.Join(dest, "spoolsmith.exe"), "bundle", "inspect", profilePath).CombinedOutput()
+				if err != nil {
+					t.Fatalf("released CLI cannot inspect exported profile: %v: %s", err, output)
+				}
+			}
+		})
 	}
 }

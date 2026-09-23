@@ -1,6 +1,10 @@
-# Remaining work after v0.7.4
+# Remaining work for SpoolSmith
 
-Updated September 19, 2026. Shipped releases now include the native desktop's
+Updated September 23, 2026. The v1.1.0 release makes `.ssb` the one printer file
+and a plain `.zip` of `.ssb` files the one multi-printer set (`copy --all`, `apply`,
+saved-setup export/import), includes drivers by default wherever they can be
+exported, adds automatic offline fallback, replaces the desktop's tab strips with
+sidebar navigation and refreshes the product site. Shipped releases now include the native desktop's
 copy/apply, direct-IP, discovery, profile editing, status, offline and bulk JSON
 workflows (v0.6.0); Intune packaging on both the CLI and desktop (v0.7.0–v0.7.1);
 a UX pass plus bulk driver export via `copy --all` on the CLI (v0.7.3); and
@@ -28,10 +32,36 @@ product hardening, with additional protocols as future scope.
    scaling, keyboard-only navigation, a screen reader and Windows high contrast.
    Hosted Windows automation covers navigation, minimum-size layout and selected
    workflows; it does not establish those accessibility or hardware outcomes.
-   Extend end-to-end coverage through actual GUI copy/apply and JSON transfer.
+   Extend end-to-end coverage through actual GUI copy/apply and saved-setup transfer.
+5. **Validate the automatic offline fallback (2026-09-22, see CLAUDE.md) against
+   a real printer.** Power off (or unplug) a printer mid-copy and mid-apply on
+   actual hardware, on both the CLI and desktop, and confirm: `copy` still
+   writes a usable, clearly-marked bundle; `apply`/`install --profile` still
+   falls back to offline and completes with a correct plan; the operator-visible
+   notices are legible in the GUI transcript, not just on CLI stderr; and
+   powering the printer back on and re-running `status`/`check-status` reports
+   the mismatch (or match) correctly. Only unit tests with fake environments
+   exist today.
+6. **Validate printer sets and default driver export on real hardware.** As of
+   2026-09-23 (see CLAUDE.md), `copy --all` writes one `.zip` set, `apply <set.zip>`
+   walks each printer with its own plan and confirmation, saved-setup export/import
+   carries embedded drivers, and every copy tries to include its driver. Go tests
+   cover the set format, `copy --all`, per-member apply and the transfers; nothing
+   of this has run against real printers or between two PCs yet, and the desktop
+   suite and screenshots still need a re-run for the new set dialogs. Exercise a
+   multi-printer set with drivers from an elevated source, a non-elevated copy
+   (settings-only with its reason), an Explorer-made zip, and a cancelled
+   `copy --all` (no set written).
 
 ## Known behavior to harden
 
+- **Desktop Inspect does not list a set's printers.** `bundle inspect <set.zip>`
+  does on the CLI; on the desktop, open the set from **Add a printer → Open a
+  printer file...** to see its printers.
+- **Drivers from another PC are trusted as that PC is.** Copies now carry drivers
+  by default. Payload hashes detect corruption and edits; Windows' catalog
+  signature check at staging is the real gate. `--settings-only` remains the
+  opt-out for sites that manage drivers separately.
 - **Driver purge may conservatively retain an unused driver.** Windows queue
   removal is asynchronous; the following in-use check can still see the deleted
   queue. A bounded recheck must preserve shared-driver protection and avoid an
@@ -46,9 +76,9 @@ product hardening, with additional protocols as future scope.
 - **Improve library portability.** The default profile folder is beside the app;
   a writable extraction folder is needed. Folder selection is per session.
   Consider a persistent per-user location and clearer missing-archive recovery.
-- **Distribution polish.** Evaluate signed executables, an installer and update
-  delivery. Today's release is a portable Windows x64 ZIP with checksums; application
-  executables are unsigned. Driver signature enforcement is a separate mechanism.
+- **Distribution polish.** Evaluate an installer and update delivery. Releases are portable Windows x64
+  ZIPs with checksums and Authenticode-signed executables. Driver signature
+  enforcement is a separate mechanism.
 
 ## Future feature scope
 
@@ -60,7 +90,7 @@ not conditions for using the supported RAW TCP 9100 workflow.
 ## Intune: packaging is supported; tenant automation is not planned
 
 `spoolsmith intune build`/`wizard` is a supported CLI command, and the desktop
-GUI offers the same wizard (Tools tab → "Build an Intune printer app..."). Both
+GUI offers the same wizard (sidebar → Intune package → "Build an Intune printer app..."). Both
 export a reviewable Win32 app package with the exact install/uninstall commands
 and detection rule, entirely locally — no tenant sign-in, upload, group creation
 or assignment. Uploading and assigning the package in Intune stays a manual

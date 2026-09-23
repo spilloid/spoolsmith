@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"slices"
@@ -148,6 +149,54 @@ func TestCloneThenApplyAcrossMachines(t *testing.T) {
 	}
 }
 
+// TestCloneDegradesToOfflineWhenPrinterUnreachable is the actual operator
+// complaint this feature exists for: physically moving a printer routinely
+// means it can't be reached exactly when someone wants to copy its settings
+// off the old PC. copy now writes a bundle from what Windows already knows
+// about the queue instead of failing outright, and says so plainly on stderr
+// rather than quietly.
+func TestCloneDegradesToOfflineWhenPrinterUnreachable(t *testing.T) {
+	t.Setenv("TMPDIR", t.TempDir())
+	app, _ := bundleTestApplication(t)
+	unreachable := func(context.Context, string) (probe.Result, error) {
+		return probe.Result{}, errors.New("connection refused")
+	}
+	app.collect = unreachable
+	bundlePath := filepath.Join(t.TempDir(), "office.ssb")
+
+	var stdout, stderr bytes.Buffer
+	code := run(context.Background(), []string{"copy", "Test Printer", bundlePath}, strings.NewReader(""), &stdout, &stderr, app)
+	if code != 0 {
+		t.Fatalf("copy code=%d\n%s\n%s", code, stdout.String(), stderr.String())
+	}
+	if !strings.Contains(stderr.String(), bundle.UnconfirmedIdentityNotice) {
+		t.Fatalf("no unconfirmed-identity notice on stderr:\n%s", stderr.String())
+	}
+
+	opened, err := bundle.Open(bundlePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer opened.Close()
+	if err := opened.Verify(); err != nil {
+		t.Fatalf("degraded copy wrote a bundle that does not verify: %v", err)
+	}
+	if opened.Manifest.Profile.Evidence.Provenance != "unconfirmed" {
+		t.Fatalf("Provenance = %q, want unconfirmed", opened.Manifest.Profile.Evidence.Provenance)
+	}
+	if opened.Manifest.Profile.PrinterName != "Test Printer" {
+		t.Fatalf("profile did not carry the locally known queue: %+v", opened.Manifest.Profile)
+	}
+
+	// bundle inspect must tell an operator reading it later the same thing.
+	stdout.Reset()
+	stderr.Reset()
+	code = run(context.Background(), []string{"bundle", "inspect", bundlePath}, strings.NewReader(""), &stdout, &stderr, app)
+	if code != 0 || !strings.Contains(stderr.String(), "unconfirmed") {
+		t.Fatalf("bundle inspect code=%d\n%s\n%s", code, stdout.String(), stderr.String())
+	}
+}
+
 func TestApplyRejectsAnUnreviewedPlan(t *testing.T) {
 	t.Setenv("TMPDIR", t.TempDir())
 	app, env := bundleTestApplication(t)
@@ -217,17 +266,17 @@ func (f *allQueuesFakeEnvironment) LookupPrinter(ctx context.Context, name strin
 // TestCloneAllSkipsUncopyableAndBundlesTheRest is the batch equivalent of
 // TestCloneThenApplyAcrossMachines: one queue this fake can actually
 // reproduce, one it can't (Microsoft Print to PDF has no reproducible RAW
-// TCP/9100 port), and the run should bundle the first while explaining and
-// continuing past the second, not aborting the whole batch.
+// TCP/9100 port), and the run should add the first to the printer set while
+// explaining and continuing past the second, not aborting the whole batch.
 func TestCloneAllSkipsUncopyableAndBundlesTheRest(t *testing.T) {
 	t.Setenv("TMPDIR", t.TempDir())
 	app, env := bundleTestApplication(t)
 	all := &allQueuesFakeEnvironment{bundleFakeEnvironment: env, queues: sampleQueues()}
 	app.environment = all
-	outputDir := t.TempDir()
+	setPath := filepath.Join(t.TempDir(), "printers.zip")
 
 	var stdout, stderr bytes.Buffer
-	code := run(context.Background(), []string{"copy", "--all", outputDir}, strings.NewReader(""), &stdout, &stderr, app)
+	code := run(context.Background(), []string{"copy", "--all", "--out", setPath}, strings.NewReader(""), &stdout, &stderr, app)
 	if code != 0 {
 		t.Fatalf("copy --all code=%d\n%s\n%s", code, stdout.String(), stderr.String())
 	}
@@ -237,7 +286,7 @@ func TestCloneAllSkipsUncopyableAndBundlesTheRest(t *testing.T) {
 	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
 		t.Fatalf("decode result: %v\n%s", err, stdout.String())
 	}
-	if result.Requested != 2 || result.Written != 1 || result.Skipped != 1 || result.Failed != 0 {
+	if result.Requested != 2 || result.Written != 1 || result.Skipped != 1 || result.Failed != 0 || result.SetPath != setPath {
 		t.Fatalf("result = %+v", result)
 	}
 	// Only the copyable queue should ever reach CloneQueue -- the uncopyable
@@ -245,16 +294,25 @@ func TestCloneAllSkipsUncopyableAndBundlesTheRest(t *testing.T) {
 	if want := []string{"Office"}; !slices.Equal(all.requestedPrinters, want) {
 		t.Fatalf("requested printers = %v, want %v", all.requestedPrinters, want)
 	}
-	if _, err := os.Stat(filepath.Join(outputDir, "Office.ssb")); err != nil {
-		t.Fatalf("expected a bundle for the copyable queue: %v", err)
+	set, err := bundle.OpenSet(setPath)
+	if err != nil {
+		t.Fatal(err)
 	}
-	opened, err := bundle.Open(filepath.Join(outputDir, "Office.ssb"))
+	defer set.Close()
+	if !slices.Equal(set.Members, []string{"Office.ssb"}) || !result.Queues[0].DriverIncluded {
+		t.Fatalf("set members = %v; result = %+v", set.Members, result.Queues)
+	}
+	extracted, err := set.Extract("Office.ssb", t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	opened, err := bundle.Open(extracted)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer opened.Close()
-	if opened.Manifest.Profile.PrinterName != "Test Printer" {
-		t.Fatalf("bundle for Office contains printer name %q (this fake's LookupPrinter always names it Test Printer)", opened.Manifest.Profile.PrinterName)
+	if opened.Manifest.Profile.PrinterName != "Test Printer" || opened.Manifest.Driver == nil {
+		t.Fatalf("member = %+v (this fake's LookupPrinter always names it Test Printer)", opened.Manifest)
 	}
 	if !strings.Contains(stderr.String(), "Microsoft Print to PDF") {
 		t.Fatalf("stderr does not explain the skipped queue: %s", stderr.String())
@@ -262,19 +320,42 @@ func TestCloneAllSkipsUncopyableAndBundlesTheRest(t *testing.T) {
 }
 
 // TestCloneAllFailsWhenNothingIsCopyable checks the batch reports failure,
-// not silent success, when every queue is skipped.
+// not silent success, when every queue is skipped -- and writes no file.
 func TestCloneAllFailsWhenNothingIsCopyable(t *testing.T) {
 	t.Setenv("TMPDIR", t.TempDir())
 	app, env := bundleTestApplication(t)
 	app.environment = &allQueuesFakeEnvironment{bundleFakeEnvironment: env, queues: []install.InstalledQueue{sampleQueues()[1]}}
-	outputDir := t.TempDir()
+	setPath := filepath.Join(t.TempDir(), "printers.zip")
 
 	var stdout, stderr bytes.Buffer
-	code := run(context.Background(), []string{"copy", "--all", outputDir}, strings.NewReader(""), &stdout, &stderr, app)
+	code := run(context.Background(), []string{"copy", "--all", setPath}, strings.NewReader(""), &stdout, &stderr, app)
 	if code == 0 {
 		t.Fatalf("expected a non-zero exit when nothing was copied:\n%s", stderr.String())
 	}
 	assertValidJSON(t, stdout.Bytes())
+	if _, err := os.Stat(setPath); !os.IsNotExist(err) {
+		t.Fatalf("wrote a set with no printers: %v", err)
+	}
+}
+
+// TestCopyAllDefaultsToATimestampedSetInTheCurrentFolder: with no name, copy
+// --all writes SpoolSmith-printers-<date>-<time>.zip where it was run.
+func TestCopyAllDefaultsToATimestampedSetInTheCurrentFolder(t *testing.T) {
+	t.Setenv("TMPDIR", t.TempDir())
+	app, env := bundleTestApplication(t)
+	app.environment = &allQueuesFakeEnvironment{bundleFakeEnvironment: env, queues: sampleQueues()}
+	t.Chdir(t.TempDir())
+	var stdout, stderr bytes.Buffer
+	if code := run(context.Background(), []string{"copy", "--all"}, strings.NewReader(""), &stdout, &stderr, app); code != 0 {
+		t.Fatalf("copy --all code=%d\n%s", code, stderr.String())
+	}
+	matches, err := filepath.Glob("SpoolSmith-printers-*.zip")
+	if err != nil || len(matches) != 1 {
+		t.Fatalf("default set file = %v, %v", matches, err)
+	}
+	if isSet, err := bundle.IsSet(matches[0]); err != nil || !isSet {
+		t.Fatalf("default output is not a printer set: %v, %v", isSet, err)
+	}
 }
 
 func TestCloneRefusesQueuesItCannotReproduce(t *testing.T) {
@@ -316,14 +397,202 @@ func TestBundleInspectReadsWithoutTouchingTheNetwork(t *testing.T) {
 	}
 }
 
-func TestCloneWithoutDriverSaysWhatIsMissing(t *testing.T) {
+// TestInspectRoutesABundleTargetToBundleInspect is the fix for `inspect
+// <file>.ssb` being advertised in CLI help and in the GUI's Tools -> Inspect,
+// yet only actually working on the GUI side: the generic `inspect` command
+// used to hand a .ssb straight to evidence.LoadFixture and fail to decode it
+// as JSON. One target type, one behavior, matching what `bundle inspect`
+// already does for it.
+func TestInspectRoutesABundleTargetToBundleInspect(t *testing.T) {
 	app, _ := bundleTestApplication(t)
+	bundlePath := filepath.Join(t.TempDir(), "office.ssb")
 	var stdout, stderr bytes.Buffer
-	code := run(context.Background(), []string{"clone", "Test Printer", filepath.Join(t.TempDir(), "thin.ssb")}, strings.NewReader(""), &stdout, &stderr, app)
-	if code != 0 {
+	if code := run(context.Background(), []string{"clone", "Test Printer", bundlePath}, strings.NewReader(""), &stdout, &stderr, app); code != 0 {
 		t.Fatalf("clone code=%d %s", code, stderr.String())
 	}
-	if !strings.Contains(stderr.String(), "must already have this driver") {
-		t.Fatalf("clone did not warn that the bundle carries no driver: %s", stderr.String())
+
+	offline := testApplication()
+	offline.collect = func(context.Context, string) (probe.Result, error) {
+		t.Fatal("inspect probed the network")
+		return probe.Result{}, nil
+	}
+	stdout.Reset()
+	stderr.Reset()
+	if code := run(context.Background(), []string{"inspect", bundlePath}, strings.NewReader(""), &stdout, &stderr, offline); code != 0 {
+		t.Fatalf("inspect code=%d %s", code, stderr.String())
+	}
+	assertValidJSON(t, stdout.Bytes())
+	if !strings.Contains(stderr.String(), "Test Printer") {
+		t.Fatalf("inspect on a bundle did not show its manifest: %s", stderr.String())
+	}
+}
+
+func TestCopyReportsWhyTheDriverWasNotIncluded(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		args  []string
+		setup func(*bundleFakeEnvironment)
+		want  string
+	}{
+		{"settings only", []string{"--settings-only"}, func(*bundleFakeEnvironment) {}, "settings only, as requested"},
+		{"not elevated", nil, func(env *bundleFakeEnvironment) { env.elevated = false }, "administrator rights"},
+		{"export fails", nil, func(env *bundleFakeEnvironment) { env.exportErr = errors.New("pnputil failed") }, "pnputil failed"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			app, env := bundleTestApplication(t)
+			tc.setup(env)
+			path := filepath.Join(t.TempDir(), "thin.ssb")
+			var stdout, stderr bytes.Buffer
+			args := append([]string{"copy", "Test Printer", "--out", path}, tc.args...)
+			if code := run(context.Background(), args, strings.NewReader(""), &stdout, &stderr, app); code != 0 {
+				t.Fatalf("copy code=%d %s", code, stderr.String())
+			}
+			for _, want := range []string{"Driver not included", tc.want, `must already have "Verified Windows Driver" installed`} {
+				if !strings.Contains(stderr.String(), want) {
+					t.Fatalf("stderr missing %q:\n%s", want, stderr.String())
+				}
+			}
+			opened, err := bundle.Open(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer opened.Close()
+			if opened.Manifest.Driver != nil {
+				t.Fatal("bundle carries a driver it should not")
+			}
+		})
+	}
+}
+
+func TestCopyIncludeDriverIsADeprecatedNoOp(t *testing.T) {
+	app, _ := bundleTestApplication(t)
+	path := filepath.Join(t.TempDir(), "office.ssb")
+	var stdout, stderr bytes.Buffer
+	if code := run(context.Background(), []string{"copy", "Test Printer", path, "--include-driver"}, strings.NewReader(""), &stdout, &stderr, app); code != 0 {
+		t.Fatalf("copy code=%d %s", code, stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "--include-driver is no longer needed") || !strings.Contains(stderr.String(), "Driver included") {
+		t.Fatalf("stderr = %s", stderr.String())
+	}
+}
+
+// writeTestSet copies the fake's queue twice (Office, Warehouse) into one
+// printer set and returns its path.
+func writeTestSet(t *testing.T) string {
+	t.Helper()
+	app, env := bundleTestApplication(t)
+	queues := sampleQueues()
+	warehouse := queues[0]
+	warehouse.PrinterName = "Warehouse"
+	app.environment = &allQueuesFakeEnvironment{bundleFakeEnvironment: env, queues: []install.InstalledQueue{queues[0], warehouse}}
+	path := filepath.Join(t.TempDir(), "printers.zip")
+	var stdout, stderr bytes.Buffer
+	if code := run(context.Background(), []string{"copy", "--all", path, "--note", "site move"}, strings.NewReader(""), &stdout, &stderr, app); code != 0 {
+		t.Fatalf("copy --all code=%d %s", code, stderr.String())
+	}
+	return path
+}
+
+// TestApplySetConfirmsEachPrinterOnItsOwn: a set never widens one
+// confirmation to cover several printers. Each member shows its own plan and
+// takes its own answer; a declined member runs nothing and fails the exit
+// code, without stopping the next member.
+func TestApplySetConfirmsEachPrinterOnItsOwn(t *testing.T) {
+	setPath := writeTestSet(t)
+	app, env := bundleTestApplication(t)
+	app.inputTerminal = true
+	var stdout, stderr bytes.Buffer
+	code := run(context.Background(), []string{"apply", setPath}, strings.NewReader("n\ny\n"), &stdout, &stderr, app)
+	if code != int(install.ExitNotConfirmed) {
+		t.Fatalf("apply set code=%d, want %d\n%s", code, install.ExitNotConfirmed, stderr.String())
+	}
+	if got := strings.Count(stderr.String(), "Proceed? [y/N]"); got != 2 {
+		t.Fatalf("asked %d times, want once per printer:\n%s", got, stderr.String())
+	}
+	for _, want := range []string{"Office.ssb", "Warehouse.ssb", "[1/2]", "[2/2]", "1 applied, 1 not confirmed, 0 failed"} {
+		if !strings.Contains(stderr.String(), want) {
+			t.Fatalf("stderr missing %q:\n%s", want, stderr.String())
+		}
+	}
+	var result applySetResult
+	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+		t.Fatalf("stdout = %s: %v", stdout.String(), err)
+	}
+	if len(result.Members) != 2 || result.Members[0].Status != "not-confirmed" || result.Members[1].Status != "success" {
+		t.Fatalf("result = %+v", result)
+	}
+	if len(env.ran) == 0 {
+		t.Fatal("the confirmed printer ran nothing")
+	}
+}
+
+func TestApplySetWithYesStillShowsEveryPlan(t *testing.T) {
+	setPath := writeTestSet(t)
+	app, env := bundleTestApplication(t)
+	var stdout, stderr bytes.Buffer
+	code := run(context.Background(), []string{"apply", setPath, "--yes"}, strings.NewReader(""), &stdout, &stderr, app)
+	if code != 0 {
+		t.Fatalf("apply set --yes code=%d\n%s", code, stderr.String())
+	}
+	if got := strings.Count(stderr.String(), "Printer configured:"); got != 2 {
+		t.Fatalf("configured %d printers, want 2:\n%s", got, stderr.String())
+	}
+	if len(env.ran) == 0 {
+		t.Fatal("nothing ran")
+	}
+}
+
+func TestApplySetMemberSelectsOnePrinter(t *testing.T) {
+	setPath := writeTestSet(t)
+	app, _ := bundleTestApplication(t)
+	var stdout, stderr bytes.Buffer
+	if code := run(context.Background(), []string{"apply", setPath, "--member", "warehouse", "--dry-run", "--json"}, strings.NewReader(""), &stdout, &stderr, app); code != 0 {
+		t.Fatalf("apply --member code=%d\n%s", code, stderr.String())
+	}
+	var result applySetResult
+	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Members) != 1 || result.Members[0].Member != "Warehouse.ssb" || result.Members[0].Status != "dry-run" {
+		t.Fatalf("result = %+v", result)
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	if code := run(context.Background(), []string{"apply", setPath, "--member", "Lobby.ssb"}, strings.NewReader(""), &stdout, &stderr, app); code != int(install.ExitUsageError) {
+		t.Fatalf("unknown member code=%d", code)
+	}
+	stdout.Reset()
+	stderr.Reset()
+	if code := run(context.Background(), []string{"apply", setPath, "--plan-hash", strings.Repeat("0", 64)}, strings.NewReader(""), &stdout, &stderr, app); code != int(install.ExitUsageError) || !strings.Contains(stderr.String(), "--member") {
+		t.Fatalf("--plan-hash over a whole set code=%d %s", code, stderr.String())
+	}
+}
+
+func TestInspectListsASetsPrinters(t *testing.T) {
+	setPath := writeTestSet(t)
+	offline := testApplication()
+	offline.collect = func(context.Context, string) (probe.Result, error) {
+		t.Fatal("inspect probed the network")
+		return probe.Result{}, nil
+	}
+	var stdout, stderr bytes.Buffer
+	if code := run(context.Background(), []string{"inspect", setPath}, strings.NewReader(""), &stdout, &stderr, offline); code != 0 {
+		t.Fatalf("inspect set code=%d %s", code, stderr.String())
+	}
+	var result setInspectResult
+	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+		t.Fatal(err)
+	}
+	if result.Note != "site move" || len(result.Members) != 2 {
+		t.Fatalf("result = %+v", result)
+	}
+	for _, m := range result.Members {
+		if m.PrinterName != "Test Printer" || m.Target != "192.0.2.10" || m.DriverName != "Verified Windows Driver" || !m.DriverEmbedded {
+			t.Fatalf("member = %+v", m)
+		}
+	}
+	if !strings.Contains(stderr.String(), "Printer set") || !strings.Contains(stderr.String(), "Driver: Verified Windows Driver -- included") {
+		t.Fatalf("stderr = %s", stderr.String())
 	}
 }

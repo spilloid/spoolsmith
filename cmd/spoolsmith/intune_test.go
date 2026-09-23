@@ -12,7 +12,6 @@ import (
 	"testing"
 
 	"github.com/spilloid/spoolsmith/internal/bundle"
-	"github.com/spilloid/spoolsmith/internal/install"
 	"github.com/spilloid/spoolsmith/internal/intune"
 )
 
@@ -27,58 +26,37 @@ func TestIntunePackagingUX(t *testing.T) {
 	if data, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("build test CLI: %v %s", err, data)
 	}
-	profileBytes, err := os.ReadFile("../../examples/intune/accounting.json")
+	exampleProfile, err := bundle.LoadProfile("../../examples/intune/accounting.ssb")
 	if err != nil {
 		t.Fatal(err)
 	}
-	fixture := func(t *testing.T) (string, string) {
+	// fixture builds a fresh profile bundle -- optionally carrying an embedded
+	// driver payload -- from the same illustrative example every sub-test
+	// shares, plus an unused sibling export folder.
+	fixture := func(t *testing.T, includeDriver bool) (string, string) {
 		t.Helper()
-		profile := filepath.Join(t.TempDir(), "printer.json")
-		if err := os.WriteFile(profile, profileBytes, 0600); err != nil {
-			t.Fatal(err)
-		}
-		defaults, err := intune.ProfileDefaults(profile)
-		if err != nil {
-			t.Fatal(err)
-		}
-		output, err := intune.SuggestOutput(filepath.Dir(profile), defaults.ID, 1)
-		if err != nil {
-			t.Fatal(err)
-		}
-		return profile, output
-	}
-	bundleFixture := func(t *testing.T, includeDriver bool) (string, string) {
-		t.Helper()
-		profilePath := filepath.Join(t.TempDir(), "printer.json")
-		if err := os.WriteFile(profilePath, profileBytes, 0600); err != nil {
-			t.Fatal(err)
-		}
-		p, err := install.LoadProfile(profilePath)
-		if err != nil {
-			t.Fatal(err)
-		}
-		m := bundle.Manifest{SourceHost: "east-desk-12", Profile: p}
+		m := bundle.Manifest{SourceHost: "east-desk-12", Profile: exampleProfile}
 		payloadRoot := ""
 		if includeDriver {
 			payloadRoot = t.TempDir()
 			if err := os.WriteFile(filepath.Join(payloadRoot, "driver.inf"), []byte("; test INF\n"), 0600); err != nil {
 				t.Fatal(err)
 			}
-			m.Driver = &bundle.DriverPayload{WindowsDriverName: p.DriverName, INF: "driver.inf", ExportedFrom: "test-vendor-pkg"}
+			m.Driver = &bundle.DriverPayload{WindowsDriverName: exampleProfile.DriverName, INF: "driver.inf", ExportedFrom: "test-vendor-pkg"}
 		}
-		bundlePath := filepath.Join(t.TempDir(), "printer.ssb")
-		if err := bundle.Write(bundlePath, m, payloadRoot); err != nil {
+		profilePath := filepath.Join(t.TempDir(), "printer.ssb")
+		if err := bundle.Write(profilePath, m, payloadRoot); err != nil {
 			t.Fatal(err)
 		}
-		defaults, err := intune.ProfileDefaults(bundlePath)
+		defaults, err := intune.ProfileDefaults(profilePath)
 		if err != nil {
 			t.Fatal(err)
 		}
-		output, err := intune.SuggestOutput(filepath.Dir(bundlePath), defaults.ID, 1)
+		output, err := intune.SuggestOutput(filepath.Dir(profilePath), defaults.ID, 1)
 		if err != nil {
 			t.Fatal(err)
 		}
-		return bundlePath, output
+		return profilePath, output
 	}
 	runCommand := func(args []string, input string) (int, string, string) {
 		var stdout, stderr bytes.Buffer
@@ -88,7 +66,7 @@ func TestIntunePackagingUX(t *testing.T) {
 		return code, stdout.String(), stderr.String()
 	}
 	t.Run("build defaults preview and export", func(t *testing.T) {
-		profile, output := fixture(t)
+		profile, output := fixture(t, false)
 		args := []string{"build", "--profile", profile, "--binary", binaryPath, "--driver-prerequisite"}
 		code, stdout, stderr := runCommand(append(args, "--dry-run"), "")
 		if code != 0 || !strings.Contains(stderr, output) {
@@ -119,7 +97,7 @@ func TestIntunePackagingUX(t *testing.T) {
 		}
 	})
 	t.Run("build from a bundle with a driver payload", func(t *testing.T) {
-		bundlePath, output := bundleFixture(t, true)
+		bundlePath, output := fixture(t, true)
 		args := []string{"build", "--profile", bundlePath, "--binary", binaryPath, "--dry-run"}
 		code, stdout, stderr := runCommand(args, "")
 		if code != 0 {
@@ -156,7 +134,7 @@ func TestIntunePackagingUX(t *testing.T) {
 		}
 	})
 	t.Run("build from a driverless bundle requires the prerequisite", func(t *testing.T) {
-		bundlePath, _ := bundleFixture(t, false)
+		bundlePath, _ := fixture(t, false)
 		args := []string{"build", "--profile", bundlePath, "--binary", binaryPath, "--dry-run"}
 		if code, _, _ := runCommand(args, ""); code != 2 {
 			t.Fatalf("accepted a driverless bundle with no driver prerequisite: %d", code)
@@ -166,7 +144,7 @@ func TestIntunePackagingUX(t *testing.T) {
 		}
 	})
 	t.Run("build overrides and invalid explicit values", func(t *testing.T) {
-		profile, _ := fixture(t)
+		profile, _ := fixture(t, false)
 		args := []string{"build", "--profile", profile, "--binary", binaryPath, "--driver-prerequisite", "--dry-run"}
 		code, stdout, stderr := runCommand(append(args, "--id", "existing-deployment", "--revision", "3", "--name", "Custom name", "--description=", "--location", "West", "--offline", "--adopt"), "")
 		var m intune.Manifest
@@ -181,7 +159,7 @@ func TestIntunePackagingUX(t *testing.T) {
 	})
 	for _, confirmation := range []string{"export\n", "no\n", ""} {
 		t.Run("wizard confirmation "+strings.TrimSpace(confirmation), func(t *testing.T) {
-			profile, output := fixture(t)
+			profile, output := fixture(t, false)
 			input := profile + "\n" + binaryPath + "\nyes\n\n" + confirmation
 			code, stdout, stderr := runCommand([]string{"wizard"}, input)
 			wantCode := 5
@@ -198,7 +176,7 @@ func TestIntunePackagingUX(t *testing.T) {
 		})
 	}
 	t.Run("wizard advanced settings", func(t *testing.T) {
-		profile, _ := fixture(t)
+		profile, _ := fixture(t, false)
 		output := filepath.Join(t.TempDir(), "custom")
 		input := strings.Join([]string{profile, binaryPath, "yes", "yes", "existing-id", "2", "Custom", "West", "Description", "", "offline", "yes", output, "", "export", ""}, "\n")
 		code, stdout, stderr := runCommand([]string{"wizard"}, input)
@@ -208,7 +186,7 @@ func TestIntunePackagingUX(t *testing.T) {
 		}
 	})
 	t.Run("wizard from a bundle skips the driver-prerequisite prompt", func(t *testing.T) {
-		bundlePath, output := bundleFixture(t, true)
+		bundlePath, output := fixture(t, true)
 		// No "yes\n" answer for the driver-archive question: a bundle that
 		// already carries a driver payload never asks it.
 		input := bundlePath + "\n" + binaryPath + "\n\nexport\n"

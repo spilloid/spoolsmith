@@ -3,8 +3,6 @@ package install
 import (
 	"context"
 	"io"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -16,57 +14,12 @@ func sampleProfile() Profile {
 	return Profile{Version: 1, Target: "192.0.2.10", PrinterName: "Accounts printer", DriverName: "Exact OEM driver", Evidence: evidence.Evidence{IP: "192.0.2.10", Provenance: "captured", HTTPTitle: "Example Model 123", PJLID: "Example Model 123:firmware1"}}
 }
 
-func TestProfileRoundTripAndNeverOverwrite(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "printer.json")
-	p := sampleProfile()
-	if err := SaveProfile(path, p); err != nil {
-		t.Fatal(err)
-	}
-	if err := SaveProfile(path, p); err == nil {
-		t.Fatal("overwrote existing profile")
-	}
-	loaded, err := LoadProfile(path)
-	if err != nil || loaded.PrinterName != p.PrinterName || loaded.Evidence.PJLID != p.Evidence.PJLID {
-		t.Fatalf("loaded %#v, %v", loaded, err)
-	}
-}
-
-func TestProfileEditPreservesPreviousVersion(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "nested", "printer.json")
-	p := sampleProfile()
-	if err := SaveProfile(path, p); err != nil {
-		t.Fatal(err)
-	}
-	for _, name := range []string{"New queue", "Next queue"} {
-		prior := p.PrinterName
-		p.PrinterName = name
-		backup, err := EditProfile(path, p)
-		if err != nil {
-			t.Fatal(err)
-		}
-		old, err := LoadProfile(backup)
-		if err != nil || old.PrinterName != prior {
-			t.Fatalf("backup=%#v %v", old, err)
-		}
-		current, err := LoadProfile(path)
-		if err != nil || current.PrinterName != name {
-			t.Fatalf("updated=%#v %v", current, err)
-		}
-	}
-}
-
-func TestProfileRejectsInvalidJSONAndFields(t *testing.T) {
-	for _, raw := range []string{
-		`{"version":2}`, `{"version":1,"commands":["evil"]}`, `{} {}`, strings.Repeat("x", 1024*1024+1),
-	} {
-		path := filepath.Join(t.TempDir(), "bad.json")
-		if err := os.WriteFile(path, []byte(raw), 0600); err != nil {
-			t.Fatal(err)
-		}
-		if _, err := LoadProfile(path); err == nil {
-			t.Fatal("accepted invalid profile")
-		}
-	}
+// File round-trip (save/load/edit, never-overwrite, malformed-file rejection)
+// now lives in internal/bundle's own tests -- that package owns the one
+// on-disk profile format (see profile.go's doc comment). This file keeps only
+// what is genuinely pure: Profile.Validate() and the identity/resolution
+// logic below, exercised directly against in-memory values.
+func TestProfileValidateRejectsBadFields(t *testing.T) {
 	for _, mutate := range []func(*Profile){
 		func(p *Profile) { p.PrinterName = "bad\nname" },
 		func(p *Profile) { p.DriverName = "bad\u202ename" },
@@ -84,18 +37,23 @@ func TestProfileRejectsInvalidJSONAndFields(t *testing.T) {
 
 func TestProfileInstallIdentityAndConfirmation(t *testing.T) {
 	for _, tc := range []struct {
-		name      string
-		change    func(*evidence.Evidence)
-		dry, yes  bool
-		want      ExitCode
-		mutations int
+		name           string
+		change         func(*evidence.Evidence)
+		dry, yes       bool
+		want           ExitCode
+		mutations      int
+		wantResolution string
 	}{
-		{"dry-run overrides yes", nil, true, true, ExitSuccess, 0},
-		{"requires confirmation", nil, false, false, ExitNotConfirmed, 0},
-		{"confirmed", nil, false, true, ExitSuccess, 2},
-		{"different printer", func(e *evidence.Evidence) { e.HTTPTitle = "Other Model" }, false, true, ExitUnresolved, 0},
-		{"one model source unavailable", func(e *evidence.Evidence) { e.PJLID = "" }, false, true, ExitSuccess, 2},
-		{"offline", func(e *evidence.Evidence) { e.PJLID = ""; e.HTTPTitle = "" }, false, true, ExitUnresolved, 0},
+		{"dry-run overrides yes", nil, true, true, ExitSuccess, 0, "operator-profile"},
+		{"requires confirmation", nil, false, false, ExitNotConfirmed, 0, "operator-profile"},
+		{"confirmed", nil, false, true, ExitSuccess, 2, "operator-profile"},
+		{"different printer", func(e *evidence.Evidence) { e.HTTPTitle = "Other Model" }, false, true, ExitUnresolved, 0, "operator-profile"},
+		{"one model source unavailable", func(e *evidence.Evidence) { e.PJLID = "" }, false, true, ExitSuccess, 2, "operator-profile"},
+		// No identity source answers at all (not a mismatch -- silence). This
+		// used to hard-fail with ExitUnresolved; it now falls back to the
+		// same offline path --offline already supports, since a Profile means
+		// the printer was already reviewed once.
+		{"offline fallback: no identity answers at all", func(e *evidence.Evidence) { e.PJLID = ""; e.HTTPTitle = "" }, false, true, ExitSuccess, 2, "offline-fallback-operator-profile"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			p := sampleProfile()
@@ -110,12 +68,12 @@ func TestProfileInstallIdentityAndConfirmation(t *testing.T) {
 				}
 				return probe.Result{Evidence: e}, nil
 			}
-			env := workflowEnvironment(true, true)
+			env := &offlineEnvironment{fakeEnvironment: workflowEnvironment(true, true), actual: matchingLocal(p)}
 			outcome, code := w.RunInstall(context.Background(), env, panicReader{}, io.Discard, false, InstallOptions{Profile: &p, DryRun: tc.dry, Yes: tc.yes})
 			if code != tc.want || len(env.ran) != tc.mutations {
 				t.Fatalf("code=%d outcome=%#v mutations=%d", code, outcome, len(env.ran))
 			}
-			if outcome.Plan != nil && (outcome.Plan.PrinterName != p.PrinterName || outcome.Plan.DriverName != p.DriverName || outcome.Resolution != "operator-profile" || !outcome.Plan.ForcedOverride) {
+			if outcome.Plan != nil && (outcome.Plan.PrinterName != p.PrinterName || outcome.Plan.DriverName != p.DriverName || outcome.Resolution != tc.wantResolution || !outcome.Plan.ForcedOverride) {
 				t.Fatalf("wrong plan: %#v", outcome)
 			}
 		})

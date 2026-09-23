@@ -7,6 +7,7 @@ import (
 	"io"
 	"strings"
 
+	"github.com/spilloid/spoolsmith/internal/bundle"
 	"github.com/spilloid/spoolsmith/internal/install"
 )
 
@@ -17,7 +18,7 @@ func runStatus(ctx context.Context, args []string, stdout, stderr io.Writer, app
 	if len(args) != 2 || args[0] != "--profile" {
 		return usageError(stdout, stderr, "status", errors.New("status requires --profile <file> [--json]"))
 	}
-	p, err := install.LoadProfile(args[1])
+	p, err := bundle.LoadProfile(args[1])
 	if err != nil {
 		return commandError(stdout, stderr, "status", err, int(install.ExitUsageError))
 	}

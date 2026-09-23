@@ -32,7 +32,7 @@ var templates embed.FS
 
 // EndpointCapability is emitted by compatible CLIs and prevents accidentally
 // packaging older releases that lack the endpoint contract.
-const EndpointCapability = "SpoolSmith:intune-endpoint-v1:offline,status"
+const EndpointCapability = "SpoolSmith:intune-endpoint-v2:ssb,offline,status"
 
 type Options struct {
 	ProfilePath        string
@@ -63,13 +63,16 @@ type Manifest struct {
 	ProfileSHA256      string `json:"profile_sha256"`
 	DriverSHA256       string `json:"driver_sha256,omitempty"`
 	ConfigSHA256       string `json:"configuration_sha256"`
-	// ProfileSource is "json" or "bundle", recording which local file format the
-	// reviewed profile and, when present, driver payload came from.
+	// ProfileSource records the reviewed profile's origin for the README. It
+	// is always "bundle" now that a profile has exactly one on-disk shape
+	// (internal/bundle, extension .ssb); kept as a field rather than a
+	// literal in the template so a future distinct source is a one-line
+	// change here, not a template rewrite.
 	ProfileSource string `json:"profile_source"`
-	// BundleSHA256 pins the original .ssb file when the profile source is a
-	// bundle carrying a driver payload; empty otherwise. The bundle itself
-	// (not an extracted copy) travels with the package so `apply`'s own
-	// catalog-signature trust chain runs unchanged at install time.
+	// BundleSHA256 pins the original .ssb file when it carries a driver
+	// payload; empty otherwise. The bundle itself (not an extracted copy)
+	// travels with the package so `apply`'s own catalog-signature trust chain
+	// runs unchanged at install time.
 	BundleSHA256 string `json:"bundle_sha256,omitempty"`
 	// BundleSourceHost is the bundle manifest's own recorded source host, shown
 	// for operator provenance only; it is never part of the trust decision.
@@ -90,58 +93,48 @@ type Prepared struct {
 
 var identifier = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,63}$`)
 
-// loadedProfile is a validated profile plus, when it came from a .ssb bundle,
-// the provenance and driver-payload facts Prepare needs to package it.
+// loadedProfile is a validated profile plus the provenance and driver-payload
+// facts Prepare needs to package it.
 type loadedProfile struct {
 	Profile    install.Profile
-	Source     string // "json" or "bundle"
-	SourceHost string // bundle.Manifest.SourceHost; "" for a plain profile
+	SourceHost string // bundle.Manifest.SourceHost
 	HasDriver  bool   // bundle.Manifest.Driver != nil
 	BundleHash string // sha256 of the .ssb file itself; "" unless HasDriver
 }
 
-// loadProfileSource accepts either a plain administrator-prevalidated profile
-// JSON or a .ssb bundle written by `spoolsmith copy`. Dispatch is by
-// extension, matching how the CLI and GUI already recognize a bundle
-// elsewhere. Both paths return an install.Profile that has already passed
-// Profile.Validate() — a bundle's embedded profile is validated identically,
-// both when the bundle was written (bundle.Write calls Manifest.Validate)
-// and again here on open; it carries no weaker evidence requirement than a
-// standalone profile JSON.
+// loadProfileSource opens the .ssb bundle written by `profile capture` or
+// `spoolsmith copy` -- there is exactly one on-disk profile format now, so
+// there is nothing left to dispatch on. It returns an install.Profile that
+// has already passed Profile.Validate(), both when the bundle was written
+// (bundle.Write calls Manifest.Validate) and again here on open.
 func loadProfileSource(path string) (loadedProfile, error) {
-	if strings.EqualFold(filepath.Ext(path), ".ssb") {
-		b, err := bundle.Open(path)
-		if err != nil {
-			return loadedProfile{}, err
-		}
-		defer b.Close()
-		if b.Manifest.Profile.DriverPackage != nil {
-			return loadedProfile{}, errors.New("intune: this bundle's profile also names a local vendor driver archive, which the bundle does not carry; recapture without a referenced archive or package the plain profile JSON instead")
-		}
-		result := loadedProfile{Profile: b.Manifest.Profile, Source: "bundle", SourceHost: b.Manifest.SourceHost, HasDriver: b.Manifest.Driver != nil}
-		if result.HasDriver {
-			hash, err := HashBinary(path)
-			if err != nil {
-				return loadedProfile{}, err
-			}
-			result.BundleHash = hash
-		}
-		return result, nil
-	}
-	p, err := install.LoadProfile(path)
+	b, err := bundle.Open(path)
 	if err != nil {
 		return loadedProfile{}, err
 	}
-	if err = p.ResolvePackagePath(path); err != nil {
+	defer b.Close()
+	if b.Manifest.Profile.DriverPackage != nil && b.Manifest.Driver != nil {
+		return loadedProfile{}, errors.New("intune: this bundle carries both a driver payload and a separate vendor-archive reference; run profile edit --clear-package to drop one before packaging")
+	}
+	profile := b.Manifest.Profile
+	if err := profile.ResolvePackagePath(path); err != nil {
 		return loadedProfile{}, err
 	}
-	return loadedProfile{Profile: p, Source: "json"}, nil
+	result := loadedProfile{Profile: profile, SourceHost: b.Manifest.SourceHost, HasDriver: b.Manifest.Driver != nil}
+	if result.HasDriver {
+		hash, err := HashBinary(path)
+		if err != nil {
+			return loadedProfile{}, err
+		}
+		result.BundleHash = hash
+	}
+	return result, nil
 }
 
-// HasLocalPayload reports whether the profile or bundle at path already
-// carries a driver payload (a vendor archive or a bundle-exported driver
-// store), so callers can decide whether to ask for the separately managed
-// registered-driver prerequisite without duplicating the .json/.ssb dispatch.
+// HasLocalPayload reports whether the bundle at path already carries a driver
+// payload (a vendor archive reference or an embedded exported driver store),
+// so callers can decide whether to ask for the separately managed
+// registered-driver prerequisite instead.
 func HasLocalPayload(path string) (bool, error) {
 	loaded, err := loadProfileSource(path)
 	if err != nil {
@@ -206,7 +199,7 @@ func Prepare(o Options) (*Prepared, error) {
 	if err := checkCapability(o.BinaryPath); err != nil {
 		return nil, err
 	}
-	m := Manifest{Format: 1, ID: o.ID, Revision: o.Revision, DisplayName: o.DisplayName, Description: o.Description, Location: o.Location, Architecture: "amd64", Offline: o.Offline, Adopt: o.Adopt, DriverPrerequisite: o.DriverPrerequisite, BinarySHA256: binaryHash}
+	m := Manifest{Format: 2, ID: o.ID, Revision: o.Revision, DisplayName: o.DisplayName, Description: o.Description, Location: o.Location, Architecture: "amd64", Offline: o.Offline, Adopt: o.Adopt, DriverPrerequisite: o.DriverPrerequisite, BinarySHA256: binaryHash}
 	sources := map[string]string{"spoolsmith.exe": o.BinaryPath}
 	if p.DriverPackage != nil {
 		hash, e := p.DriverPackage.PackageSHA256(p.DriverName)
@@ -220,17 +213,16 @@ func Prepare(o Options) (*Prepared, error) {
 		sources["driver.exe"] = p.DriverPackage.Archive
 		p.DriverPackage = &install.PackageSelection{ID: p.DriverPackage.ID, Archive: "driver.exe"}
 	}
-	m.ProfileSource = loaded.Source
+	m.ProfileSource = "bundle"
 	m.BundleSourceHost = loaded.SourceHost
 	if loaded.HasDriver {
 		m.BundleSHA256 = loaded.BundleHash
 		sources["bundle.ssb"] = o.ProfilePath
 	}
-	profileBytes, err := json.MarshalIndent(p, "", "  ")
+	profileBytes, err := printerFileBytes(p)
 	if err != nil {
 		return nil, err
 	}
-	profileBytes = append(profileBytes, '\n')
 	m.Profile = p
 	m.ProfileSHA256 = digest(profileBytes)
 	// The config digest binds deployment policy and payloads, excluding presentation.
@@ -242,7 +234,7 @@ func Prepare(o Options) (*Prepared, error) {
 	m.ConfigSHA256 = digest(config)
 	m.InstallCommand = `powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File install.ps1`
 	m.UninstallCommand = `powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "& (Join-Path ([Environment]::GetFolderPath('CommonApplicationData')) 'SpoolSmith\Deployments\` + o.ID + `\uninstall.ps1')"`
-	m.Files = []string{"deployment.json", "profile.json", "spoolsmith.exe", "install.ps1", "uninstall.ps1", "detect.ps1", "runtime.ps1", "README.txt"}
+	m.Files = []string{"deployment.json", "profile.ssb", "spoolsmith.exe", "install.ps1", "uninstall.ps1", "detect.ps1", "runtime.ps1", "README.txt"}
 	if p.DriverPackage != nil {
 		m.Files = append(m.Files, "driver.exe")
 	}
@@ -250,7 +242,7 @@ func Prepare(o Options) (*Prepared, error) {
 		m.Files = append(m.Files, "bundle.ssb")
 	}
 	manifestBytes, _ := json.MarshalIndent(m, "", "  ")
-	files := map[string][]byte{"profile.json": profileBytes, "deployment.json": append(manifestBytes, '\n')}
+	files := map[string][]byte{"profile.ssb": profileBytes, "deployment.json": append(manifestBytes, '\n')}
 	for _, name := range []string{"install.ps1", "uninstall.ps1", "detect.ps1", "runtime.ps1", "README.txt"} {
 		source, e := templates.ReadFile("templates/" + name)
 		if e != nil {
@@ -304,6 +296,22 @@ func (p *Prepared) Export(destination string) error {
 	return nil
 }
 
+// Use the same writer as capture and editing; the endpoint CLI reads only bundles.
+func printerFileBytes(p install.Profile) ([]byte, error) {
+	dir, err := os.MkdirTemp("", "spoolsmith-intune-profile-")
+	if err != nil {
+		return nil, err
+	}
+	defer os.RemoveAll(dir)
+	path := filepath.Join(dir, "profile.ssb")
+	// This generated projection has no capture time of its own. A fixed timestamp
+	// keeps its bytes and payload hash stable across identical packaging runs.
+	if err := bundle.Write(path, bundle.Manifest{Profile: p, Created: "1980-01-01T00:00:00Z"}, ""); err != nil {
+		return nil, err
+	}
+	return os.ReadFile(path)
+}
+
 func digest(b []byte) string { h := sha256.Sum256(b); return hex.EncodeToString(h[:]) }
 
 func checkCapability(path string) error {
@@ -332,7 +340,7 @@ func checkCapability(path string) error {
 			carry = data
 		}
 	}
-	return errors.New("CLI lacks offline/status endpoint support; build the current source before packaging")
+	return errors.New("CLI lacks .ssb endpoint support; select the v1.1.0 or newer CLI from the same release as the packager")
 }
 
 // HashBinary computes a local payload pin for review. Prepare additionally

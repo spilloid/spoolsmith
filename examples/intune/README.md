@@ -1,9 +1,29 @@
 # Illustrative printer app
 
-`accounting.json` uses a documentation-only address and invented driver/identity.
-It is **not a hardware capture**. The `captured` provenance value illustrates the
-schema required for a real administrator-prevalidated profile. Replace this sample
-with a real validated profile before running an endpoint install.
+`accounting.ssb` uses a documentation-only address and invented driver/identity.
+It is **not a hardware capture** — it was built directly from the JSON shape
+below, not from `profile capture` or `copy`. The `captured` provenance value
+illustrates the schema required for a real administrator-prevalidated profile.
+Replace this sample with a real validated profile before running an endpoint
+install.
+
+Every saved printer is a bundle (`internal/bundle`, extension `.ssb`) — there
+is no separate bare-JSON profile format. `accounting.ssb`'s `manifest.json`
+entry carries exactly this profile document:
+
+```json
+{
+  "version": 1,
+  "target": "192.0.2.40",
+  "printer_name": "Example — Accounting Copier",
+  "driver_name": "Example OEM Driver (replace with registered name)",
+  "evidence": {
+    "ip": "192.0.2.40",
+    "provenance": "captured",
+    "http_title": "Example copier (illustrative placeholder, not a hardware capture)"
+  }
+}
+```
 
 The [Intune packaging guide](../../docs/intune-deployment.md) and the [README's
 Intune section](../../README.md#intune-packaging) describe generating a complete
@@ -15,7 +35,7 @@ the generator uses the local CLI binary you select and calculates its SHA-256
 for review automatically.
 
 ```powershell
-spoolsmith intune build --profile examples\intune\accounting.json `
+spoolsmith intune build --profile examples\intune\accounting.ssb `
   --binary spoolsmith.exe --driver-prerequisite --dry-run
 ```
 

@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/spilloid/spoolsmith/internal/bundle"
 	"github.com/spilloid/spoolsmith/internal/evidence"
 	"github.com/spilloid/spoolsmith/internal/install"
 )
@@ -46,7 +47,7 @@ func suggestedProfileFile(dir, target string) string {
 		if suffix > 0 {
 			name += fmt.Sprintf("-%d", suffix+1)
 		}
-		path := filepath.Join(dir, name+".json")
+		path := filepath.Join(dir, name+".ssb")
 		if _, err := os.Stat(path); err != nil {
 			return path
 		}
@@ -93,11 +94,11 @@ func savedProfilesForIP(dir, target string) []string {
 	}
 	var matches []string
 	for _, entry := range entries {
-		if entry.IsDir() || !strings.EqualFold(filepath.Ext(entry.Name()), ".json") {
+		if entry.IsDir() || !strings.EqualFold(filepath.Ext(entry.Name()), ".ssb") {
 			continue
 		}
 		path := filepath.Join(dir, entry.Name())
-		p, err := install.LoadProfile(path)
+		p, err := bundle.LoadProfile(path)
 		if err != nil {
 			continue
 		}

@@ -1,12 +1,9 @@
 package install
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net"
-	"os"
 	"path/filepath"
 	"strings"
 
@@ -16,6 +13,15 @@ import (
 
 // Profile is an operator-selected queue and installed driver, bound to captured
 // model evidence. It never contains executable instructions.
+//
+// A Profile is a pure, in-memory document; it does not know how to read or
+// write itself. On disk, every Profile lives inside a bundle (package
+// internal/bundle, extension .ssb) -- there is deliberately no separate,
+// bare-JSON file format for a profile. A single saved printer and a printer
+// handed to another PC used to be two different file shapes for the same
+// document; internal/bundle.SaveProfile/LoadProfile/EditProfile is the one
+// place that now reads and writes it, whether or not a driver payload rides
+// along.
 type Profile struct {
 	Version       int               `json:"version"`
 	Target        string            `json:"target"`
@@ -47,40 +53,23 @@ func (p Profile) Validate() error {
 			return err
 		}
 	}
-	if p.Evidence.Provenance != "captured" {
-		return errors.New("profile: captured evidence is required")
-	}
-	if strings.TrimSpace(p.Evidence.HTTPTitle) == "" && strings.TrimSpace(p.Evidence.PJLID) == "" && strings.TrimSpace(p.Evidence.SNMPSysDescr) == "" {
-		return errors.New("profile: HTTP, PJL, or SNMP identity is required; capture again when the printer is awake")
+	switch p.Evidence.Provenance {
+	case "captured":
+		if !p.hasCapturedIdentity() {
+			return errors.New("profile: HTTP, PJL, or SNMP identity is required; capture again when the printer is awake")
+		}
+	case "unconfirmed":
+		// The source printer never answered when this profile was captured
+		// (see bundle.Create's offline fallback). There is deliberately no
+		// identity here to check -- RunInstall always treats a profile like
+		// this as offline, never as a silent pass on a live comparison.
+		if strings.TrimSpace(p.Evidence.ProvenanceNote) == "" {
+			return errors.New("profile: provenance_note is required when evidence is unconfirmed")
+		}
+	default:
+		return errors.New("profile: captured or unconfirmed evidence is required")
 	}
 	return nil
-}
-
-// LoadProfile rejects unknown fields and trailing JSON rather than ignoring typos.
-func LoadProfile(path string) (Profile, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return Profile{}, err
-	}
-	defer f.Close()
-	info, err := f.Stat()
-	if err != nil {
-		return Profile{}, err
-	}
-	if !info.Mode().IsRegular() || info.Size() > 1024*1024 {
-		return Profile{}, errors.New("profile: expected a regular JSON file no larger than 1 MiB")
-	}
-	decoder := json.NewDecoder(io.LimitReader(f, 1024*1024+1))
-	decoder.DisallowUnknownFields()
-	var p Profile
-	if err := decoder.Decode(&p); err != nil {
-		return p, fmt.Errorf("profile: decode: %w", err)
-	}
-	var extra any
-	if err := decoder.Decode(&extra); err != io.EOF {
-		return p, errors.New("profile: trailing data or oversized document")
-	}
-	return p, p.Validate()
 }
 
 // ResolvePackagePath makes a loaded profile portable with its adjacent payload.
@@ -101,75 +90,13 @@ func (p *Profile) ResolvePackagePath(profilePath string) error {
 	return nil
 }
 
-// SaveProfile creates a new file only. Existing inventory is never overwritten.
-func SaveProfile(path string, p Profile) error {
-	if err := p.Validate(); err != nil {
-		return err
-	}
-	data, err := json.MarshalIndent(p, "", "  ")
-	if err != nil {
-		return err
-	}
-	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
-		return err
-	}
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
-	if err != nil {
-		return err
-	}
-	_, writeErr := f.Write(append(data, '\n'))
-	closeErr := f.Close()
-	if writeErr != nil {
-		return writeErr
-	}
-	return closeErr
-}
-
-// EditProfile preserves the previous file in a unique backup and replaces the
-// profile only after the new document has been fully written and closed.
-func EditProfile(path string, p Profile) (string, error) {
-	if err := p.Validate(); err != nil {
-		return "", err
-	}
-	original, err := os.ReadFile(path)
-	if err != nil {
-		return "", err
-	}
-	data, err := json.MarshalIndent(p, "", "  ")
-	if err != nil {
-		return "", err
-	}
-	backupDir := filepath.Join(filepath.Dir(path), ".backups")
-	if err := os.MkdirAll(backupDir, 0700); err != nil {
-		return "", err
-	}
-	backup, err := os.CreateTemp(backupDir, filepath.Base(path)+"-*.bak")
-	if err != nil {
-		return "", err
-	}
-	backupPath := backup.Name()
-	_, writeErr := backup.Write(original)
-	closeErr := backup.Close()
-	if writeErr != nil {
-		return backupPath, writeErr
-	}
-	if closeErr != nil {
-		return backupPath, closeErr
-	}
-	next, err := os.CreateTemp(filepath.Dir(path), ".profile-*.tmp")
-	if err != nil {
-		return backupPath, err
-	}
-	defer os.Remove(next.Name())
-	_, writeErr = next.Write(append(data, '\n'))
-	closeErr = next.Close()
-	if writeErr != nil {
-		return backupPath, writeErr
-	}
-	if closeErr != nil {
-		return backupPath, closeErr
-	}
-	return backupPath, os.Rename(next.Name(), path)
+// hasCapturedIdentity reports whether this profile carries any live-captured
+// identity signal at all. A profile captured offline (Provenance
+// "unconfirmed") has none by definition, which RunInstall uses to skip
+// straight to its offline fallback instead of probing for a comparison that
+// can never succeed.
+func (p Profile) hasCapturedIdentity() bool {
+	return strings.TrimSpace(p.Evidence.HTTPTitle) != "" || strings.TrimSpace(p.Evidence.PJLID) != "" || strings.TrimSpace(p.Evidence.SNMPSysDescr) != ""
 }
 
 func (p Profile) resolution(current evidence.Evidence) (catalog.ResolutionResult, error) {

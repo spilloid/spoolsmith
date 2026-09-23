@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/spilloid/spoolsmith/internal/bundle"
 	"github.com/spilloid/spoolsmith/internal/inspect"
 	"github.com/spilloid/spoolsmith/internal/install"
 	"github.com/spilloid/spoolsmith/internal/profileset"
@@ -81,7 +82,7 @@ func runProfile(ctx context.Context, args []string, stdout, stderr io.Writer, ap
 		return commandError(stdout, stderr, "profile", err, 1)
 	}
 	p.Target, p.Evidence = result.Evidence.IP, result.Evidence
-	if err := install.SaveProfile(args[2], p); err != nil {
+	if err := bundle.SaveProfile(args[2], p); err != nil {
 		return commandError(stdout, stderr, "profile", err, 1)
 	}
 	fmt.Fprintln(stderr, "Saved printer profile. The driver name is operator-selected; installation checks that it is registered locally.")
@@ -102,7 +103,7 @@ func runProfileTransfer(args []string, stdout, stderr io.Writer) int {
 		}
 	}
 	if len(paths) != 2 {
-		return usageError(stdout, stderr, command, errors.New("use profile export-all <folder> <collection.json> [--dry-run] or profile import-all <collection.json> <folder> [--dry-run]"))
+		return usageError(stdout, stderr, command, errors.New("use profile export-all <folder> <set.zip> [--dry-run] or profile import-all <set.zip> <folder> [--dry-run]"))
 	}
 	var transfer *profileset.Transfer
 	var err error
@@ -139,7 +140,7 @@ func runProfileEdit(args []string, stdout, stderr io.Writer) int {
 	if len(args) < 2 {
 		return usageError(stdout, stderr, "profile edit", errors.New("profile edit requires <file> and at least one of --name, --driver, --target"))
 	}
-	p, err := install.LoadProfile(args[0])
+	p, err := bundle.LoadProfile(args[0])
 	if err != nil {
 		return commandError(stdout, stderr, "profile edit", err, 1)
 	}
@@ -182,7 +183,7 @@ func runProfileEdit(args []string, stdout, stderr io.Writer) int {
 			return usageError(stdout, stderr, "profile edit", fmt.Errorf("unknown option %q", flag))
 		}
 	}
-	backup, err := install.EditProfile(args[0], p)
+	backup, err := bundle.EditProfile(args[0], p)
 	if err != nil {
 		return commandError(stdout, stderr, "profile edit", err, 1)
 	}
