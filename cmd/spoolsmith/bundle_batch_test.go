@@ -10,24 +10,23 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/spilloid/spoolsmith/internal/bundle"
 	"github.com/spilloid/spoolsmith/internal/install"
 	"github.com/spilloid/spoolsmith/internal/probe"
 )
 
 func TestCopyAllPartialSuccessKeepsJSONContractAndExplainsNextSteps(t *testing.T) {
 	app, env := bundleTestApplication(t)
+	env.elevated = false // drivers fall back to settings-only, and say so
 	queues := sampleQueues()
 	warehouse := queues[0]
 	warehouse.PrinterName = "Warehouse"
 	queues = append(queues, warehouse)
 	all := &allQueuesFakeEnvironment{bundleFakeEnvironment: env, queues: queues}
 	app.environment = all
-	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "Office.ssb"), []byte("existing bundle"), 0600); err != nil {
-		t.Fatal(err)
-	}
+	setPath := filepath.Join(t.TempDir(), "printers.zip")
 	var stdout, stderr bytes.Buffer
-	code := run(context.Background(), []string{"copy", "--all", dir}, strings.NewReader(""), &stdout, &stderr, app)
+	code := run(context.Background(), []string{"copy", "--all", "--out", setPath}, strings.NewReader(""), &stdout, &stderr, app)
 	if code != 0 {
 		t.Fatalf("copy --all code = %d; stderr = %s", code, stderr.String())
 	}
@@ -35,7 +34,7 @@ func TestCopyAllPartialSuccessKeepsJSONContractAndExplainsNextSteps(t *testing.T
 	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
 		t.Fatal(err)
 	}
-	if result.Requested != 3 || result.Written != 1 || result.Skipped != 1 || result.Failed != 1 || len(result.Queues) != 3 {
+	if result.Requested != 3 || result.Written != 2 || result.Skipped != 1 || result.Failed != 0 || len(result.Queues) != 3 || result.SetPath != setPath {
 		t.Fatalf("result = %+v", result)
 	}
 	var fields map[string]json.RawMessage
@@ -45,62 +44,48 @@ func TestCopyAllPartialSuccessKeepsJSONContractAndExplainsNextSteps(t *testing.T
 	if len(fields) != 6 {
 		t.Fatalf("JSON schema changed: %s", stdout.String())
 	}
-	for _, key := range []string{"output_dir", "requested", "written", "skipped", "failed", "queues"} {
+	for _, key := range []string{"set_path", "requested", "written", "skipped", "failed", "queues"} {
 		if _, ok := fields[key]; !ok {
 			t.Fatalf("JSON missing %q: %s", key, stdout.String())
 		}
 	}
-	if !slices.Equal(all.requestedPrinters, []string{"Warehouse"}) || len(env.ran) != 0 {
+	if !slices.Equal(all.requestedPrinters, []string{"Office", "Warehouse"}) || len(env.ran) != 0 {
 		t.Fatalf("lookups = %v; Windows mutations = %v", all.requestedPrinters, env.ran)
 	}
-	for _, want := range []string{"explicit, unused bundle filename", "apply <bundle-file> --dry-run", "must already have these drivers", "--include-driver into a new folder"} {
+	for _, want := range []string{"Added Office as Office.ssb (settings only)", "administrator rights", "apply printers.zip --dry-run", "Saved 2 of 3 printers"} {
 		if !strings.Contains(stderr.String(), want) {
 			t.Fatalf("missing %q in stderr: %s", want, stderr.String())
 		}
 	}
+	if isSet, err := bundle.IsSet(setPath); err != nil || !isSet {
+		t.Fatalf("output is not a printer set: %v %v", isSet, err)
+	}
 }
 
-// TestCopyAllOutputDirFailureStillKeepsJSONContract guards against a
-// refactor regression where a failure setting up the output directory
-// (after queues are already known) discarded CreateAll's populated
-// AllResult in favor of the generic {command,status,error} shape,
-// breaking the documented 6-field schema this command's own docs and the
-// GUI both rely on.
-func TestCopyAllOutputDirFailureStillKeepsJSONContract(t *testing.T) {
+func TestCopyAllRefusesAnExistingOrNonZipDestination(t *testing.T) {
 	app, env := bundleTestApplication(t)
 	all := &allQueuesFakeEnvironment{bundleFakeEnvironment: env, queues: sampleQueues()}
 	app.environment = all
-	blocked := filepath.Join(t.TempDir(), "not-a-directory")
-	if err := os.WriteFile(blocked, []byte("x"), 0600); err != nil {
+	existing := filepath.Join(t.TempDir(), "printers.zip")
+	if err := os.WriteFile(existing, []byte("keep"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	var stdout, stderr bytes.Buffer
-	code := run(context.Background(), []string{"copy", "--all", blocked}, strings.NewReader(""), &stdout, &stderr, app)
-	if code != int(install.ExitGeneralError) {
-		t.Fatalf("copy --all code = %d; stderr = %s", code, stderr.String())
-	}
-	var fields map[string]json.RawMessage
-	if err := json.Unmarshal(stdout.Bytes(), &fields); err != nil {
-		t.Fatalf("stdout was not the documented AllResult schema: %v; stdout = %s", err, stdout.String())
-	}
-	if len(fields) != 6 {
-		t.Fatalf("JSON schema changed: %s", stdout.String())
-	}
-	var result copyAllResult
-	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
-		t.Fatal(err)
-	}
-	if result.Requested != len(sampleQueues()) || result.Failed != len(sampleQueues()) || result.Written != 0 || len(result.Queues) != len(sampleQueues()) {
-		t.Fatalf("result = %+v", result)
-	}
-	for _, outcome := range result.Queues {
-		if outcome.Status != "error" || !strings.Contains(outcome.Reason, "not copied:") {
-			t.Fatalf("outcome = %+v", outcome)
+	for _, target := range []string{existing, t.TempDir()} {
+		var stdout, stderr bytes.Buffer
+		code := run(context.Background(), []string{"copy", "--all", target}, strings.NewReader(""), &stdout, &stderr, app)
+		if code != int(install.ExitGeneralError) || !json.Valid(stdout.Bytes()) {
+			t.Fatalf("copy --all %s code = %d; stderr = %s", target, code, stderr.String())
 		}
+	}
+	if len(all.requestedPrinters) != 0 {
+		t.Fatalf("copied queues before refusing the destination: %v", all.requestedPrinters)
+	}
+	if data, _ := os.ReadFile(existing); string(data) != "keep" {
+		t.Fatal("existing file changed")
 	}
 }
 
-func TestCopyAllCancellationReturnsPartialJSONAndStopsFurtherCopies(t *testing.T) {
+func TestCopyAllCancellationReturnsPartialJSONAndWritesNoSet(t *testing.T) {
 	app, env := bundleTestApplication(t)
 	queues := make([]install.InstalledQueue, 3)
 	for i, name := range []string{"Office", "Warehouse", "Lobby"} {
@@ -120,9 +105,9 @@ func TestCopyAllCancellationReturnsPartialJSONAndStopsFurtherCopies(t *testing.T
 		}
 		return collect(ctx, address)
 	}
-	dir := t.TempDir()
+	setPath := filepath.Join(t.TempDir(), "printers.zip")
 	var stdout, stderr bytes.Buffer
-	code := run(ctx, []string{"copy", "--all", dir}, strings.NewReader(""), &stdout, &stderr, app)
+	code := run(ctx, []string{"copy", "--all", setPath}, strings.NewReader(""), &stdout, &stderr, app)
 	if code != int(install.ExitGeneralError) {
 		t.Fatalf("canceled copy --all code = %d; stderr = %s", code, stderr.String())
 	}
@@ -130,19 +115,21 @@ func TestCopyAllCancellationReturnsPartialJSONAndStopsFurtherCopies(t *testing.T
 	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
 		t.Fatal(err)
 	}
-	if result.Requested != 3 || result.Written != 1 || result.Failed != 2 || len(result.Queues) != 3 || result.Queues[0].Status != "written" {
-		t.Fatalf("cancellation lost partial results: %+v", result)
+	if result.Requested != 3 || result.Written != 0 || result.Failed != 3 || len(result.Queues) != 3 || result.SetPath != "" {
+		t.Fatalf("cancellation lost accounting: %+v", result)
 	}
 	if !slices.Equal(all.requestedPrinters, []string{"Office", "Warehouse"}) || probes != 2 || len(env.ran) != 0 {
 		t.Fatalf("lookups = %v; probes = %d; Windows mutations = %v", all.requestedPrinters, probes, env.ran)
+	}
+	if !strings.Contains(result.Queues[0].Reason, "not saved") {
+		t.Fatalf("copied-but-unsaved queue = %+v", result.Queues[0])
 	}
 	for _, outcome := range result.Queues[1:] {
 		if outcome.Status != "error" || !strings.Contains(outcome.Reason, "context canceled") {
 			t.Fatalf("canceled outcome = %+v", outcome)
 		}
 	}
-	files, err := os.ReadDir(dir)
-	if err != nil || len(files) != 1 || files[0].Name() != "Office.ssb" {
-		t.Fatalf("files = %v, error = %v", files, err)
+	if _, err := os.Stat(setPath); !os.IsNotExist(err) {
+		t.Fatalf("canceled copy wrote a set: %v", err)
 	}
 }

@@ -116,8 +116,8 @@ public sealed class AppFixture : IDisposable
             // that may be in different units.
             var scale = GetDpiForWindow(hwnd) / 96.0;
             SetWindowPos(hwnd, IntPtr.Zero, workArea.X, workArea.Y,
-                Math.Min((int)Math.Round(820 * scale), workArea.Width),
-                Math.Min((int)Math.Round(620 * scale), workArea.Height),
+                Math.Min((int)Math.Round(960 * scale), workArea.Width),
+                Math.Min((int)Math.Round(640 * scale), workArea.Height),
                 SWP_NOZORDER | SWP_NOACTIVATE);
         }
         catch
@@ -174,75 +174,53 @@ public sealed class AppFixture : IDisposable
         throw new InvalidOperationException("Could not attach to SpoolSmith's main window after retrying.", last);
     }
 
+    /// <summary>The sidebar's pages, in order, as their list items are named.</summary>
+    public static readonly string[] Pages =
+        { "This PC", "Add a printer", "Review and apply", "Intune package", "Inspect", "Driver catalog", "Action log" };
+
     /// <summary>
-    /// Selects a tab by its visible title and returns that tab's content
-    /// element. Selecting first matters: an inactive walk TabPage's children
-    /// are actually hidden (walk's TabWidget calls page.SetVisible(false) on
-    /// deselect — see tabwidget.go's onSelChange). UIA may expose their controls
-    /// as IsOffscreen or omit the hidden subtree entirely. Select the page and
-    /// reacquire its visible controls before inspecting their state.
+    /// Opens a page from the sidebar and waits until its content is visible.
     ///
-    /// Deliberately uses a real synthetic Click(), not UI Automation's
-    /// SelectionItemPattern: walk's own source shows SelectCurrentIndex sends
-    /// TCM_SETCURSEL and then has to manually re-invoke onSelChange() itself,
-    /// with the comment "the SendMessage(TCM_SETCURSEL) call above doesn't
-    /// cause a TCN_SELCHANGE notification" — and TCN_SELCHANGE is exactly
-    /// what actually swaps page visibility. SelectionItemPattern.Select() on
-    /// a native tab item is implemented via that same TCM_SETCURSEL, so it
-    /// hits the identical gap and silently leaves the old page showing
-    /// (confirmed directly with a screenshot: the window stayed on Discover
-    /// after "selecting" every other tab). A genuine click is real native
-    /// user interaction, which comctl32 always follows with a real
-    /// TCN_SELCHANGE, so it's the one input method walk's own page-swap
-    /// logic actually reacts to.
+    /// The sidebar is an owner-drawn native list whose items keep their text,
+    /// so UIA exposes each one as a named ListItem. Uses a real click, like an
+    /// operator: the app navigates on the list's own selection notification.
     /// </summary>
-    public AutomationElement SelectTab(string title)
+    public AutomationElement GoTo(string page)
     {
-        if (title is "Inspect" or "Catalog" or "Action log")
-        {
-            SelectTab("Tools");
-        }
-        var tab = MainWindow.FindFirstDescendant(cf => cf.ByControlType(FlaUI.Core.Definitions.ControlType.TabItem).And(cf.ByName(title)))
-            ?? throw new InvalidOperationException($"Tab '{title}' not found.");
-        MainWindow.SetForeground();
-        MainWindow.Focus();
-        tab.Click();
-        var marker = title switch
+        var marker = page switch
         {
             "This PC" => "thispc-list",
             "Add a printer" => "discover-cidr",
             "Review and apply" => "mutate-output",
-            "Tools" => null,
+            "Intune package" => "Build an Intune printer app...",
             "Inspect" => "inspect-target",
-            "Catalog" => "catalog-output",
+            "Driver catalog" => "catalog-output",
             "Action log" => "log-output",
-            _ => throw new ArgumentException("Unknown tab", nameof(title)),
+            _ => throw new ArgumentException("Unknown page", nameof(page)),
         };
+        var nav = MainWindow.FindFirstDescendant(cf => cf.ByName("navigation").And(cf.ByControlType(FlaUI.Core.Definitions.ControlType.List)))
+            ?? throw new InvalidOperationException("Sidebar navigation not found.");
+        var item = nav.FindFirstDescendant(cf => cf.ByControlType(FlaUI.Core.Definitions.ControlType.ListItem).And(cf.ByName(page)))
+            ?? throw new InvalidOperationException($"Sidebar item '{page}' not found.");
+        MainWindow.SetForeground();
+        item.Click();
         var deadline = DateTime.UtcNow.AddSeconds(5);
         while (DateTime.UtcNow < deadline)
         {
-            if (marker == null)
-            {
-                var toolsContent = MainWindow.FindFirstDescendant(cf => cf.ByControlType(FlaUI.Core.Definitions.ControlType.TabItem).And(cf.ByName("Inspect")));
-                if (toolsContent != null && !toolsContent.IsOffscreen) return tab;
-            }
-            else
-            {
-                var content = MainWindow.FindFirstDescendant(cf => cf.ByName(marker));
-                if (content != null && !content.IsOffscreen) return tab;
-            }
+            var content = MainWindow.FindFirstDescendant(cf => cf.ByName(marker));
+            if (content != null && !content.IsOffscreen) return item;
             // Retry harmless navigation if a launch/focus transition consumed the click.
             MainWindow.SetForeground();
-            tab.Click();
+            item.Click();
             System.Threading.Thread.Sleep(100);
         }
-        throw new TimeoutException($"Tab '{title}' did not expose its content after clicking.");
+        throw new TimeoutException($"Page '{page}' did not show its content after clicking.");
     }
 
     /// <summary>Absolute path to a file under the repo's fixtures/ directory.</summary>
     public string FixturePath(string name) => Path.Combine(RepoRoot, "fixtures", name);
 
-    private static string FindRepoRoot()
+    internal static string FindRepoRoot()
     {
         var dir = new DirectoryInfo(AppContext.BaseDirectory);
         while (dir != null && !File.Exists(Path.Combine(dir.FullName, "go.mod")))

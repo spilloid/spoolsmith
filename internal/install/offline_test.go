@@ -110,6 +110,7 @@ func TestLocalStatusRejectsEachMismatch(t *testing.T) {
 		}
 	}
 }
+
 // TestDefaultDegradesToOfflineWhenPrinterUnreachable is the fix for the actual
 // operator complaint this file's other tests were written against: a Profile
 // means the printer was already reviewed and approved once, so a printer that
@@ -164,4 +165,38 @@ func containsSubstring(values []string, substr string) bool {
 		}
 	}
 	return false
+}
+
+// Cancellation must never be converted into permission to provision offline.
+func TestOfflineFallbackPreservesCancellation(t *testing.T) {
+	for _, mode := range []string{"before probe", "first probe", "identity retry", "returned cancellation"} {
+		t.Run(mode, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			if mode == "before probe" {
+				cancel()
+			}
+			p := sampleProfile()
+			e := &offlineEnvironment{fakeEnvironment: workflowEnvironment(true, true), actual: matchingLocal(p)}
+			w := NewWorkflow()
+			calls := 0
+			w.Collect = func(context.Context, string) (probe.Result, error) {
+				calls++
+				if mode == "identity retry" && calls == 1 {
+					return probe.Result{}, nil
+				}
+				if mode != "returned cancellation" {
+					cancel()
+				}
+				return probe.Result{}, context.Canceled
+			}
+			out, code := w.RunInstall(ctx, e, panicReader{}, io.Discard, false, InstallOptions{Profile: &p, Yes: true})
+			if code == ExitSuccess || len(e.ran) != 0 || !strings.Contains(out.Error, "canceled") {
+				t.Fatalf("cancellation became setup: code=%d ran=%d out=%+v", code, len(e.ran), out)
+			}
+			if mode == "before probe" && calls != 0 {
+				t.Fatal("probed after cancellation")
+			}
+		})
+	}
 }

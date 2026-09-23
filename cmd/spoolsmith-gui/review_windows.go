@@ -71,7 +71,7 @@ func (a *app) startOperation(op operation) {
 	}
 	a.planOut.SetText(planText)
 	a.reviewHint.SetText("Nothing has changed yet.")
-	a.tabs.SetCurrentIndex(tabReview)
+	a.goTo(pageReview)
 	if a.previewBtn != nil {
 		a.previewBtn.SetFocus()
 	}

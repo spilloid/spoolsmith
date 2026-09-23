@@ -21,7 +21,7 @@ func TestProfileTransferDryRunAndExecutionContracts(t *testing.T) {
 	if err := bundle.SaveProfile(filepath.Join(source, "office.ssb"), p); err != nil {
 		t.Fatal(err)
 	}
-	collection := filepath.Join(t.TempDir(), "all.ssb")
+	collection := filepath.Join(t.TempDir(), "all.zip")
 	dest := filepath.Join(t.TempDir(), "new-folder")
 	for _, step := range []struct{ operation, source, destination string }{
 		{"export-all", source, collection},

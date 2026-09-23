@@ -31,7 +31,7 @@ func TestSaveLoadProfileRoundTripAndNeverOverwrite(t *testing.T) {
 		t.Fatalf("loaded %#v, %v", loaded, err)
 	}
 	// A saved profile is an ordinary bundle: it opens, verifies and carries
-	// no driver payload, exactly like one `copy` writes without --include-driver.
+	// no driver payload, exactly like one `copy --settings-only` writes.
 	opened, err := Open(path)
 	if err != nil {
 		t.Fatal(err)
@@ -71,7 +71,7 @@ func TestEditProfilePreservesPreviousVersionAndDriverPayload(t *testing.T) {
 
 // TestEditProfilePreservesEmbeddedDriver guards against the one real edge
 // case merging the two formats introduced: editing a profile that also
-// carries a driver payload (from `copy --include-driver`) must not silently
+// carries a driver payload (what `copy` embeds by default) must not silently
 // drop that payload.
 func TestEditProfilePreservesEmbeddedDriver(t *testing.T) {
 	dir := t.TempDir()

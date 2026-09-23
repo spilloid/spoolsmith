@@ -2,7 +2,6 @@ package bundle
 
 import (
 	"archive/zip"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -12,54 +11,30 @@ import (
 	"time"
 )
 
-// A set is several already-validated bundles carried in one file -- the same
-// container a single printer file uses, so a bulk transfer of saved setups
-// never becomes a second, different file shape. `bundle inspect`/`apply`
-// distinguish a set from a single bundle by which top-level entry is present
-// (manifest.json vs set.json), not by extension: both are .ssb.
+// A set is several printer files (.ssb bundles) carried together as one plain
+// zip archive -- exactly what Explorer's "Compress to ZIP folder" produces when
+// an operator selects a handful of .ssb files. There is no index file: the
+// archive's own entry list is the membership, so a hand-made zip and one
+// SpoolSmith wrote are the same thing. The optional note lives in the zip
+// archive comment.
+//
+// A .ssb is one printer; a .zip is a set of them. Each member is copied in
+// and out verbatim, driver payload and all, and is only ever trusted after its
+// own Open+Verify -- the set adds no trust of its own.
 const (
-	SetVersion    = 1
-	SetIndexName  = "set.json"
-	SetMemberPath = "members/"
+	SetExt = ".zip"
 
 	MaxSetMembers = 1000
-	MaxSetBytes   = 64 << 20 // 64 MiB total, generous for many profiles and the rare embedded driver
+	// MaxSetBytes bounds the total uncompressed size of every member. It is a
+	// sanity limit against a hostile archive, not a memory budget: members
+	// are streamed, never held in memory.
+	MaxSetBytes = 8 << 30 // 8 GiB
+	// maxSetMemberBytes bounds one member: the largest payload a bundle may
+	// carry plus generous room for its manifest and zip overhead.
+	maxSetMemberBytes = MaxPayloadBytes + 64<<20
+	// maxSetNoteBytes is the zip format's own archive-comment limit.
+	maxSetNoteBytes = 65535
 )
-
-// SetIndex is a set's own description of itself. It carries no profile
-// content directly -- each listed name is a nested, independently valid
-// bundle, byte-identical to the file it came from.
-type SetIndex struct {
-	Version   int      `json:"version"`
-	Created   string   `json:"created_utc"`
-	CreatedBy string   `json:"created_by,omitempty"`
-	Note      string   `json:"note,omitempty"`
-	Members   []string `json:"members"`
-}
-
-func (i SetIndex) validate() error {
-	if i.Version != SetVersion {
-		return fmt.Errorf("bundle: unsupported set version %d (expected %d)", i.Version, SetVersion)
-	}
-	if len(i.Members) == 0 {
-		return errors.New("bundle: set carries no members")
-	}
-	if len(i.Members) > MaxSetMembers {
-		return fmt.Errorf("bundle: set carries %d members, above the %d limit", len(i.Members), MaxSetMembers)
-	}
-	seen := make(map[string]bool, len(i.Members))
-	for _, name := range i.Members {
-		if err := validateMemberName(name); err != nil {
-			return err
-		}
-		key := strings.ToLower(name)
-		if seen[key] {
-			return fmt.Errorf("bundle: set lists %q more than once", name)
-		}
-		seen[key] = true
-	}
-	return nil
-}
 
 // validateMemberName applies the same plain-filename discipline a
 // destination directory needs, not the path-with-slashes discipline a
@@ -89,45 +64,53 @@ func validateMemberName(name string) error {
 	return nil
 }
 
-// SetMember is one bundle to embed, already read into memory and already
-// validated as a standalone bundle by the caller -- WriteSet packages bytes,
-// it does not itself decide what belongs in the set.
+// SetMember is one printer file to carry in a set.
 type SetMember struct {
-	Name string // e.g. "Office.ssb", exactly as it will read back out
-	Data []byte // the member's own complete, verbatim bundle bytes
+	Name string // "Office.ssb" -- a plain filename, exactly as it will read back out
+	Path string // the source .ssb on disk, copied verbatim (streamed, not loaded into memory)
 }
 
-// WriteSet packages several already-validated bundles into one file. It
-// never overwrites an existing file, matching Write's own guarantee for a
-// single bundle.
-func WriteSet(path string, index SetIndex, members []SetMember) error {
-	index.Version = SetVersion
-	if strings.TrimSpace(index.Created) == "" {
-		index.Created = time.Now().UTC().Format(time.RFC3339)
+// WriteSet packages several printer files into one set at path. It never
+// overwrites an existing file, and removes its own partial file on any
+// failure. Each member is validated as a bundle (Open+Verify) before it is
+// added; a duplicate name (case-insensitive, as Windows compares them) is
+// refused rather than silently renamed.
+func WriteSet(path, note string, members []SetMember) error {
+	if len(members) == 0 {
+		return errors.New("bundle: a printer set needs at least one printer file")
 	}
-	index.Members = make([]string, len(members))
-	var total int64
+	if len(members) > MaxSetMembers {
+		return fmt.Errorf("bundle: a printer set holds at most %d printer files (got %d)", MaxSetMembers, len(members))
+	}
+	if len(note) > maxSetNoteBytes {
+		return fmt.Errorf("bundle: the set note is longer than %d bytes", maxSetNoteBytes)
+	}
 	seen := make(map[string]bool, len(members))
-	for i, m := range members {
-		index.Members[i] = m.Name
-		if seen[strings.ToLower(m.Name)] {
-			return fmt.Errorf("bundle: set lists %q more than once", m.Name)
+	var total int64
+	for _, m := range members {
+		if err := validateMemberName(m.Name); err != nil {
+			return err
 		}
-		seen[strings.ToLower(m.Name)] = true
-		total += int64(len(m.Data))
+		key := strings.ToLower(m.Name)
+		if seen[key] {
+			return fmt.Errorf("bundle: the set would contain %q more than once", m.Name)
+		}
+		seen[key] = true
+		info, err := os.Stat(m.Path)
+		if err != nil {
+			return fmt.Errorf("bundle: %s: %w", m.Name, err)
+		}
+		if !info.Mode().IsRegular() {
+			return fmt.Errorf("bundle: %s: %s is not a regular file", m.Name, m.Path)
+		}
+		if info.Size() > maxSetMemberBytes {
+			return fmt.Errorf("bundle: %s is larger than any printer file can be (%d bytes)", m.Name, info.Size())
+		}
+		total += info.Size()
+		if total > MaxSetBytes {
+			return fmt.Errorf("bundle: the set would exceed the %d byte limit", int64(MaxSetBytes))
+		}
 	}
-	if total > MaxSetBytes {
-		return fmt.Errorf("bundle: set exceeds the %d byte limit", int64(MaxSetBytes))
-	}
-	if err := index.validate(); err != nil {
-		return err
-	}
-
-	indexJSON, err := json.MarshalIndent(index, "", "  ")
-	if err != nil {
-		return err
-	}
-	indexJSON = append(indexJSON, '\n')
 
 	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 		return err
@@ -136,6 +119,7 @@ func WriteSet(path string, index SetIndex, members []SetMember) error {
 	if err != nil {
 		return err
 	}
+	// A partially written set is worse than none: it looks applyable.
 	committed := false
 	defer func() {
 		f.Close()
@@ -145,19 +129,13 @@ func WriteSet(path string, index SetIndex, members []SetMember) error {
 	}()
 
 	zw := zip.NewWriter(f)
-	indexEntry, err := zw.Create(SetIndexName)
-	if err != nil {
-		return err
-	}
-	if _, err := indexEntry.Write(indexJSON); err != nil {
-		return err
-	}
-	for _, m := range members {
-		entry, err := zw.Create(SetMemberPath + m.Name)
-		if err != nil {
+	if note != "" {
+		if err := zw.SetComment(note); err != nil {
 			return err
 		}
-		if _, err := entry.Write(m.Data); err != nil {
+	}
+	for _, m := range members {
+		if err := addSetMember(zw, m); err != nil {
 			return err
 		}
 	}
@@ -171,75 +149,122 @@ func WriteSet(path string, index SetIndex, members []SetMember) error {
 	return nil
 }
 
-// Set is an opened, index-validated set. Members are read (and their own
-// bundle structure validated) on demand via Open.
-type Set struct {
-	Index  SetIndex
-	Path   string
-	reader *zip.ReadCloser
+// addSetMember validates one member as a bundle and streams it, verbatim,
+// into the archive -- through the same open handle, so what was checked is
+// what was copied.
+func addSetMember(zw *zip.Writer, m SetMember) error {
+	src, err := os.Open(m.Path)
+	if err != nil {
+		return fmt.Errorf("bundle: %s: %w", m.Name, err)
+	}
+	defer src.Close()
+	info, err := src.Stat()
+	if err != nil {
+		return fmt.Errorf("bundle: %s: %w", m.Name, err)
+	}
+	size := info.Size()
+	reader, err := zip.NewReader(src, size)
+	if err != nil {
+		return fmt.Errorf("bundle: %s is not a printer file: %w", m.Name, err)
+	}
+	opened, err := openReader(reader)
+	if err != nil {
+		return fmt.Errorf("bundle: %s: %w", m.Name, err)
+	}
+	if err := opened.Verify(); err != nil {
+		return fmt.Errorf("bundle: %s: %w", m.Name, err)
+	}
+	// Bundles are already compressed zips; storing them avoids paying to
+	// deflate hundreds of megabytes of driver files a second time.
+	entry, err := zw.CreateHeader(&zip.FileHeader{Name: m.Name, Method: zip.Store, Modified: info.ModTime()})
+	if err != nil {
+		return err
+	}
+	copied, err := io.Copy(entry, io.NewSectionReader(src, 0, size))
+	if err != nil {
+		return fmt.Errorf("bundle: copy %s: %w", m.Name, err)
+	}
+	if copied != size {
+		return fmt.Errorf("bundle: %s changed size while it was being copied", m.Name)
+	}
+	return nil
 }
 
-// OpenSet reads and validates a set's index. It does not open any member --
-// each member is only as trustworthy as its own Bundle.Validate/Verify, run
-// when that member is actually opened.
+// Set is an opened, structurally validated set. Members are only checked as
+// bundles when extracted.
+type Set struct {
+	Path    string
+	Note    string
+	Members []string // entry names in archive order
+
+	reader  *zip.ReadCloser
+	entries map[string]*zip.File
+}
+
+// OpenSet opens a set and checks its shape, failing closed: every file entry
+// must be a top-level .ssb with a safe name, directory entries are ignored,
+// and anything else -- a nested path, a non-.ssb file, no members at all, too
+// many, or two names differing only by case -- is refused with a plain
+// explanation.
 func OpenSet(path string) (*Set, error) {
 	reader, err := zip.OpenReader(path)
 	if err != nil {
-		return nil, fmt.Errorf("bundle: open %q: %w", path, err)
+		return nil, fmt.Errorf("%s is not a readable printer set (.zip): %w", filepath.Base(path), err)
 	}
-	entry, err := findEntry(&reader.Reader, SetIndexName)
+	members, entries, err := setMembers(&reader.Reader, filepath.Base(path))
 	if err != nil {
 		reader.Close()
 		return nil, err
 	}
-	rc, err := entry.Open()
-	if err != nil {
-		reader.Close()
-		return nil, err
-	}
-	decoder := json.NewDecoder(io.LimitReader(rc, MaxManifestBytes+1))
-	decoder.DisallowUnknownFields()
-	var idx SetIndex
-	decodeErr := decoder.Decode(&idx)
-	rc.Close()
-	if decodeErr != nil {
-		reader.Close()
-		return nil, fmt.Errorf("bundle: decode set index: %w", decodeErr)
-	}
-	var extra any
-	if err := decoder.Decode(&extra); err != io.EOF {
-		reader.Close()
-		return nil, errors.New("bundle: set index has trailing data or is oversized")
-	}
-	if err := idx.validate(); err != nil {
-		reader.Close()
-		return nil, err
-	}
-	expected := map[string]bool{SetIndexName: false}
-	for _, name := range idx.Members {
-		expected[SetMemberPath+name] = false
-	}
+	return &Set{Path: path, Note: reader.Comment, Members: members, reader: reader, entries: entries}, nil
+}
+
+// setMembers validates a zip as a set and returns its member names in archive
+// order.
+func setMembers(reader *zip.Reader, label string) ([]string, map[string]*zip.File, error) {
+	var members []string
+	entries := make(map[string]*zip.File)
+	seen := make(map[string]string)
+	var total uint64
 	for _, f := range reader.File {
-		if strings.HasSuffix(f.Name, "/") {
-			continue
+		name := f.Name
+		if strings.HasSuffix(name, "/") || f.FileInfo().IsDir() {
+			continue // directory entries carry no content
 		}
-		if _, ok := expected[f.Name]; !ok {
-			reader.Close()
-			return nil, fmt.Errorf("bundle: set contains %q, which the index does not list", f.Name)
+		if name == ManifestName {
+			return nil, nil, fmt.Errorf("%s is a single printer file, not a printer set", label)
 		}
-		if expected[f.Name] {
-			reader.Close()
-			return nil, fmt.Errorf("bundle: set contains %q more than once", f.Name)
+		if strings.ContainsAny(name, `/\`) {
+			return nil, nil, fmt.Errorf("%s is not a usable printer set: it contains %q inside a folder; a set holds .ssb printer files at its top level only", label, name)
 		}
-		expected[f.Name] = true
+		if !strings.EqualFold(filepath.Ext(name), ".ssb") {
+			return nil, nil, fmt.Errorf("%s is not a usable printer set: it contains %q, which is not a printer file (.ssb)", label, name)
+		}
+		if err := validateMemberName(name); err != nil {
+			return nil, nil, fmt.Errorf("%s is not a usable printer set: %w", label, err)
+		}
+		key := strings.ToLower(name)
+		if previous, dup := seen[key]; dup {
+			return nil, nil, fmt.Errorf("%s is not a usable printer set: it contains %q and %q, which are the same file name on Windows", label, previous, name)
+		}
+		seen[key] = name
+		if f.UncompressedSize64 > maxSetMemberBytes {
+			return nil, nil, fmt.Errorf("%s is not a usable printer set: %q is larger than any printer file can be", label, name)
+		}
+		total += f.UncompressedSize64
+		if total > MaxSetBytes {
+			return nil, nil, fmt.Errorf("%s is not a usable printer set: its printer files exceed the %d byte limit", label, int64(MaxSetBytes))
+		}
+		members = append(members, name)
+		entries[name] = f
+		if len(members) > MaxSetMembers {
+			return nil, nil, fmt.Errorf("%s is not a usable printer set: it holds more than %d printer files", label, MaxSetMembers)
+		}
 	}
-	for name, present := range expected {
-		if !present {
-			reader.Close()
-			return nil, fmt.Errorf("bundle: set is missing %q, which the index lists", name)
-		}
+	if len(members) == 0 {
+		return nil, nil, fmt.Errorf("%s is not a usable printer set: it contains no printer files (.ssb)", label)
 	}
-	return &Set{Index: idx, Path: path, reader: reader}, nil
+	return members, entries, nil
 }
 
 // Close releases the underlying archive.
@@ -250,35 +275,88 @@ func (s *Set) Close() error {
 	return s.reader.Close()
 }
 
-// MemberBytes returns one member's bytes exactly as embedded, unparsed.
-func (s *Set) MemberBytes(name string) ([]byte, error) {
-	entry, err := findEntry(&s.reader.Reader, SetMemberPath+name)
+// Extract streams one member, verbatim, to dir/name (never overwriting an
+// existing file), then opens and verifies it as a bundle. A member that is
+// not a valid bundle is removed again and reported. It returns the written
+// file's path.
+func (s *Set) Extract(name, dir string) (string, error) {
+	entry, ok := s.entries[name]
+	if !ok {
+		return "", fmt.Errorf("%s has no printer file named %q", filepath.Base(s.Path), name)
+	}
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		return "", err
+	}
+	target := filepath.Join(dir, name)
+	if err := extractEntry(entry, target); err != nil {
+		return "", fmt.Errorf("%s: %w", name, err)
+	}
+	opened, err := Open(target)
+	if err == nil {
+		err = opened.Verify()
+		opened.Close()
+	}
 	if err != nil {
-		return nil, fmt.Errorf("bundle: set has no member %q", name)
+		os.Remove(target)
+		return "", fmt.Errorf("%s is not a valid printer file: %w", name, err)
 	}
-	rc, err := entry.Open()
-	if err != nil {
-		return nil, err
-	}
-	defer rc.Close()
-	limit := int64(MaxSetBytes) + 1
-	data, err := io.ReadAll(io.LimitReader(rc, limit))
-	if err != nil {
-		return nil, err
-	}
-	if int64(len(data)) >= limit {
-		return nil, fmt.Errorf("bundle: member %q exceeds the set size limit", name)
-	}
-	return data, nil
+	return target, nil
 }
 
-// Open reads one member's bytes and opens it as a standalone bundle, so
-// every existing single-bundle check (Manifest.Validate, Verify, driver
-// staging) runs on it unmodified.
-func (s *Set) Open(name string) (*Bundle, error) {
-	data, err := s.MemberBytes(name)
+func extractEntry(entry *zip.File, target string) (err error) {
+	rc, err := entry.Open()
 	if err != nil {
-		return nil, err
+		return err
 	}
-	return OpenBytes(data)
+	defer rc.Close()
+	out, err := os.OpenFile(target, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		closeErr := out.Close()
+		if err == nil {
+			err = closeErr
+		}
+		if err != nil {
+			os.Remove(target)
+		}
+	}()
+	// Read one byte past the declared size so an entry that decompresses to
+	// more than it claims is caught rather than silently truncated.
+	written, err := io.Copy(out, io.LimitReader(rc, int64(entry.UncompressedSize64)+1))
+	if err != nil {
+		return err
+	}
+	if uint64(written) != entry.UncompressedSize64 {
+		return fmt.Errorf("decompressed to %d bytes but the archive declares %d", written, entry.UncompressedSize64)
+	}
+	return nil
+}
+
+// IsSet reports whether path is a printer set rather than a single printer
+// file, by content rather than extension: a zip carrying the bundle manifest
+// is a single printer (false); a zip whose entries are all .ssb members is a
+// set (true); anything else, or an unreadable file, is an error.
+func IsSet(path string) (bool, error) {
+	reader, err := zip.OpenReader(path)
+	if err != nil {
+		return false, fmt.Errorf("%s is not a printer file (.ssb) or printer set (.zip): %w", filepath.Base(path), err)
+	}
+	defer reader.Close()
+	for _, f := range reader.File {
+		if f.Name == ManifestName {
+			return false, nil
+		}
+	}
+	if _, _, err := setMembers(&reader.Reader, filepath.Base(path)); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+// DefaultSetName is a timestamped set filename for when the operator names
+// none, e.g. SpoolSmith-printers-20260923-141500.zip.
+func DefaultSetName(now time.Time) string {
+	return "SpoolSmith-printers-" + now.Format("20060102-150405") + SetExt
 }

@@ -10,7 +10,7 @@ identification and driver guidance.
 **The current release (see [VERSION](VERSION) and [releases/](releases/) for exactly which)
 includes the command-line tool and the native Windows desktop app.** The desktop mirrors the
 copy, apply, installed-printer inventory, address-change, offline setup, local-status and
-Intune-packaging workflows. Saved setups can be exported and imported in bulk as JSON.
+Intune-packaging workflows. Saved setups use .ssb printer files and can be exported and imported together as a set.
 
 The underlying copy and offline workflows have real Windows 11 validation; see
 [Current limitations](#current-limitations) for the validation boundaries, and
@@ -18,6 +18,17 @@ The underlying copy and offline workflows have real Windows 11 validation; see
 remain outside the shipped surface. Intune packaging (below) is local-only Win32-app
 export from both the CLI and the desktop GUI — it does not sign in to a tenant or
 upload/assign anything.
+
+## Upgrading to v1.1
+
+Every saved printer now uses an `.ssb` bundle, with optional driver files, and
+several printers travel together as a printer set: a plain `.zip` of `.ssb` files.
+Copies include the driver whenever they can (`--settings-only` opts out).
+Existing `.ssb` bundles remain supported. Older bare-JSON profiles and JSON
+library exports are no longer read. Keep them for reference and recreate each
+setup by copying its installed queue or running `profile capture` with its
+address and driver. Renaming a JSON file does not convert it. Existing Windows
+printers are unaffected by upgrading SpoolSmith.
 
 ## Copy a printer from one PC to another
 
@@ -32,27 +43,38 @@ spoolsmith printers
 
 # Copy one of them. Omit the queue name to pick from a numbered list;
 # omit the file name to have it named after the queue.
-spoolsmith copy "Accounting" accounting.ssb --include-driver
+spoolsmith copy "Accounting" accounting.ssb
 ```
 
-`--include-driver` exports the driver package out of the Windows driver store so the target PC
-does not need it beforehand. It requires an elevated prompt, and SpoolSmith checks that before
-doing any other work. Without it the bundle carries the mapping only, and the target PC must
-already have that driver registered.
+A `.ssb` is one printer. The copy includes the driver whenever it can: SpoolSmith exports
+the driver package out of the Windows driver store so the target PC does not need it
+beforehand. That export needs an elevated prompt. When it can't happen (not elevated, the
+export fails, or the package is above the 1 GiB bundle limit), the copy still succeeds as
+settings only and says why; the target PC must then already have that driver registered.
+`--settings-only` always leaves the driver out. `--include-driver` is no longer needed and
+is accepted as a no-op with a note.
 
-For a PC replacement with several printers, copy every supported queue in one pass:
+For a PC replacement with several printers, copy every supported queue in one pass into
+one **printer set**:
 
 ```powershell
-spoolsmith copy --all printer-copies --include-driver
+spoolsmith copy --all printers.zip
 ```
 
-The desktop source build also offers **This PC → Copy all printers...** with a
-folder picker, driver choice, progress, a stop control and results for every printer.
-Completed files survive a failed or stopped batch; existing files are never replaced.
-Copy results as JSON for your ticket. Apply each `.ssb` on the destination using the
-normal reviewed-plan workflow below. See [the UX pass record](docs/validation/2026-09-18-technician-ux.md).
+A printer set is a plain `.zip` with one `.ssb` per printer at its root, nothing else. Omit
+the name to get `SpoolSmith-printers-<date>-<time>.zip` in the current folder. Each printer
+gets its own `.ssb` (duplicate names get `-2`, `-3` suffixes) and carries its driver where
+possible, exactly as a single copy would. A queue that can't be reproduced is skipped with a
+reason; one that fails doesn't stop the others. Stopping the copy (Ctrl+C) saves no set, and
+an existing file is never replaced. `--note` is stored as the zip comment. Zipping `.ssb`
+files yourself (for example with Explorer's **Compress to ZIP file**) also makes a valid set.
 
-Copy `accounting.ssb` to the other PC however you normally move a file, then:
+The desktop offers the same through **This PC → Copy all printers...**: a **Save set as**
+`.zip` name, **Include each printer's driver where possible** (on by default), progress, a
+stop control and a result for every printer. **Copy results** puts a plain-text report on
+the clipboard for your ticket.
+
+Copy `accounting.ssb` (or the set) to the other PC however you normally move a file, then:
 
 ```powershell
 # Read the bundle without touching the network or this PC
@@ -61,17 +83,34 @@ spoolsmith bundle inspect accounting.ssb
 # Preview against the real printer, then apply after one confirmation
 spoolsmith apply accounting.ssb --dry-run
 spoolsmith apply accounting.ssb
+
+# A printer set: list its printers, then apply them one at a time
+spoolsmith bundle inspect printers.zip
+spoolsmith apply printers.zip --dry-run
+spoolsmith apply printers.zip
+spoolsmith apply printers.zip --member Accounting
 ```
+
+With a set, every printer gets its own plan and its own confirmation, exactly as if its
+`.ssb` had been applied alone; one confirmation never covers several printers. `--member`
+picks one printer by file name (with or without `.ssb`). A summary at the end lists each
+printer's result.
 
 `apply` re-checks the printer's live identity against what was captured at copy time, so it
 fails closed if the address now answers as a different device. When the printer is not
-reachable — a client site you are preparing for, a machine on another VLAN — `apply --offline`
-skips that check and says so in the plan before you confirm it.
+reachable or cannot confirm its identity, setup automatically falls back to offline
+and says so in the plan before you confirm it. `apply --offline` skips the live check
+from the start. Copying an unreachable printer still saves Windows queue settings,
+with its identity clearly marked unconfirmed.
 
 A bundle is a plain zip: a manifest carrying configuration and provenance, and optionally the
 exported driver files, each listed with its size and SHA-256 and verified on extraction. It
 contains no commands. The hashes are tamper-evidence, not a signature — the trust anchor for a
-driver payload is Windows' own catalog signature check when `pnputil` stages the INF.
+driver payload is Windows' own catalog signature check when `pnputil` stages the INF. Because
+copies now include drivers by default, this is the check that decides whether a driver
+exported from another PC gets installed: a payload that fails its hashes or the Windows
+signature check is refused. Use `--settings-only` when the destination should rely on a
+driver you install yourself.
 
 ### Rolling the same reviewed setup out to several PCs
 
@@ -85,7 +124,8 @@ spoolsmith apply accounting.ssb --plan-hash 5364...
 ```
 
 This is narrower than `--yes`, not broader: `--yes` accepts whatever plan the machine computes,
-sight unseen.
+sight unseen. A fingerprint names one printer's plan, so with a multi-printer set, pair
+`--plan-hash` with `--member <name>`.
 
 ### Queues that cannot be copied
 
@@ -106,51 +146,58 @@ For developers building the desktop from source:
 go build -ldflags="-H windowsgui" -o dist/spoolsmith-gui.exe ./cmd/spoolsmith-gui
 ```
 
+A sidebar on the left lists every page in the order the work happens: **This PC**,
+**Add a printer** and **Review and apply**, then a **Tools** group with **Intune
+package**, **Inspect**, **Driver catalog** and **Action log**. The window opens at
+1060×720 and can shrink to 960×640.
+
 The app opens on **This PC**, showing Windows' installed printers. Select one to
-**Copy to a file**, **Change address**, or **Remove printer**. Copying includes the
-driver by default (the CLI's `copy` is the opposite: pass `--include-driver` explicitly);
-either way, exporting driver files requires administrator rights.
+**Copy to a file**, **Change address**, or **Remove printer**. **Include the driver where
+possible** is on by default, as on the CLI. Exporting driver files requires administrator
+rights; without elevation, or when the export fails, the copy is saved with settings only
+and the result says why. Clear the checkbox for a settings-only copy.
 
 **Add a printer** combines network discovery and printer settings. Enter a subnet
 and **Scan**, or enter one address and choose **Use IP directly**. Choose a compatible
 installed driver and **Save and review**, or use **Use catalog identification instead...**
 to have SpoolSmith derive the name and driver itself from the catalog, ignoring whatever
-you typed. **Open a copied printer (.ssb)...** reads a copied bundle (the CLI's
-`bundle inspect` reads one without applying it); **More options** on the review screen
-offers offline setup and updating an existing queue. **Tools → Inspect** can also verify
-a bundle and show its complete manifest without contacting the printer.
-**Tools → Build an Intune printer app...** packages a reviewed profile into a
-local, reviewable Win32 app bundle — see [Intune packaging](#intune-packaging).
+you typed. **Open a printer file...** opens a copied `.ssb`, or a printer set `.zip`: a set
+opens a **Printer set** list where you pick one printer at a time, and each goes through its
+own review and confirmation (the CLI's `bundle inspect` reads either without applying it); **More options** on the review screen
+offers offline setup and updating an existing queue. **Inspect** (under Tools in the
+sidebar) can also verify a bundle and show its complete manifest without contacting
+the printer. **Intune package → Build an Intune printer app...** packages a reviewed
+profile into a local, reviewable Win32 app bundle — see [Intune packaging](#intune-packaging).
 
 **Open a saved setup** lists reusable profiles. Set up, update, remove, edit with a
 backup, or **Check status** against local Windows configuration. Status does not
 prove reachability or printing. **Open another folder** switches the profile library.
 The default library sits beside the executable; `SPOOLSMITH_PROFILES_DIR` can override it.
 
-**Export all...** saves every printer file in the current folder into one versioned
-collection (a set — the same bundle container, carrying each `.ssb` member verbatim).
-**Import all...** validates the entire collection, preserves every member byte for
-byte, and refuses existing filenames (including case-only clashes).
-In the source build, both actions show a review of filenames, printer settings,
-external archive references and destination conflicts. Choose another destination
-within the review; importing switches the library to that folder after saving.
-Import saves files only; each Windows change still needs review and confirmation.
-A saved printer carrying its own embedded driver payload (from `copy --include-driver`)
-is not eligible for this transfer — copy it to a file directly instead. A referenced
-vendor archive is not embedded either: carry it separately and preserve its relative
-path beside the imported profiles. Keep collection exports outside the profile folder.
+**Export all...** saves every `.ssb` in the current folder into one printer set (`.zip`),
+byte for byte, including any driver a file carries. **Import all...** validates every
+printer in a set, extracts each one byte for byte, and refuses existing filenames
+(including case-only clashes). Both actions show a review of filenames, printer settings,
+whether each carries a driver, external archive references and destination conflicts.
+The transfer is pinned to what you reviewed: a printer file or set that changes after the
+review is refused, and you review again. Choose another destination within the review;
+importing switches the library to that folder after saving. Import saves files only; each
+Windows change still needs review and confirmation. A referenced vendor archive
+(`driver_package`) is a path, not an embedded driver: carry it separately and preserve its
+relative path beside the imported printers. Keep set exports outside the saved-setup folder.
 
 The CLI exposes the same transfer:
 
 ```powershell
-spoolsmith profile export-all profiles printer-setups.ssb --dry-run
-spoolsmith profile export-all profiles printer-setups.ssb
-spoolsmith profile import-all printer-setups.ssb imported-profiles --dry-run
-spoolsmith profile import-all printer-setups.ssb imported-profiles
+spoolsmith profile export-all profiles printer-setups.zip --dry-run
+spoolsmith profile export-all profiles printer-setups.zip
+spoolsmith profile import-all printer-setups.zip imported-profiles --dry-run
+spoolsmith profile import-all printer-setups.zip imported-profiles
 ```
 
-Transfer `--dry-run` is also new in the source build. It writes no files and reports
-all filename conflicts. Actual imports recheck the destination before writing.
+Transfer `--dry-run` writes no files and reports all filename conflicts. Actual imports
+recheck the destination before writing. A set holds at most 1,000 printers; each printer
+file keeps its own 1 GiB driver-payload limit.
 
 ### Desktop tests
 
@@ -173,7 +220,7 @@ manual workflow rather than a required CI gate.
 `SPOOLSMITH_CAPTURE_SITE_SHOTS=1` additionally regenerates the product site's
 screenshots from the running app.
 
-**Preview changes** shows the proposed changes; **Full plan / JSON** adds commands
+**Preview changes** shows the proposed changes; **Full plan details** adds commands
 and preflight details, and **Scan details** holds the raw discovery output.
 Execution requires confirmation, and changing any input invalidates the preview.
 The shared workflow also rejects a changed plan during execution. Run as
@@ -375,7 +422,7 @@ Read this before pointing SpoolSmith at a printer you actually depend on:
   can derive the local subnet or accept a single IP. Discovery does not automatically
   cross VLANs or implement multicast discovery. Candidates are not certified printers.
 - **Copy and apply were tested on one Windows 11 PC (build 26200).** Confirmed against
-  real hardware: listing queues; `copy --include-driver` exporting a 115-file, 25.9 MB Brother
+  real hardware: listing queues; `copy` with driver export exporting a 115-file, 25.9 MB Brother
   package; bundle write, re-read and hash verification; `apply --dry-run` matching the live
   printer's identity to the capture; `apply` running idempotently; a reviewed plan fingerprint
   accepted and a wrong one refused. The driver-staging path was then proved directly: with the
@@ -394,7 +441,14 @@ Read this before pointing SpoolSmith at a printer you actually depend on:
 - **A copied bundle carries driver files from another machine's driver store.** That is a
   different provenance from the vendor-installer path: the bundle's hashes detect corruption and
   casual edits, and Windows' own driver-signing enforcement is what actually gates staging. Treat
-  a bundle as trusted exactly as much as the machine it came from.
+  a bundle as trusted exactly as much as the machine it came from. Since v1.1 copies and
+  printer sets carry drivers by default, so this applies to most copies; use
+  `--settings-only` (or clear the desktop's driver checkbox) when you'd rather install the
+  driver yourself.
+- **Printer-set handling is covered by Go tests, not yet by a physical transfer.** Writing
+  and reading `.zip` sets, `copy --all` into one set, per-printer `apply` of a set and
+  `export-all`/`import-all` are exercised by automated tests; the desktop suite and
+  screenshots still need a re-run for the set dialogs.
 - **Live discovery, add and repeated add are verified with a Brother HL-L2315D.**
   Real Windows queue/port reads confirmed the mapping and repeat-add no-op behavior.
   The operator also observed a successful physical test print. Native Windows offline
@@ -440,7 +494,10 @@ MIT — see [LICENSE](LICENSE).
 screen and the Intune wizard all mean the same thing: skip contacting and
 identity-checking the printer, and use a saved profile's settings as-is.
 
-Prevalidated profiles can provision a queue before the printer is reachable:
+Saved printer files automatically fall back to offline provisioning if the printer
+is unreachable or its identity cannot be confirmed. Identity conflicts still stop
+setup. The plan reports fallback before confirmation. To skip the live check
+from the start, request offline setup explicitly:
 
 ```powershell
 spoolsmith add --profile .\profiles\accounting.ssb --offline --dry-run --json
@@ -486,9 +543,11 @@ provisioning and adoption still require explicit choices.
 review, repeat without it to export; supply the reviewed `--binary-sha256` and
 `--output` when you need to fix those across separate invocations. For an
 interactive review and separate export confirmation, use `intune wizard` or
-the desktop GUI’s Tools tab → **Build an Intune printer app...**. The GUI has two
-pages: settings and review/export, with optional metadata and policy under
-**Advanced settings**. Both wizards retain the reviewed payload pins until export.
+the desktop GUI’s **Intune package** page → **Build an Intune printer app...**. The
+desktop wizard has two steps: **Package settings**, then **Review and export**, which
+only **Validate and preview package** reaches; optional metadata and policy sit under
+**Advanced settings**, and **Back to settings** discards the review. Both wizards
+retain the reviewed payload pins until export.
 
 When Microsoft’s own `IntuneWinAppUtil.exe` sits beside `spoolsmith.exe` (or
 `spoolsmith-gui.exe`), the CLI, `intune wizard` and the desktop wizard find it and
@@ -496,7 +555,7 @@ also produce the `.intunewin` file, in a new `<export folder>-intunewin` folder.
 `--content-prep-tool`/`--content-prep-output` (or the desktop review page’s tool
 and output fields) point elsewhere; `--no-content-prep` skips it. Without the
 tool, `README.txt` in the export names the exact command to run it yourself.
-The CLI must be a Windows x64 SpoolSmith build with the `intune-endpoint-v1`
+The CLI must be a Windows x64 SpoolSmith build with the `SpoolSmith:intune-endpoint-v2:ssb,offline,status`
 capability marker (`spoolsmith capabilities`); older, unrelated and GUI binaries
 are refused. Payload hashes are pinned and rechecked at export.
 

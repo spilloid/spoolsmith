@@ -147,9 +147,10 @@ func run(ctx context.Context, args []string, input io.Reader, stdout, stderr io.
 		if len(args) != 2 {
 			return usageError(stdout, stderr, "inspect", errors.New("inspect requires exactly one target"))
 		}
-		// A .ssb target is the same job `bundle inspect` already does -- one
-		// command name, not two commands that overlap on one file type.
-		if strings.EqualFold(filepath.Ext(args[1]), ".ssb") {
+		// A printer file (.ssb) or printer set (.zip) is the same job `bundle
+		// inspect` already does -- one command name, not two commands that
+		// overlap on one file type. runBundle itself dispatches on content.
+		if ext := filepath.Ext(args[1]); strings.EqualFold(ext, ".ssb") || strings.EqualFold(ext, bundle.SetExt) {
 			return runBundle([]string{"inspect", args[1]}, stdout, stderr)
 		}
 		result, err := inspect.Target(ctx, args[1])
@@ -413,20 +414,18 @@ var commandUsage = map[string]string{
 	"capabilities": "spoolsmith capabilities                    this build's intune-endpoint capability marker\n",
 	"drivers":      "spoolsmith drivers                         exact registered Windows driver names\n",
 	"discover":     "spoolsmith discover <IPv4-CIDR>            /24 through /32\n",
-	"inspect":      "spoolsmith inspect <target>                target is an IP address, a fixture file, or a .ssb bundle\n",
+	"inspect":      "spoolsmith inspect <target>                target is an IP address, a fixture file, a printer file (.ssb) or a printer set (.zip)\n",
 	"catalog":      "spoolsmith catalog probe <ip> | catalog families\n",
 	"printers":     "spoolsmith printers [--copyable] [--json]   installed queues, and which can be copied\n",
 	"status":       "spoolsmith status --profile <file> [--json] local configuration only, no network\n",
-	"copy": "spoolsmith copy [<queue>] [<bundle-file>] [--include-driver] [--note <text>]\n" +
-		"spoolsmith copy --all [<output-dir>] [--include-driver] [--note <text>]\n" +
-		"Omit <queue> to choose from a numbered list; omit <bundle-file> to name it after the queue.\n" +
-		"--all bundles every copyable queue into <output-dir> (default: the current directory),\n" +
-		"skipping and reporting a reason for any queue that can't be reproduced.\n",
-	"apply": "spoolsmith apply <bundle-file> [--dry-run] [--offline] [--update]\n" +
-		"                                [--plan-hash <fingerprint>] [--yes] [--non-interactive] [--json]\n",
-	"bundle": "spoolsmith bundle inspect <bundle-file>    read a bundle, touching nothing\n",
-	"profile": "spoolsmith profile export-all <folder> <collection.json> [--dry-run]\n" +
-		"spoolsmith profile import-all <collection.json> <folder> [--dry-run]\n" +
+	"copy":         copyUsage,
+	"apply": "spoolsmith apply <file.ssb|set.zip> [--member <name>] [--dry-run] [--offline] [--update]\n" +
+		"                                [--plan-hash <fingerprint>] [--yes] [--non-interactive] [--json]\n" +
+		"A .ssb is one printer; a .zip is a printer set. Each printer in a set gets its own plan and\n" +
+		"its own confirmation; --member applies just one of them.\n",
+	"bundle": "spoolsmith bundle inspect <file.ssb|set.zip>  read a printer file or printer set, touching nothing\n",
+	"profile": "spoolsmith profile export-all <folder> <set.zip> [--dry-run]\n" +
+		"spoolsmith profile import-all <set.zip> <folder> [--dry-run]\n" +
 		"--dry-run reviews filenames, printer settings and destination conflicts without writing files.\n" +
 		"spoolsmith profile capture <target> <file> --name <queue> --driver <installed-driver-name>\n" +
 		"spoolsmith profile edit <file> [--name <queue>] [--driver <name>] [--target <ip>]\n" +
@@ -446,6 +445,17 @@ var commandUsage = map[string]string{
 		"Never signs in to a tenant or uploads anything; `intune build --help` lists every flag.\n",
 }
 
+// copyUsage is shared by `copy --help` and the full listing.
+const copyUsage = "spoolsmith copy [<queue>] [--out <file.ssb>] [--settings-only] [--note <text>]\n" +
+	"spoolsmith copy --all [--out <printers.zip>] [--settings-only] [--note <text>]\n" +
+	"A .ssb is one printer; a .zip is a printer set holding several .ssb files.\n" +
+	"The driver is included whenever it can be (it needs administrator rights); otherwise the\n" +
+	"copy carries the settings only and says why. --settings-only always leaves the driver out.\n" +
+	"Omit <queue> to choose from a numbered list; omit --out to name the file after the queue.\n" +
+	"--all copies every copyable queue into one printer set (default name:\n" +
+	"SpoolSmith-printers-<date>-<time>.zip in the current folder), skipping and reporting a\n" +
+	"reason for any queue that can't be reproduced.\n"
+
 func init() {
 	commandUsage["clone"] = commandUsage["copy"]
 }
@@ -459,21 +469,20 @@ func printUsage(writer io.Writer) {
 	fmt.Fprintln(writer, "  spoolsmith status --profile <file> [--json] local configuration only, no network")
 	fmt.Fprintln(writer, "")
 	fmt.Fprintln(writer, "Copy a printer from one PC to another")
-	fmt.Fprintln(writer, "  spoolsmith copy [<queue>] [<bundle-file>] [--include-driver] [--note <text>]")
-	fmt.Fprintln(writer, "  spoolsmith copy --all [<output-dir>] [--include-driver] [--note <text>]")
-	fmt.Fprintln(writer, "  spoolsmith apply <bundle-file> [--dry-run] [--offline] [--update]")
+	for _, line := range strings.Split(strings.TrimSuffix(copyUsage, "\n"), "\n") {
+		fmt.Fprintln(writer, "  "+line)
+	}
+	fmt.Fprintln(writer, "  spoolsmith apply <file.ssb|set.zip> [--member <name>] [--dry-run] [--offline] [--update]")
 	fmt.Fprintln(writer, "                                 [--plan-hash <fingerprint>] [--yes] [--non-interactive] [--json]")
-	fmt.Fprintln(writer, "  spoolsmith bundle inspect <bundle-file>    read a bundle, touching nothing")
-	fmt.Fprintln(writer, "  Omit <queue> to choose from a numbered list; omit <bundle-file> to name it after the queue.")
-	fmt.Fprintln(writer, "  --all bundles every copyable queue into <output-dir> (default: the current directory),")
-	fmt.Fprintln(writer, "  skipping and reporting a reason for any queue that can't be reproduced.")
+	fmt.Fprintln(writer, "  spoolsmith bundle inspect <file.ssb|set.zip>  read a printer file or printer set, touching nothing")
+	fmt.Fprintln(writer, "  Each printer in a set gets its own plan and its own confirmation.")
 	fmt.Fprintln(writer, "")
 	fmt.Fprintln(writer, "Find and save a printer")
 	fmt.Fprintln(writer, "  spoolsmith discover <IPv4-CIDR>            /24 through /32")
 	fmt.Fprintln(writer, "  spoolsmith inspect <target>")
 	fmt.Fprintln(writer, "  spoolsmith catalog probe <ip> | catalog families")
-	fmt.Fprintln(writer, "  spoolsmith profile export-all <folder> <collection.json> [--dry-run]")
-	fmt.Fprintln(writer, "  spoolsmith profile import-all <collection.json> <folder> [--dry-run]")
+	fmt.Fprintln(writer, "  spoolsmith profile export-all <folder> <set.zip> [--dry-run]")
+	fmt.Fprintln(writer, "  spoolsmith profile import-all <set.zip> <folder> [--dry-run]")
 	fmt.Fprintln(writer, "  spoolsmith profile capture <target> <file> --name <queue> --driver <installed-driver-name>")
 	fmt.Fprintln(writer, "  spoolsmith profile edit <file> [--name <queue>] [--driver <name>] [--target <ip>]")
 	fmt.Fprintln(writer, "  spoolsmith profile edit <file> [--package <recipe-id> --archive <local-file> | --clear-package]")

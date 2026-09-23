@@ -57,9 +57,18 @@ function Assert-Hash([string]$Path,[string]$Expected) {
     Assert-PlainPath $Path
     if ((Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash -ne $Expected) { throw ('Payload hash mismatch: ' + $Path) }
 }
+# Each stored revision retains its matching CLI and profile format. This lets
+# current scripts inspect/remove old revisions without converting their payloads.
+function Payload-ProfileName($Manifest) {
+    switch ($Manifest.format) {
+        1 { return 'profile.json' }
+        2 { return 'profile.ssb' }
+        default { throw ('Unsupported deployment format: ' + $Manifest.format) }
+    }
+}
 function Assert-Payload([string]$Directory,$Manifest) {
     Assert-Hash (Join-Path $Directory 'spoolsmith.exe') $Manifest.binary_sha256
-    Assert-Hash (Join-Path $Directory 'profile.json') $Manifest.profile_sha256
+    Assert-Hash (Join-Path $Directory (Payload-ProfileName $Manifest)) $Manifest.profile_sha256
     if ($Manifest.driver_sha256) { Assert-Hash (Join-Path $Directory 'driver.exe') $Manifest.driver_sha256 }
     if ($Manifest.bundle_sha256) { Assert-Hash (Join-Path $Directory 'bundle.ssb') $Manifest.bundle_sha256 }
 }
@@ -75,33 +84,63 @@ function Invoke-SpoolSmith([string]$Directory,[string]$Operation,[bool]$Offline,
     # A profile sourced from a .ssb bundle carries its driver payload only
     # inside that bundle. `apply` reopens it and runs the same catalog-
     # signature-checked staging `spoolsmith copy`/`apply` already use on the
-    # CLI; `install`/`configure` never learned that trust path, so mutating
-    # operations route through `apply` here instead when a bundle is present.
-    # Detection and removal never touch the driver payload either way and
-    # keep using the plain profile.
+    # CLI. Mutating operations use the original payload bundle; status and
+    # removal use the settings-only profile.ssb with the same reviewed settings.
     if ($manifest.bundle_sha256 -and $Operation -in @('add','configure')) {
         $arguments = @('apply',('"' + (Join-Path $Directory 'bundle.ssb') + '"'),'--json')
         if ($Operation -eq 'configure') { $arguments += '--update' }
     } else {
-        $arguments = @($Operation,'--profile',('"' + (Join-Path $Directory 'profile.json') + '"'),'--json')
+        $arguments = @($Operation,'--profile',('"' + (Join-Path $Directory (Payload-ProfileName $manifest)) + '"'),'--json')
     }
     if ($Operation -ne 'status') { $arguments += @('--yes','--non-interactive') }
     if ($Offline -and $Operation -ne 'status' -and $Operation -ne 'remove') { $arguments += '--offline' }
-    $process = Start-Process -FilePath (Join-Path $Directory 'spoolsmith.exe') -ArgumentList $arguments -PassThru -NoNewWindow -RedirectStandardOutput $outFile -RedirectStandardError $errFile
-    # Windows PowerShell 5.1 can lose ExitCode after WaitForExit unless the
-    # process handle has been cached first. Reproduced with both exit 0 and 3.
-    $processHandle = $process.Handle
-    if (-not $process.WaitForExit(600000)) {
-        & (Join-Path $env:SystemRoot 'System32\taskkill.exe') /PID $process.Id /T /F | Out-Null
-        return @{Code=1460; Data=$null; Error='Timed out after ten minutes; review durable logs before retry'}
+    # Own the Process from creation: Start-Process -PassThru can hand back an
+    # already-exited process without a usable exit-code handle on Windows PS 5.1.
+    # Drain both pipes asynchronously into durable files so neither can block
+    # a verbose CLI while the timeout is being enforced.
+    $start = New-Object Diagnostics.ProcessStartInfo
+    $start.FileName = Join-Path $Directory 'spoolsmith.exe'
+    $start.Arguments = $arguments -join ' '
+    $start.WorkingDirectory = $Directory
+    $start.UseShellExecute = $false
+    $start.CreateNoWindow = $true
+    $start.RedirectStandardOutput = $true
+    $start.RedirectStandardError = $true
+    $process = New-Object Diagnostics.Process
+    $process.StartInfo = $start
+    $stdoutStream=$null; $stderrStream=$null; $drained=$false
+    $timer=[Diagnostics.Stopwatch]::StartNew()
+    try {
+        $stdoutStream=[IO.File]::Open($outFile,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::Read)
+        $stderrStream=[IO.File]::Open($errFile,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::Read)
+        if (-not $process.Start()) { throw 'Could not start the SpoolSmith CLI' }
+        $copyOut=$process.StandardOutput.BaseStream.CopyToAsync($stdoutStream)
+        $copyErr=$process.StandardError.BaseStream.CopyToAsync($stderrStream)
+        $timedOut=-not $process.WaitForExit(600000)
+        if ($timedOut) {
+            & (Join-Path $env:SystemRoot 'System32\taskkill.exe') /PID $process.Id /T /F | Out-Null
+            $null=$process.WaitForExit(5000)
+            $code=1460
+        } else {
+            $code=$process.ExitCode
+        }
+        # Preserve the native verdict even if logging fails. A surviving pipe
+        # writer must not extend the operation indefinitely after the CLI exits.
+        $drainMs=[int][Math]::Max(0,[Math]::Min(30000,600000-$timer.ElapsedMilliseconds))
+        try { $drained=[Threading.Tasks.Task]::WaitAll([Threading.Tasks.Task[]]@($copyOut,$copyErr),$drainMs) } catch { $drained=$false }
+    } finally {
+        if ($null -ne $stdoutStream) { $stdoutStream.Dispose() }
+        if ($null -ne $stderrStream) { $stderrStream.Dispose() }
+        $process.Dispose()
     }
-    $process.WaitForExit()
-    $code=$process.ExitCode
-    $process.Dispose()
+    if ($timedOut) { return @{Code=1460; Data=$null; Error='Timed out after ten minutes; review durable logs before retry'} }
     if ($null -eq $code) { throw 'Native process exited without a readable exit code; refusing to report success' }
     $data=$null
     if (Test-Path -LiteralPath $outFile) { try { $data=Read-JSON $outFile } catch {} }
-    return @{Code=$code; Data=$data; Error=(Get-Content -LiteralPath $errFile -Raw -Encoding UTF8)}
+    $diagnostic=''
+    try { $diagnostic=[string](Get-Content -LiteralPath $errFile -Raw -Encoding UTF8) } catch { $drained=$false }
+    if (-not $drained) { $diagnostic += '; durable log may be truncated' }
+    return @{Code=$code; Data=$data; Error=$diagnostic}
 }
 function Is-Matching([string]$Directory,[string]$Logs) {
     $result = Invoke-SpoolSmith $Directory 'status' $false $Logs

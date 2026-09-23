@@ -109,7 +109,7 @@ func TestAutomaticPinStillVerifiesCLIIdentity(t *testing.T) {
 		{"wrong command", "select the SpoolSmith CLI", func(b []byte) []byte {
 			return bytes.ReplaceAll(b, []byte("/cmd/spoolsmith"), []byte("/cmd/otherxxxxx"))
 		}},
-		{"old CLI", "lacks offline/status", func(b []byte) []byte {
+		{"old CLI", "lacks .ssb endpoint support", func(b []byte) []byte {
 			return bytes.ReplaceAll(b, []byte(EndpointCapability), bytes.Repeat([]byte("x"), len(EndpointCapability)))
 		}},
 	} {

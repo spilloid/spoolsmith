@@ -2,7 +2,6 @@ package bundle
 
 import (
 	"archive/zip"
-	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -182,11 +181,10 @@ func hashFile(p string) (string, error) {
 // verified until Verify or Extract runs.
 type Bundle struct {
 	Manifest Manifest
-	// Path is the source file's path, empty for a bundle opened from memory
-	// (OpenBytes) rather than from disk.
+	// Path is the source file's path.
 	Path   string
 	reader *zip.Reader
-	closer io.Closer // nil for a bundle opened from memory
+	closer io.Closer
 }
 
 // Open reads and validates a bundle's manifest from a file. It does not
@@ -204,17 +202,6 @@ func Open(bundlePath string) (*Bundle, error) {
 	b.Path = bundlePath
 	b.closer = rc
 	return b, nil
-}
-
-// OpenBytes reads and validates a bundle already held in memory, such as one
-// member of a saved-setups collection extracted without ever touching disk.
-// It shares every check Open makes; only the source differs.
-func OpenBytes(data []byte) (*Bundle, error) {
-	reader, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
-	if err != nil {
-		return nil, fmt.Errorf("bundle: open: %w", err)
-	}
-	return openReader(reader)
 }
 
 func openReader(reader *zip.Reader) (*Bundle, error) {
@@ -246,8 +233,7 @@ func openReader(reader *zip.Reader) (*Bundle, error) {
 	return &Bundle{Manifest: m, reader: reader}, nil
 }
 
-// Close releases the underlying archive. A bundle opened with OpenBytes has
-// nothing to release.
+// Close releases the underlying archive.
 func (b *Bundle) Close() error {
 	if b == nil || b.closer == nil {
 		return nil

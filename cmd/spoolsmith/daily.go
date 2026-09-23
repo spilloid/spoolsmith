@@ -103,7 +103,7 @@ func runProfileTransfer(args []string, stdout, stderr io.Writer) int {
 		}
 	}
 	if len(paths) != 2 {
-		return usageError(stdout, stderr, command, errors.New("use profile export-all <folder> <collection.ssb> [--dry-run] or profile import-all <collection.ssb> <folder> [--dry-run]"))
+		return usageError(stdout, stderr, command, errors.New("use profile export-all <folder> <set.zip> [--dry-run] or profile import-all <set.zip> <folder> [--dry-run]"))
 	}
 	var transfer *profileset.Transfer
 	var err error

@@ -14,21 +14,6 @@ import (
 	. "github.com/tailscale/walk/declarative"
 )
 
-// Four tabs, in the order the work actually happens: look at what this PC
-// has, add something to it, review the change, and everything else.
-//
-// The previous five tabs numbered themselves "1." "2." "3." as though they
-// were a wizard, while an unnumbered fourth sat between two of them and the
-// tab strip let you start anywhere. Finding a printer and choosing its
-// settings were two tabs for one continuous task, so the app changed tabs
-// under the operator mid-thought.
-const (
-	tabThisPC = iota
-	tabAdd
-	tabReview
-	tabTools
-)
-
 func pagePadding() VBox {
 	return VBox{Margins: Margins{Left: 12, Top: 10, Right: 12, Bottom: 10}, Spacing: 7}
 }
@@ -39,7 +24,13 @@ func formGrid(columns int) Grid { return Grid{Columns: columns, Spacing: 6} }
 // clients can identify them independently of their current values.
 func name(id string) Accessibility { return Accessibility{Name: id} }
 func heading(text string) Label {
-	return Label{Text: text, Font: Font{Family: "Segoe UI", PointSize: 15, Bold: true}, TextColor: walk.RGB(24, 76, 133)}
+	return Label{Text: text, Font: Font{Family: "Segoe UI", PointSize: 15, Bold: true}, TextColor: colorBrand}
+}
+
+// contentPage is one screen of the main window. Only the current page is
+// visible; the sidebar decides which.
+func contentPage(a *app, p page, children ...Widget) Composite {
+	return Composite{AssignTo: &a.pages[p], Background: SolidColorBrush{Color: colorPage}, Layout: pagePadding(), Children: children}
 }
 
 func main() {
@@ -57,19 +48,25 @@ func main() {
 	}
 	mainWindow := MainWindow{
 		AssignTo: &a.mw, Title: "SpoolSmith",
-		Background: SolidColorBrush{Color: walk.RGB(245, 247, 251)},
+		Background: SolidColorBrush{Color: colorPage},
 		Font:       Font{Family: "Segoe UI", PointSize: 10},
-		MinSize:    Size{Width: 820, Height: 620}, Size: Size{Width: 900, Height: 660},
-		Layout: VBox{MarginsZero: true, Spacing: 0},
+		MinSize:    Size{Width: 960, Height: 640}, Size: Size{Width: 1060, Height: 720},
+		Layout: VBox{MarginsZero: true, SpacingZero: true},
 		Children: []Widget{
-			Composite{Background: SolidColorBrush{Color: walk.RGB(24, 76, 133)}, Layout: pagePadding(), Children: []Widget{
+			Composite{Background: SolidColorBrush{Color: colorBrand}, Layout: pagePadding(), Children: []Widget{
 				Composite{Layout: row(), Children: []Widget{
 					Label{Text: "SpoolSmith", TextColor: walk.RGB(255, 255, 255), Font: Font{Family: "Segoe UI", PointSize: 18, Bold: true}},
 					HSpacer{}, Label{Text: "Printers, ready to carry.", TextColor: walk.RGB(230, 240, 255)},
 				}},
 			}},
-			TabWidget{AssignTo: &a.tabs, Pages: []TabPage{
-				thisPCPage(a), addPage(a), mutatePage(a), toolsPage(a),
+			Composite{Layout: HBox{MarginsZero: true, SpacingZero: true}, Children: []Widget{
+				Composite{AssignTo: &a.navHost, Background: SolidColorBrush{Color: colorSidebar},
+					MinSize: Size{Width: 190}, MaxSize: Size{Width: 190},
+					Layout: VBox{Margins: Margins{Top: 10}, SpacingZero: true}},
+				Composite{Background: SolidColorBrush{Color: colorDivider}, MinSize: Size{Width: 1}, MaxSize: Size{Width: 1}},
+				Composite{Background: SolidColorBrush{Color: colorPage}, Layout: VBox{MarginsZero: true, SpacingZero: true}, Children: []Widget{
+					thisPCPage(a), addPage(a), mutatePage(a), intunePage(a), inspectPage(a), catalogPage(a), logPage(a),
+				}},
 			}},
 			Composite{Layout: HBox{Margins: Margins{Left: 12, Top: 4, Right: 12, Bottom: 6}}, Children: []Widget{
 				Label{AssignTo: &a.accessStatus, Text: "You can find printers and save settings without changing Windows."},
@@ -79,23 +76,18 @@ func main() {
 	if err := mainWindow.Create(); err != nil {
 		log.Fatal(err)
 	}
-	// Hide Walk's empty native toolbar and attach the completed control tree
-	// so every nested tab descendant receives its own native control ID.
+	// Hide Walk's empty native toolbar.
 	a.mw.ToolBar().SetVisible(false)
-	parent := a.tabs.Parent()
-	tabIndex := parent.Children().Index(a.tabs)
-	if err := a.tabs.SetParent(nil); err != nil {
+	if err := a.buildNav(); err != nil {
 		log.Fatal(err)
 	}
-	if err := parent.Children().Insert(tabIndex, a.tabs); err != nil {
-		log.Fatal(err)
-	}
-	a.tabs.SetVisible(true)
 	a.bindMutationInputs()
 	a.initializePrinters()
 	a.initializeThisPC()
 	a.initializeReview()
 	applyStyle(a)
+	a.goTo(pageThisPC)
+	a.nav.SetFocus()
 	a.startNetworkDiscovery()
 	guiApp.Run()
 }
@@ -115,9 +107,9 @@ func (a *app) showDetails(title, text string) {
 	var closeButton, copyButton *walk.PushButton
 	err := (Dialog{
 		AssignTo: &dialog, Title: title,
-		MinSize: Size{Width: 600, Height: 400}, Size: Size{Width: 800, Height: 560}, Layout: pagePadding(),
+		MinSize: Size{Width: 600, Height: 400}, Size: Size{Width: 800, Height: 560}, Background: SolidColorBrush{Color: colorPage}, Layout: dialogLayout(),
 		DefaultButton: &closeButton, CancelButton: &closeButton,
-		Children: []Widget{
+		Children: dialogFrame(title,
 			TextEdit{Text: text, ReadOnly: true, VScroll: true, HScroll: true, Font: Font{Family: "Consolas", PointSize: 10}},
 			Composite{Layout: row(), Children: []Widget{
 				PushButton{AssignTo: &copyButton, Text: "Copy", OnClicked: func() {
@@ -129,7 +121,7 @@ func (a *app) showDetails(title, text string) {
 				}},
 				HSpacer{}, PushButton{AssignTo: &closeButton, Text: "Close", OnClicked: func() { dialog.Accept() }},
 			}},
-		},
+		),
 	}).Create(a.mw)
 	if err != nil {
 		showErr(a.mw, title, err)
@@ -140,7 +132,7 @@ func (a *app) showDetails(title, text string) {
 
 func (a *app) onPlanDetails() {
 	if a.previewJSON != "" {
-		a.showDetails("Full plan and result / JSON", a.previewJSON)
+		a.showDetails("Full plan and result", a.previewJSON)
 	}
 }
 
@@ -152,8 +144,8 @@ func (a *app) onPlanDetails() {
 // app navigated for you at the moment you were concentrating, and the settings
 // tab was reachable while empty. Here the settings appear underneath the
 // printer you picked, and the page is honest when nothing is picked yet.
-func addPage(a *app) TabPage {
-	return TabPage{Title: "Add a printer", Background: SolidColorBrush{Color: walk.RGB(250, 251, 253)}, Layout: pagePadding(), Children: []Widget{
+func addPage(a *app) Composite {
+	return contentPage(a, pageAdd,
 		heading("Add a printer to this PC"),
 		Label{Text: "Find it on the network, or open a printer file or saved setup."},
 		Composite{AssignTo: &a.searchGroup, Layout: VBox{MarginsZero: true, Spacing: 10}, Children: []Widget{
@@ -180,7 +172,7 @@ func addPage(a *app) TabPage {
 				PushButton{AssignTo: &a.discoverUseBtn, Text: "Use this printer", Enabled: false, OnClicked: a.onUseDiscovered},
 				PushButton{AssignTo: &a.discoverDetailsBtn, Text: "Scan details", Enabled: false, OnClicked: a.onDiscoveryDetails},
 				HSpacer{},
-				PushButton{Text: "Open a copied printer (.ssb)...", OnClicked: a.onOpenBundle},
+				PushButton{Text: "Open a printer file...", OnClicked: a.onOpenBundle},
 				PushButton{Text: "Open a saved setup...", OnClicked: a.onOpenSavedSetup},
 			}},
 			TextEdit{AssignTo: &a.discoverOut, Text: "Preparing discovery...", ReadOnly: true, VScroll: true,
@@ -209,7 +201,7 @@ func addPage(a *app) TabPage {
 			}},
 		}},
 		VSpacer{},
-	}}
+	)
 }
 
 // mutatePage states the one thing about to happen, instead of asking the
@@ -219,8 +211,8 @@ func addPage(a *app) TabPage {
 // text field that meant a profile path, a queue name or an IP address depending
 // on which radio was active. All of that restated a decision already made by
 // whichever button opened this screen.
-func mutatePage(a *app) TabPage {
-	return TabPage{Title: "Review and apply", Background: SolidColorBrush{Color: walk.RGB(250, 251, 253)}, Layout: pagePadding(), Children: []Widget{
+func mutatePage(a *app) Composite {
+	return contentPage(a, pageReview,
 		heading("Review your change"),
 		Label{AssignTo: &a.summaryLabel, Text: "Choose a printer from This PC, or add one, to see its changes here.",
 			Font: Font{Family: "Segoe UI", PointSize: 11}, Accessibility: name("review-summary")},
@@ -245,50 +237,73 @@ func mutatePage(a *app) TabPage {
 		}},
 		TextEdit{AssignTo: &a.planOut, Text: "Your preview will appear here. No changes are made until you review and confirm them.", ReadOnly: true, VScroll: true, Accessibility: name("mutate-output")},
 		Composite{Layout: row(), Children: []Widget{
-			PushButton{Text: "This PC", OnClicked: func() { a.tabs.SetCurrentIndex(tabThisPC) }},
-			PushButton{AssignTo: &a.planDetailsBtn, Text: "Full plan / JSON", Enabled: false, OnClicked: a.onPlanDetails},
+			PushButton{Text: "This PC", OnClicked: func() { a.goTo(pageThisPC) }},
+			PushButton{AssignTo: &a.planDetailsBtn, Text: "Full plan details", Enabled: false, OnClicked: a.onPlanDetails},
 			HSpacer{}, PushButton{AssignTo: &a.executeBtn, Text: "Apply", Enabled: false, OnClicked: a.onExecute},
 		}},
-	}}
+	)
 }
 
-func toolsPage(a *app) TabPage {
-	return TabPage{Title: "Tools", Layout: pagePadding(), Children: []Widget{
-		heading("Printer diagnostics"),
-		Label{Text: "Inspect device evidence, explore the driver catalog, or review recent activity."},
-		TabWidget{Pages: []TabPage{inspectPage(a), catalogPage(a), logPage(a)}},
+// intunePage gives Intune packaging its own place in the sidebar. It used to
+// be one button at the foot of the Tools tab, under a nested tab strip.
+func intunePage(a *app) Composite {
+	return contentPage(a, pageIntune,
+		heading("Package a printer for Intune"),
+		Label{Text: "Turn a saved printer (.ssb) into a Windows app (Win32) for Intune, deployed as Required or offered in Company Portal."},
 		Composite{Layout: row(), Children: []Widget{
 			PushButton{AssignTo: &a.intuneBtn, Text: "Build an Intune printer app...", OnClicked: a.onIntuneWizard},
-			Label{Text: "Packages install/uninstall/detect scripts and a README locally — no tenant sign-in, no printer changes. Same packaging as the CLI's intune build/wizard."},
 			HSpacer{},
 		}},
-	}}
+		// Like every other page, the page ends in a text area that fills it; a
+		// page of labels alone is not wide enough to span the window.
+		TextEdit{ReadOnly: true, Accessibility: name("intune-about"), Text: lines(intuneAbout)},
+	)
 }
-func inspectPage(a *app) TabPage {
-	return TabPage{Title: "Inspect", Layout: pagePadding(), Children: []Widget{
+
+func inspectPage(a *app) Composite {
+	return contentPage(a, pageInspect,
+		heading("Inspect a printer"),
+		Label{Text: "See what a printer reports about itself and which driver family it resolves to. Nothing is installed."},
 		Composite{Layout: row(), Children: []Widget{
-			Label{Text: "IP, fixture or .ssb file:"}, LineEdit{AssignTo: &a.inspectTarget, Accessibility: name("inspect-target")},
+			Label{Text: "IP, .ssb or .zip:"}, LineEdit{AssignTo: &a.inspectTarget, Accessibility: name("inspect-target")},
 			PushButton{AssignTo: &a.inspectBtn, Text: "Inspect", OnClicked: a.onInspect},
 		}},
 		TextEdit{AssignTo: &a.inspectOut, ReadOnly: true, VScroll: true, HScroll: true, Accessibility: name("inspect-output")},
-	}}
+	)
 }
-func catalogPage(a *app) TabPage {
-	return TabPage{Title: "Catalog", Layout: pagePadding(), Children: []Widget{
+
+func catalogPage(a *app) Composite {
+	return contentPage(a, pageCatalog,
+		heading("Driver catalog"),
+		Label{Text: "List the printer families SpoolSmith can identify, or probe one address to see how it matches."},
 		Composite{Layout: row(), Children: []Widget{
 			PushButton{AssignTo: &a.familiesBtn, Text: "List families", OnClicked: a.onFamilies},
 			Label{Text: "Printer IP:"}, LineEdit{AssignTo: &a.probeTarget, Accessibility: name("catalog-probe-target")},
 			PushButton{AssignTo: &a.probeBtn, Text: "Probe", OnClicked: a.onProbe},
 		}},
 		TextEdit{AssignTo: &a.catalogOut, ReadOnly: true, VScroll: true, HScroll: true, Accessibility: name("catalog-output")},
-	}}
+	)
 }
-func logPage(a *app) TabPage {
-	return TabPage{Title: "Action log", Layout: pagePadding(), Children: []Widget{
+
+func logPage(a *app) Composite {
+	return contentPage(a, pageLog,
+		heading("Action log"),
+		Label{Text: "Everything SpoolSmith has done on this PC, newest last."},
 		Composite{Layout: row(), Children: []Widget{
 			PushButton{AssignTo: &a.refreshLog, Text: "Refresh", OnClicked: a.onRefreshLog},
 			PushButton{AssignTo: &a.openLogPath, Text: "Show log file path", OnClicked: a.onOpenLogPath},
 		}},
 		TextEdit{AssignTo: &a.logOut, ReadOnly: true, VScroll: true, HScroll: true, Accessibility: name("log-output")},
-	}}
+	)
 }
+
+const intuneAbout = `What the package contains
+  - install, uninstall and detection scripts, and a README with the exact commands
+  - the printer's .ssb and the SpoolSmith CLI you approve, pinned by hash
+  - optionally, the .intunewin, made with Microsoft's Win32 Content Prep Tool
+
+What it never does
+  - sign in to a tenant, upload, or assign; those stay in the Intune admin center
+  - change this PC's printers
+
+The same packaging as the CLI's intune build and intune wizard.`

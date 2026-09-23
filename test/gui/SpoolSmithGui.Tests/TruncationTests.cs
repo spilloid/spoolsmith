@@ -23,7 +23,7 @@ public sealed class TruncationTests : IDisposable
     private static readonly ControlType[] TextBearingTypes =
     {
         ControlType.Button, ControlType.CheckBox, ControlType.RadioButton,
-        ControlType.Text, ControlType.Group, ControlType.TabItem,
+        ControlType.Text, ControlType.Group, ControlType.ListItem,
     };
 
     // Native glyphs have descriptive accessibility names that are not painted.
@@ -40,7 +40,7 @@ public sealed class TruncationTests : IDisposable
     {
         get
         {
-            foreach (var tab in new[] { "This PC", "Add a printer", "Review and apply", "Inspect", "Catalog", "Action log" })
+            foreach (var tab in AppFixture.Pages)
             {
                 yield return new object[] { tab, false, false };
                 yield return new object[] { tab, true, false };
@@ -59,9 +59,9 @@ public sealed class TruncationTests : IDisposable
             var hwnd = _fixture.MainWindow.Properties.NativeWindowHandle.Value;
             var scale = GetDpiForWindow(hwnd) / 96.0;
             Assert.True(SetWindowPos(hwnd, IntPtr.Zero, 20, 20,
-                (int)Math.Round(820 * scale), (int)Math.Round(620 * scale), 0x0004));
+                (int)Math.Round(960 * scale), (int)Math.Round(640 * scale), 0x0004));
         }
-        _fixture.SelectTab(tabTitle);
+        _fixture.GoTo(tabTitle);
         if (advanced)
         {
             _fixture.MainWindow.FindFirstDescendant(cf => cf.ByName("More options"))!.AsCheckBox().Click();
@@ -112,7 +112,7 @@ public sealed class TruncationTests : IDisposable
                 needed.Width += element.ControlType switch
                 {
                     ControlType.CheckBox or ControlType.RadioButton => 20,
-                    ControlType.Button or ControlType.TabItem => 10,
+                    ControlType.Button or ControlType.ListItem => 10,
                     ControlType.Group => 12,
                     _ => 0,
                 };

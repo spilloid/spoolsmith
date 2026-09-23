@@ -32,7 +32,7 @@ var templates embed.FS
 
 // EndpointCapability is emitted by compatible CLIs and prevents accidentally
 // packaging older releases that lack the endpoint contract.
-const EndpointCapability = "SpoolSmith:intune-endpoint-v1:offline,status"
+const EndpointCapability = "SpoolSmith:intune-endpoint-v2:ssb,offline,status"
 
 type Options struct {
 	ProfilePath        string
@@ -199,7 +199,7 @@ func Prepare(o Options) (*Prepared, error) {
 	if err := checkCapability(o.BinaryPath); err != nil {
 		return nil, err
 	}
-	m := Manifest{Format: 1, ID: o.ID, Revision: o.Revision, DisplayName: o.DisplayName, Description: o.Description, Location: o.Location, Architecture: "amd64", Offline: o.Offline, Adopt: o.Adopt, DriverPrerequisite: o.DriverPrerequisite, BinarySHA256: binaryHash}
+	m := Manifest{Format: 2, ID: o.ID, Revision: o.Revision, DisplayName: o.DisplayName, Description: o.Description, Location: o.Location, Architecture: "amd64", Offline: o.Offline, Adopt: o.Adopt, DriverPrerequisite: o.DriverPrerequisite, BinarySHA256: binaryHash}
 	sources := map[string]string{"spoolsmith.exe": o.BinaryPath}
 	if p.DriverPackage != nil {
 		hash, e := p.DriverPackage.PackageSHA256(p.DriverName)
@@ -219,11 +219,10 @@ func Prepare(o Options) (*Prepared, error) {
 		m.BundleSHA256 = loaded.BundleHash
 		sources["bundle.ssb"] = o.ProfilePath
 	}
-	profileBytes, err := json.MarshalIndent(p, "", "  ")
+	profileBytes, err := printerFileBytes(p)
 	if err != nil {
 		return nil, err
 	}
-	profileBytes = append(profileBytes, '\n')
 	m.Profile = p
 	m.ProfileSHA256 = digest(profileBytes)
 	// The config digest binds deployment policy and payloads, excluding presentation.
@@ -235,7 +234,7 @@ func Prepare(o Options) (*Prepared, error) {
 	m.ConfigSHA256 = digest(config)
 	m.InstallCommand = `powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File install.ps1`
 	m.UninstallCommand = `powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "& (Join-Path ([Environment]::GetFolderPath('CommonApplicationData')) 'SpoolSmith\Deployments\` + o.ID + `\uninstall.ps1')"`
-	m.Files = []string{"deployment.json", "profile.json", "spoolsmith.exe", "install.ps1", "uninstall.ps1", "detect.ps1", "runtime.ps1", "README.txt"}
+	m.Files = []string{"deployment.json", "profile.ssb", "spoolsmith.exe", "install.ps1", "uninstall.ps1", "detect.ps1", "runtime.ps1", "README.txt"}
 	if p.DriverPackage != nil {
 		m.Files = append(m.Files, "driver.exe")
 	}
@@ -243,7 +242,7 @@ func Prepare(o Options) (*Prepared, error) {
 		m.Files = append(m.Files, "bundle.ssb")
 	}
 	manifestBytes, _ := json.MarshalIndent(m, "", "  ")
-	files := map[string][]byte{"profile.json": profileBytes, "deployment.json": append(manifestBytes, '\n')}
+	files := map[string][]byte{"profile.ssb": profileBytes, "deployment.json": append(manifestBytes, '\n')}
 	for _, name := range []string{"install.ps1", "uninstall.ps1", "detect.ps1", "runtime.ps1", "README.txt"} {
 		source, e := templates.ReadFile("templates/" + name)
 		if e != nil {
@@ -297,6 +296,22 @@ func (p *Prepared) Export(destination string) error {
 	return nil
 }
 
+// Use the same writer as capture and editing; the endpoint CLI reads only bundles.
+func printerFileBytes(p install.Profile) ([]byte, error) {
+	dir, err := os.MkdirTemp("", "spoolsmith-intune-profile-")
+	if err != nil {
+		return nil, err
+	}
+	defer os.RemoveAll(dir)
+	path := filepath.Join(dir, "profile.ssb")
+	// This generated projection has no capture time of its own. A fixed timestamp
+	// keeps its bytes and payload hash stable across identical packaging runs.
+	if err := bundle.Write(path, bundle.Manifest{Profile: p, Created: "1980-01-01T00:00:00Z"}, ""); err != nil {
+		return nil, err
+	}
+	return os.ReadFile(path)
+}
+
 func digest(b []byte) string { h := sha256.Sum256(b); return hex.EncodeToString(h[:]) }
 
 func checkCapability(path string) error {
@@ -325,7 +340,7 @@ func checkCapability(path string) error {
 			carry = data
 		}
 	}
-	return errors.New("CLI lacks offline/status endpoint support; build the current source before packaging")
+	return errors.New("CLI lacks .ssb endpoint support; select the v1.1.0 or newer CLI from the same release as the packager")
 }
 
 // HashBinary computes a local payload pin for review. Prepare additionally

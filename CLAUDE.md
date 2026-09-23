@@ -2,6 +2,29 @@
 
 ## Project Mission
 
+**Operator update, 2026-09-23:** ".ssb is the first-class printer
+import/export representation, and zip is the collective of such." This
+supersedes the set/driver bullets of the 2026-09-22 update below (those were
+never released; v1.0.1 is the latest tag, so there is no compatibility shim):
+- A **set** is a plain `.zip` whose file entries are all top-level `.ssb`
+  bundles -- exactly what Explorer's "Compress to ZIP folder" makes from
+  `.ssb` files. No `set.json` index, no `members/` folder; the optional note is
+  the zip archive comment. `internal/bundle`'s `WriteSet`/`OpenSet`/
+  `Set.Extract`/`IsSet` stream members verbatim (never in memory) and fail
+  closed on nested paths, non-`.ssb` entries, unsafe/duplicate names, or an
+  empty/oversized set. Dispatch is on content (`IsSet`), not extension.
+- **Drivers are preferred, not opt-in.** `copy`/`bundle.Create` tries to embed
+  the driver by default and only falls back to a settings-only bundle -- still
+  a successful copy -- when it can't (not elevated, export failure), reporting
+  why in `CreateResult.DriverNotIncluded`. `--settings-only`/`SettingsOnly` is
+  the explicit opt-out; `--include-driver` is a deprecated no-op. Sets carry
+  members with embedded drivers verbatim (the old refusal is gone).
+- `copy --all` writes **one set** (`.zip`), never a folder; name collisions get
+  `-2`, `-3` suffixes. `apply <set.zip>` runs each member's own plan and own
+  single confirmation (`--member` picks one); a set never widens one
+  confirmation to cover several printers. `profile export-all`/`import-all`
+  read and write `.zip` sets.
+
 **Operator update, 2026-09-22 (later same day):** there is exactly one on-disk
 printer-file format now: a bundle (package `internal/bundle`, extension
 `.ssb`), optionally carrying a driver payload. The bare-JSON profile format
@@ -78,7 +101,8 @@ operation outright:
   still fails outright.
 
 **Operator update, 2026-09-17 (v0.7.0 track):** the desktop GUI's Intune wizard
-("Build an Intune printer app..." on the Tools tab) is now enabled — it calls the
+("Build an Intune printer app..." on the Tools tab — since v1.1.0, on the
+sidebar's **Intune package** page) is now enabled — it calls the
 same `internal/intune` `Prepare`/`Export` the CLI's `intune build`/`wizard` uses,
 so it's the same local-only packaging surface, not new scope. Real Windows
 validation is in `docs/validation/2026-09-17-gui-intune-wizard.md`. Tenant

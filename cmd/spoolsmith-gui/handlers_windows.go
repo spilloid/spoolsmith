@@ -28,8 +28,8 @@ type app struct {
 	printerUI
 	reviewUI
 	thisPCUI
+	navUI
 	mw       *walk.MainWindow
-	tabs     *walk.TabWidget
 	workflow install.Workflow
 	env      install.Environment
 	logger   *actionlog.Logger
@@ -146,13 +146,34 @@ func showErr(owner walk.Form, title string, err error) {
 func (a *app) onInspect() {
 	target := strings.TrimSpace(a.inspectTarget.Text())
 	if target == "" {
-		showErr(a.mw, "Inspect", fmt.Errorf("enter a target IP address, fixture file path, or .ssb bundle file"))
+		showErr(a.mw, "Inspect", fmt.Errorf("enter a printer IP address, a fixture file, a printer file (.ssb) or a printer set (.zip)"))
 		return
 	}
 	a.inspectBtn.SetEnabled(false)
 	a.inspectOut.SetText("Inspecting...")
 	start := time.Now()
 	go func() {
+		if strings.EqualFold(filepath.Ext(target), bundle.SetExt) {
+			entries, note, err := extractSet(target)
+			var text string
+			if err != nil {
+				text = "Error: " + err.Error()
+			} else {
+				var b strings.Builder
+				fmt.Fprintf(&b, "Printer set: %s\r\n%s\r\n", target, countPrinters(len(entries)))
+				if note != "" {
+					fmt.Fprintf(&b, "Note: %s\r\n", note)
+				}
+				for _, entry := range entries {
+					fmt.Fprintf(&b, "\r\n%s\r\n  %s", filepath.Base(entry.path), entry.label)
+				}
+				b.WriteString("\r\n\r\nThis checks each printer file, not the printers. Open the set from Add a printer to review one.")
+				text = b.String()
+			}
+			a.log("gui", "bundle inspect", []string{target}, statusOf(err), err, start)
+			a.mw.Synchronize(func() { a.inspectBtn.SetEnabled(true); a.inspectOut.SetText(text) })
+			return
+		}
 		if strings.EqualFold(filepath.Ext(target), ".ssb") {
 			opened, err := bundle.Open(target)
 			var text string

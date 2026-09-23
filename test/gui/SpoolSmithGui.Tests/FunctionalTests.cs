@@ -37,9 +37,12 @@ public sealed class FunctionalTests : IDisposable
     {
         Assert.Equal("SpoolSmith", _fixture.MainWindow.Title);
         Assert.False(Find(_fixture.MainWindow, "thispc-list").IsOffscreen);
-        var visibleTabs = _fixture.MainWindow.FindAllDescendants(cf => cf.ByControlType(ControlType.TabItem))
-            .Where(tab => !tab.IsOffscreen).Select(tab => tab.Name).ToArray();
-        Assert.Equal(new[] { "This PC", "Add a printer", "Review and apply", "Tools" }, visibleTabs);
+        // The sidebar replaced the tab strips: every page is listed, and no tab
+        // control remains anywhere in the window.
+        var nav = Find(_fixture.MainWindow, "navigation");
+        var items = nav.FindAllDescendants(cf => cf.ByControlType(ControlType.ListItem)).Select(i => i.Name).ToArray();
+        Assert.Equal(AppFixture.Pages, items);
+        Assert.Empty(_fixture.MainWindow.FindAllDescendants(cf => cf.ByControlType(ControlType.Tab)));
     }
 
     [StaFact]
@@ -59,8 +62,8 @@ public sealed class FunctionalTests : IDisposable
         Window? dialog = null;
         WaitUntil(() => (dialog = _fixture.MainWindow.ModalWindows.Concat(_fixture.App.GetAllTopLevelWindows(_fixture.Automation))
             .FirstOrDefault(w => w.Title == "Copy all printers")) != null, "Bulk copy did not open.");
-        var folder = Path.Combine(_testDirectory, "cancelled-export");
-        SetText(Find(dialog!, "copy-all-folder").AsTextBox(), folder);
+        var setFile = Path.Combine(_testDirectory, "cancelled-export.zip");
+        SetText(Find(dialog!, "copy-all-file").AsTextBox(), setFile);
         Assert.Contains("will be skipped", Find(dialog!, "copy-all-details").AsTextBox().Text);
         // Native checkboxes report their visible caption as their UIA Name
         // regardless of an Accessibility.Name override (confirmed against a
@@ -70,17 +73,17 @@ public sealed class FunctionalTests : IDisposable
         var driverCheckbox = dialog!.FindFirstDescendant(cf => cf.ByControlType(ControlType.CheckBox));
         Assert.NotNull(driverCheckbox);
         Assert.False(driverCheckbox!.IsOffscreen);
-        Assert.False(FindButton(dialog!, "Copy results / JSON").IsEnabled);
+        Assert.False(FindButton(dialog!, "Copy results").IsEnabled);
         Assert.True(FindButton(dialog!, "Copy printers").IsEnabled);
         FindButton(dialog!, "Cancel").Invoke();
         WaitUntil(() => _fixture.MainWindow.IsEnabled, "Bulk copy did not close.");
-        Assert.False(Directory.Exists(folder));
+        Assert.False(File.Exists(setFile));
     }
 
     [StaFact]
     public void Scan_completes_and_populates_discovery_results()
     {
-        _fixture.SelectTab("Add a printer");
+        _fixture.GoTo("Add a printer");
         // CI only probes loopback. A local operator can opt into a real subnet
         // and require a known candidate to appear in the native results list.
         var cidr = Environment.GetEnvironmentVariable("SPOOLSMITH_DISCOVERY_CIDR") ?? "127.0.0.1/32";
@@ -106,7 +109,7 @@ public sealed class FunctionalTests : IDisposable
     [StaFact]
     public void Catalog_list_families_populates_output()
     {
-        _fixture.SelectTab("Catalog");
+        _fixture.GoTo("Driver catalog");
 
         var button = FindButton(_fixture.MainWindow, "List families");
         var output = Find(_fixture.MainWindow, "catalog-output").AsTextBox();
@@ -120,7 +123,7 @@ public sealed class FunctionalTests : IDisposable
     [StaFact]
     public void Inspect_fixture_file_resolves_a_family()
     {
-        _fixture.SelectTab("Inspect");
+        _fixture.GoTo("Inspect");
 
         var target = Find(_fixture.MainWindow, "inspect-target").AsTextBox();
         var button = FindButton(_fixture.MainWindow, "Inspect");
@@ -147,7 +150,7 @@ public sealed class FunctionalTests : IDisposable
     [StaFact]
     public void Empty_review_cannot_enable_execution()
     {
-        _fixture.SelectTab("Review and apply");
+        _fixture.GoTo("Review and apply");
         Assert.False(FindButton(_fixture.MainWindow, "Apply").IsEnabled);
         Assert.False(FindButton(_fixture.MainWindow, "Preview changes").IsEnabled);
     }
@@ -155,7 +158,7 @@ public sealed class FunctionalTests : IDisposable
     [StaFact]
     public void Direct_IP_opens_settings_on_the_same_page()
     {
-        _fixture.SelectTab("Add a printer");
+        _fixture.GoTo("Add a printer");
         SetText(Find(_fixture.MainWindow, "discover-cidr").AsTextBox(), "192.0.2.40");
         FindButton(_fixture.MainWindow, "Use IP directly").Invoke();
         WaitUntil(() => !IsHidden("capture-target"), "Settings did not open.");
@@ -167,9 +170,9 @@ public sealed class FunctionalTests : IDisposable
     [StaFact]
     public void Optional_panels_stay_hidden_until_requested()
     {
-        _fixture.SelectTab("Add a printer");
+        _fixture.GoTo("Add a printer");
         Assert.True(IsHidden("capture-target"));
-        _fixture.SelectTab("Review and apply");
+        _fixture.GoTo("Review and apply");
         Assert.True(IsHidden("Preview only (never apply)"));
         Find(_fixture.MainWindow, "More options").AsCheckBox().Click();
         WaitUntil(() => !IsHidden("Preview only (never apply)"), "More options did not open.");
@@ -185,7 +188,7 @@ public sealed class FunctionalTests : IDisposable
 
     private Window OpenSavedSetups()
     {
-        _fixture.SelectTab("Add a printer");
+        _fixture.GoTo("Add a printer");
         FindButton(_fixture.MainWindow, "Open a saved setup...").Invoke();
         Window? dialog = null;
         try { WaitUntil(() => (dialog = _fixture.MainWindow.ModalWindows.Concat(_fixture.App.GetAllTopLevelWindows(_fixture.Automation))
@@ -269,12 +272,12 @@ public sealed class FunctionalTests : IDisposable
         WaitForText(output, t => t.Contains("Unable to continue"), 60_000);
         Assert.Contains("driver", output.Text, StringComparison.OrdinalIgnoreCase);
         Assert.False(FindButton(_fixture.MainWindow, "Add printer").IsEnabled);
-        Assert.True(FindButton(_fixture.MainWindow, "Full plan / JSON").IsEnabled);
+        Assert.True(FindButton(_fixture.MainWindow, "Full plan details").IsEnabled);
     }
 
     private Window OpenIntuneWizard()
     {
-        _fixture.SelectTab("Tools");
+        _fixture.GoTo("Intune package");
         FindButton(_fixture.MainWindow, "Build an Intune printer app...").Invoke();
         Window? dialog = null;
         try
@@ -292,7 +295,7 @@ public sealed class FunctionalTests : IDisposable
     [StaFact]
     public void Intune_wizard_button_is_enabled_and_opens_dialog()
     {
-        _fixture.SelectTab("Tools");
+        _fixture.GoTo("Intune package");
         Assert.True(FindButton(_fixture.MainWindow, "Build an Intune printer app...").IsEnabled);
 
         var dialog = OpenIntuneWizard();
@@ -360,21 +363,17 @@ public sealed class FunctionalTests : IDisposable
             // Returning to settings must invalidate approval, even without edits.
             FindButton(dialog, "Back to settings").Invoke();
             FindVisibleIntuneControl(dialog, "intune-profile");
-            // Do not query a button under a programmatically hidden TabPage.
-            // Reopen review WITHOUT validating: this must not restore approval.
-            SelectIntuneReviewPage(dialog);
-            Assert.False(FindButton(dialog, "Export reviewed package").IsEnabled);
-            Assert.False(Directory.Exists(outputDir), "returning to review exported an unconfirmed package");
-            FindButton(dialog, "Back to settings").Invoke();
+            // Review is a wizard step, reachable only by validating again: going
+            // back hides it, so an old approval cannot be reopened.
+            WaitUntil(() => { var p = dialog.FindFirstDescendant(cf => cf.ByName("intune-preview")); return p == null || p.IsOffscreen; },
+                "Review step stayed visible after going back.");
+            Assert.False(Directory.Exists(outputDir), "returning to settings exported an unconfirmed package");
             FindVisibleIntuneControl(dialog, "Advanced settings (updates, metadata and policy)").AsCheckBox().Click();
             SetText(FindVisibleIntuneControl(dialog, "intune-id").AsTextBox(), "gui-wizard-test");
             SetText(FindVisibleIntuneControl(dialog, "intune-revision").AsTextBox(), "2");
             SetText(FindVisibleIntuneControl(dialog, "intune-location").AsTextBox(), "West");
             SetText(FindVisibleIntuneControl(dialog, "intune-description").AsTextBox(), "Updated metadata");
             SetText(Find(dialog, "intune-display-name").AsTextBox(), "GUI wizard test");
-            SelectIntuneReviewPage(dialog);
-            Assert.False(FindButton(dialog, "Export reviewed package").IsEnabled);
-            FindButton(dialog, "Back to settings").Invoke();
             FindButton(dialog, "Validate and preview package").Invoke();
             // Reacquire after navigation; an old UIA wrapper need not survive hiding.
             preview = FindVisibleIntuneControl(dialog, "intune-preview").AsTextBox();
@@ -393,7 +392,7 @@ public sealed class FunctionalTests : IDisposable
             FindButton(dialog, "Close").Invoke();
             WaitUntil(() => !_fixture.MainWindow.ModalWindows.Any(), "Close did not dismiss the Intune wizard.");
 
-            foreach (var expected in new[] { "install.ps1", "uninstall.ps1", "detect.ps1", "runtime.ps1", "README.txt", "profile.json", "deployment.json", "spoolsmith.exe" })
+            foreach (var expected in new[] { "install.ps1", "uninstall.ps1", "detect.ps1", "runtime.ps1", "README.txt", "profile.ssb", "deployment.json", "spoolsmith.exe" })
             {
                 Assert.True(File.Exists(Path.Combine(outputDir, expected)), $"expected exported {expected}");
             }
@@ -497,19 +496,6 @@ public sealed class FunctionalTests : IDisposable
             return element != null && !element.IsOffscreen;
         }, $"Intune control '{name}' did not become visible.");
         return element!;
-    }
-
-    private static void SelectIntuneReviewPage(Window dialog)
-    {
-        // As in AppFixture.SelectTab, use a genuine click: SelectionItemPattern
-        // does not send the TCN_SELCHANGE that Walk needs to swap visible pages.
-        var tab = dialog.FindFirstDescendant(cf => cf.ByControlType(ControlType.TabItem)
-            .And(cf.ByName("2. Review and export")))
-            ?? throw new InvalidOperationException("Intune review tab was not found.");
-        dialog.SetForeground();
-        dialog.Focus();
-        tab.Click();
-        FindVisibleIntuneControl(dialog, "intune-preview");
     }
 
     private string CreateSavedPrinter()

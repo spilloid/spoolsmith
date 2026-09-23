@@ -146,7 +146,7 @@ func TestProfileCollectionCLI(t *testing.T) {
 	if err := bundle.SaveProfile(filepath.Join(source, "office.ssb"), p); err != nil {
 		t.Fatal(err)
 	}
-	collection := filepath.Join(t.TempDir(), "all.ssb")
+	collection := filepath.Join(t.TempDir(), "all.zip")
 	for _, args := range [][]string{{"profile", "export-all", source, collection}, {"profile", "import-all", collection, dest}} {
 		var stdout, stderr bytes.Buffer
 		if code := run(context.Background(), args, strings.NewReader(""), &stdout, &stderr, testApplication()); code != 0 {

@@ -1,6 +1,8 @@
 package profileset
 
 import (
+	"archive/zip"
+	"bytes"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -24,7 +26,7 @@ func TestTransferPreservesAllPropertiesAndNeverOverwrites(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	output := filepath.Join(t.TempDir(), "all.ssb")
+	output := filepath.Join(t.TempDir(), "all.zip")
 	if n, err := Export(source, output); err != nil || n != 2 {
 		t.Fatalf("export %d %v", n, err)
 	}
@@ -48,53 +50,95 @@ func TestTransferPreservesAllPropertiesAndNeverOverwrites(t *testing.T) {
 	}
 }
 
-// TestExportRejectsEmbeddedDriverPayload is new behavior this format merge
-// requires: a saved-setup file can now carry an embedded driver payload
-// (from `copy --include-driver`) the old bare-JSON format never could. Saved-
-// setup transfer only ever carried settings, so it refuses one explicitly
-// rather than silently dropping or silently ballooning the collection with
-// megabytes of driver files.
-func TestExportRejectsEmbeddedDriverPayload(t *testing.T) {
+// TestEmbeddedDriverTravelsVerbatim: drivers are preferred, so a saved
+// printer carrying its own embedded driver is exported and imported
+// byte-for-byte, and the review says it carries one.
+func TestEmbeddedDriverTravelsVerbatim(t *testing.T) {
 	source := t.TempDir()
-	payload := filepath.Join(source, "payload")
-	if err := os.MkdirAll(payload, 0700); err != nil {
+	payload := t.TempDir()
+	if err := os.WriteFile(filepath.Join(payload, "driver.inf"), []byte("[Version]\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(payload, "driver.inf"), []byte("[Version]\n"), 0600); err != nil {
+	if err := os.WriteFile(filepath.Join(payload, "driver.dll"), make([]byte, 2<<20), 0600); err != nil {
 		t.Fatal(err)
 	}
 	p := sample()
 	p.DriverPackage = nil
 	manifest := bundle.Manifest{Profile: p, Driver: &bundle.DriverPayload{WindowsDriverName: p.DriverName, INF: "driver.inf"}}
-	if err := bundle.Write(filepath.Join(source, "office.ssb"), manifest, payload); err != nil {
+	original := filepath.Join(source, "office.ssb")
+	if err := bundle.Write(original, manifest, payload); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := PrepareExport(source, filepath.Join(t.TempDir(), "all.ssb")); err == nil || !strings.Contains(err.Error(), "embedded driver payload") {
-		t.Fatalf("accepted a member carrying a driver payload: %v", err)
+	output := filepath.Join(t.TempDir(), "all.zip")
+	transfer, err := PrepareExport(source, output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if preview := transfer.Preview(); !preview.Profiles[0].Driver {
+		t.Fatalf("preview does not show the embedded driver: %#v", preview.Profiles[0])
+	}
+	if _, err := transfer.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	dest := t.TempDir()
+	imported, err := PrepareImport(output, dest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !imported.Preview().Profiles[0].Driver {
+		t.Fatal("import preview does not show the embedded driver")
+	}
+	if _, err := imported.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(readSaved(t, original), readSaved(t, filepath.Join(dest, "office.ssb"))) {
+		t.Fatal("printer file with an embedded driver changed on the way through the set")
+	}
+}
+
+func TestExportRequiresAZipDestination(t *testing.T) {
+	source := t.TempDir()
+	writeSaved(t, source, "office.ssb", sample())
+	output := filepath.Join(t.TempDir(), "all.ssb")
+	if _, err := PrepareExport(source, output); err == nil || !strings.Contains(err.Error(), ".zip") {
+		t.Fatalf("accepted a non-.zip export destination: %v", err)
 	}
 }
 
 func TestInvalidCollectionNeverPartiallyImports(t *testing.T) {
 	office := readSaved(t, writeSaved(t, t.TempDir(), "office.ssb", sample()))
-	for _, bad := range []string{"../outside.ssb", `..\outside.ssb`, "C:bad.ssb", "CON.ssb", "bad\n.ssb", "OFFICE.ssb"} {
+	for _, bad := range []string{"../outside.ssb", `..\outside.ssb`, "C:bad.ssb", "CON.ssb", "bad\n.ssb", "OFFICE.ssb", "notes.txt"} {
 		t.Run(bad, func(t *testing.T) {
-			path := filepath.Join(t.TempDir(), "all.ssb")
-			// A hand-built set with an unsafe or colliding member name never
+			// A hand-built zip with an unsafe or colliding member name never
 			// comes from PrepareExport (it only ever lists real files it just
-			// read); this models a hand-edited or corrupted collection.
-			if err := bundle.WriteSet(path, bundle.SetIndex{}, []bundle.SetMember{{Name: "office.ssb", Data: office}, {Name: bad, Data: office}}); err == nil {
-				dest := t.TempDir()
-				if _, err := Import(path, dest); err == nil {
-					t.Fatal("accepted unsafe/duplicate filename")
-				}
-				entries, _ := os.ReadDir(dest)
-				if len(entries) != 0 {
-					t.Fatal("partial import")
-				}
-				return
+			// read); this models a hand-edited or corrupted set.
+			path := filepath.Join(t.TempDir(), "all.zip")
+			f, err := os.Create(path)
+			if err != nil {
+				t.Fatal(err)
 			}
-			// WriteSet already refused the unsafe name at the container level
-			// -- equally acceptable, since nothing reaches Import either way.
+			zw := zip.NewWriter(f)
+			for _, name := range []string{"office.ssb", bad} {
+				w, err := zw.Create(name)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if _, err := w.Write(office); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := zw.Close(); err != nil {
+				t.Fatal(err)
+			}
+			f.Close()
+			dest := t.TempDir()
+			if _, err := Import(path, dest); err == nil {
+				t.Fatal("accepted unsafe/duplicate filename")
+			}
+			entries, _ := os.ReadDir(dest)
+			if len(entries) != 0 {
+				t.Fatal("partial import")
+			}
 		})
 	}
 }
@@ -106,7 +150,7 @@ func TestCollisionIsCheckedBeforeWritingAnyProfile(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	path := filepath.Join(t.TempDir(), "all.ssb")
+	path := filepath.Join(t.TempDir(), "all.zip")
 	if _, err := Export(source, path); err != nil {
 		t.Fatal(err)
 	}
@@ -132,14 +176,14 @@ func TestExportCannotPolluteSourceFolder(t *testing.T) {
 	if err := bundle.SaveProfile(filepath.Join(source, "office.ssb"), sample()); err != nil {
 		t.Fatal(err)
 	}
-	output := filepath.Join(source, "all.ssb")
+	output := filepath.Join(source, "all.zip")
 	if _, err := Export(source, output); err == nil || !strings.Contains(err.Error(), "outside") {
 		t.Fatalf("expected actionable folder error, got %v", err)
 	}
 	if _, err := os.Stat(output); !os.IsNotExist(err) {
 		t.Fatalf("collection was created: %v", err)
 	}
-	if n, err := Export(source, filepath.Join(t.TempDir(), "all.ssb")); err != nil || n != 1 {
+	if n, err := Export(source, filepath.Join(t.TempDir(), "all.zip")); err != nil || n != 1 {
 		t.Fatalf("source must remain exportable: %d %v", n, err)
 	}
 }
@@ -150,7 +194,7 @@ func TestExportRejectsSourceDirectoryAlias(t *testing.T) {
 	if err := os.Symlink(source, alias); err != nil {
 		t.Skipf("directory symlinks unavailable: %v", err)
 	}
-	if _, err := Export(source, filepath.Join(alias, "all.ssb")); err == nil || !strings.Contains(err.Error(), "outside") {
+	if _, err := Export(source, filepath.Join(alias, "all.zip")); err == nil || !strings.Contains(err.Error(), "outside") {
 		t.Fatalf("expected source-directory alias to be rejected, got %v", err)
 	}
 }

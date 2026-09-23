@@ -97,7 +97,7 @@ func TestExportPinsContentsAndPreservesExistingFiles(t *testing.T) {
 	if err = verifyFile(filepath.Join(dest, "spoolsmith.exe"), testBinaryHash); err != nil {
 		t.Fatal(err)
 	}
-	if err = verifyFile(filepath.Join(dest, "profile.json"), prepared.Manifest.ProfileSHA256); err != nil {
+	if err = verifyFile(filepath.Join(dest, "profile.ssb"), prepared.Manifest.ProfileSHA256); err != nil {
 		t.Fatal(err)
 	}
 	for _, name := range prepared.Manifest.Files {
@@ -197,7 +197,7 @@ func TestGeneratedPowerShellParses(t *testing.T) {
 			path := filepath.Join(t.TempDir(), name)
 			os.WriteFile(path, data, 0600)
 			script := `$tokens=$null;$parseErrors=$null;[Management.Automation.Language.Parser]::ParseFile(` + psString(path) + `,[ref]$tokens,[ref]$parseErrors)|Out-Null;if($parseErrors.Count){$parseErrors|Out-String|Write-Output;exit 1}`
-			parse := exec.Command(shell, "-NoProfile", "-NonInteractive", "-Command", script)
+			parse := exec.Command(shell, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script)
 			parse.Env = shellEnv()
 			if out, err := parse.CombinedOutput(); err != nil {
 				t.Fatalf("%s: %v %s", name, err, out)
@@ -232,7 +232,7 @@ function Get-Printer { [CmdletBinding()]param();if($mode -eq 'spooler'){throw 's
 function Get-PrinterDriver { [CmdletBinding()]param();if($mode -ne 'registration'){[pscustomobject]@{Name=$m.profile.driver_name}} }
 function Get-PrinterPort { [CmdletBinding()]param();if($mode -eq 'port'){return};$address=$m.profile.target;$protocol=1;$number=9100;if($mode -eq 'address'){$address='192.0.2.41'};if($mode -eq 'protocol'){$protocol=2};if($mode -eq 'number'){$number=515};[pscustomobject]@{Name=('RAW9100-'+$m.profile.target);PrinterHostAddress=$address;Protocol=$protocol;PortNumber=$number} }
 & ` + psString(path)
-			cmd := exec.Command(shell, "-NoProfile", "-NonInteractive", "-Command", prelude)
+			cmd := exec.Command(shell, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", prelude)
 			cmd.Env = shellEnv()
 			out, err := cmd.CombinedOutput()
 			if failure == "" {
@@ -289,7 +289,7 @@ function Invoke-SpoolSmith([string]$Directory,[string]$Operation,[bool]$Offline,
 	}
 	execute := func(script string, fail bool) error {
 		t.Helper()
-		cmd := exec.Command(shell, "-NoProfile", "-NonInteractive", "-File", script)
+		cmd := exec.Command(shell, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", script)
 		cmd.Env = shellEnv("SPOOLSMITH_TEST_ROOT=" + root)
 		if fail {
 			cmd.Env = append(cmd.Env, "SPOOLSMITH_TEST_FAIL=after-mutation")
@@ -362,8 +362,8 @@ func TestRuntimePreservesNativeExitAndJSON(t *testing.T) {
 	dir := t.TempDir()
 	helper := filepath.Join(dir, "helper.go")
 	code := `package main
-import("fmt";"os";"strconv")
-func main(){fmt.Print("{\"compliant\":true}");c,_:=strconv.Atoi(os.Getenv("SPOOLSMITH_TEST_EXIT"));os.Exit(c)}`
+import("fmt";"os";"strconv";"strings")
+func main(){fmt.Fprint(os.Stderr,strings.Repeat("diagnostic\n",32768));fmt.Print("{\"compliant\":true}");c,_:=strconv.Atoi(os.Getenv("SPOOLSMITH_TEST_EXIT"));os.Exit(c)}`
 	if err := os.WriteFile(helper, []byte(code), 0600); err != nil {
 		t.Fatal(err)
 	}
@@ -380,8 +380,8 @@ func main(){fmt.Print("{\"compliant\":true}");c,_:=strconv.Atoi(os.Getenv("SPOOL
 		t.Fatal(err)
 	}
 	p := []byte(`{}`)
-	os.WriteFile(filepath.Join(dir, "profile.json"), p, 0600)
-	m := Manifest{BinarySHA256: digest(b), ProfileSHA256: digest(p)}
+	os.WriteFile(filepath.Join(dir, "profile.ssb"), p, 0600)
+	m := Manifest{Format: 2, BinarySHA256: digest(b), ProfileSHA256: digest(p)}
 	data, _ := json.Marshal(m)
 	os.WriteFile(filepath.Join(dir, "deployment.json"), data, 0600)
 	script, err := templates.ReadFile("templates/runtime.ps1")
@@ -391,17 +391,18 @@ func main(){fmt.Print("{\"compliant\":true}");c,_:=strconv.Atoi(os.Getenv("SPOOL
 	runtimePath := filepath.Join(dir, "runtime.ps1")
 	os.WriteFile(runtimePath, script, 0600)
 	for _, want := range []int{0, 4} {
-		cmd := exec.Command(shell, "-NoProfile", "-NonInteractive", "-Command", ". "+psString(runtimePath)+"; Invoke-SpoolSmith "+psString(dir)+" 'status' $false "+psString(dir)+" | ConvertTo-Json -Depth 10")
+		cmd := exec.Command(shell, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", ". "+psString(runtimePath)+"; Invoke-SpoolSmith "+psString(dir)+" 'status' $false "+psString(dir)+" | ConvertTo-Json -Depth 10")
 		cmd.Env = shellEnv(fmt.Sprintf("SPOOLSMITH_TEST_EXIT=%d", want))
 		out, err := cmd.CombinedOutput()
 		if err != nil {
 			t.Fatalf("%v %s", err, out)
 		}
 		var result struct {
-			Code *int
-			Data struct{ Compliant bool }
+			Code  *int
+			Error string
+			Data  struct{ Compliant bool }
 		}
-		if err = json.Unmarshal(out, &result); err != nil || result.Code == nil || *result.Code != want || !result.Data.Compliant {
+		if err = json.Unmarshal(out, &result); err != nil || result.Code == nil || *result.Code != want || !result.Data.Compliant || len(result.Error) != len(strings.Repeat("diagnostic\n", 32768)) {
 			t.Fatalf("want=%d result=%s error=%v", want, out, err)
 		}
 	}
@@ -435,14 +436,14 @@ func main(){b,_:=json.Marshal(map[string]any{"argv":os.Args[1:]});fmt.Print(stri
 		t.Fatal(err)
 	}
 	profileBytes := []byte(`{}`)
-	if err := os.WriteFile(filepath.Join(dir, "profile.json"), profileBytes, 0600); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "profile.ssb"), profileBytes, 0600); err != nil {
 		t.Fatal(err)
 	}
 	bundleBytes := []byte("fake-bundle-bytes")
 	if err := os.WriteFile(filepath.Join(dir, "bundle.ssb"), bundleBytes, 0600); err != nil {
 		t.Fatal(err)
 	}
-	m := Manifest{BinarySHA256: digest(binaryBytes), ProfileSHA256: digest(profileBytes), BundleSHA256: digest(bundleBytes)}
+	m := Manifest{Format: 2, BinarySHA256: digest(binaryBytes), ProfileSHA256: digest(profileBytes), BundleSHA256: digest(bundleBytes)}
 	data, _ := json.Marshal(m)
 	if err := os.WriteFile(filepath.Join(dir, "deployment.json"), data, 0600); err != nil {
 		t.Fatal(err)
@@ -457,7 +458,7 @@ func main(){b,_:=json.Marshal(map[string]any{"argv":os.Args[1:]});fmt.Print(stri
 	}
 	run := func(operation string) []string {
 		t.Helper()
-		cmd := exec.Command(shell, "-NoProfile", "-NonInteractive", "-Command", ". "+psString(runtimePath)+"; Invoke-SpoolSmith "+psString(dir)+" "+psString(operation)+" $false "+psString(dir)+" | ConvertTo-Json -Depth 10")
+		cmd := exec.Command(shell, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", ". "+psString(runtimePath)+"; Invoke-SpoolSmith "+psString(dir)+" "+psString(operation)+" $false "+psString(dir)+" | ConvertTo-Json -Depth 10")
 		cmd.Env = shellEnv()
 		out, err := cmd.CombinedOutput()
 		if err != nil {
@@ -502,8 +503,8 @@ func main(){b,_:=json.Marshal(map[string]any{"argv":os.Args[1:]});fmt.Print(stri
 		if tc.wantApply && !contains(argv, "bundle.ssb") {
 			t.Fatalf("%s: argv=%v missing bundle.ssb", tc.operation, argv)
 		}
-		if !tc.wantApply && !contains(argv, "profile.json") {
-			t.Fatalf("%s: argv=%v missing profile.json", tc.operation, argv)
+		if !tc.wantApply && !contains(argv, "profile.ssb") {
+			t.Fatalf("%s: argv=%v missing profile.ssb", tc.operation, argv)
 		}
 	}
 }
@@ -645,5 +646,35 @@ func TestHasLocalPayloadOnAPlainProfileBundle(t *testing.T) {
 	withDriver := testBundleOptions(t, true)
 	if has, err := HasLocalPayload(withDriver.ProfilePath); err != nil || !has {
 		t.Fatalf("has=%v err=%v, want true for a bundle with a driver payload", has, err)
+	}
+}
+
+// Open the actual exported profile instead of mocking the CLI file boundary.
+func TestExportedProfileIsReadablePrinterBundle(t *testing.T) {
+	for _, withDriver := range []bool{false, true} {
+		t.Run(fmt.Sprintf("driver=%v", withDriver), func(t *testing.T) {
+			prepared, err := Prepare(testBundleOptions(t, withDriver))
+			if err != nil {
+				t.Fatal(err)
+			}
+			dest := filepath.Join(t.TempDir(), "package")
+			if err := prepared.Export(dest); err != nil {
+				t.Fatal(err)
+			}
+			profilePath := filepath.Join(dest, "profile.ssb")
+			profile, err := bundle.LoadProfile(profilePath)
+			if err != nil {
+				t.Fatalf("exported profile is not usable by the CLI: %v", err)
+			}
+			if profile.PrinterName != prepared.Manifest.Profile.PrinterName || profile.DriverName != prepared.Manifest.Profile.DriverName || profile.Target != prepared.Manifest.Profile.Target {
+				t.Fatalf("exported profile differs from reviewed configuration: %+v", profile)
+			}
+			if runtime.GOOS == "windows" {
+				output, err := exec.Command(filepath.Join(dest, "spoolsmith.exe"), "bundle", "inspect", profilePath).CombinedOutput()
+				if err != nil {
+					t.Fatalf("released CLI cannot inspect exported profile: %v: %s", err, output)
+				}
+			}
+		})
 	}
 }

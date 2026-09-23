@@ -108,6 +108,9 @@ func NewWorkflow() Workflow {
 // over Yes and never reaches confirmation or a mutating Environment.Run call.
 func (w Workflow) RunInstall(ctx context.Context, env Environment, input io.Reader, interactive io.Writer, inputIsTerminal bool, options InstallOptions) (Outcome, ExitCode) {
 	outcome := Outcome{Operation: "install", Status: "error", DryRun: options.DryRun}
+	if err := ctx.Err(); err != nil {
+		return failOutcome(outcome, err, ExitGeneralError)
+	}
 	if err := w.validate(); err != nil {
 		return failOutcome(outcome, err, ExitGeneralError)
 	}
@@ -144,6 +147,12 @@ func (w Workflow) RunInstall(ctx context.Context, env Environment, input io.Read
 		probeResult.Evidence.IP = options.Target
 	} else {
 		probeResult, err = w.Collect(ctx, options.Target)
+		if ctx.Err() != nil {
+			return failOutcome(outcome, ctx.Err(), ExitGeneralError)
+		}
+		if errors.Is(err, context.Canceled) {
+			return failOutcome(outcome, err, ExitGeneralError)
+		}
 		if err != nil && options.Profile != nil {
 			// A Profile means an operator already reviewed and approved this
 			// exact printer once -- that trust doesn't expire because the
@@ -191,6 +200,12 @@ func (w Workflow) RunInstall(ctx context.Context, env Environment, input io.Read
 			if errors.Is(err, errIdentityUnavailable) {
 				fmt.Fprintln(interactive, "Identity probes were unavailable; retrying once for a sleeping printer.")
 				retryResult, retryErr := w.Collect(ctx, options.Target)
+				if ctx.Err() != nil {
+					return failOutcome(outcome, ctx.Err(), ExitGeneralError)
+				}
+				if errors.Is(retryErr, context.Canceled) {
+					return failOutcome(outcome, retryErr, ExitGeneralError)
+				}
 				if retryErr == nil {
 					probeResult = retryResult
 					resolution, err = options.Profile.resolution(probeResult.Evidence)

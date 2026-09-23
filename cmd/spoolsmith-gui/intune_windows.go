@@ -24,7 +24,8 @@ func (a *app) onIntuneWizard() {
 	var profile, binary, pin, id, revision, display, location, description, output *walk.LineEdit
 	var offline, prerequisite, adopt, advanced *walk.CheckBox
 	var advancedPanel *walk.Composite
-	var pages *walk.TabWidget
+	var settingsStep, reviewStep *walk.Composite
+	var stepOne, stepTwo *walk.Label
 	var preview *walk.TextEdit
 	var exportButton, prepButton *walk.PushButton
 	var prepTool, prepOut *walk.LineEdit
@@ -42,7 +43,35 @@ func (a *app) onIntuneWizard() {
 		exeDir = filepath.Dir(exe)
 	}
 	foundTool := intune.FindContentPrepTool(exeDir)
-	invalidate := func() {
+	// The wizard has two steps, and the second is reached only by validating the
+	// first. It used to be two tabs, which let the review step be opened with
+	// nothing validated on it. Going back always discards the review.
+	var invalidate func()
+	onReview := false
+	showStep := func(review bool) {
+		onReview = review
+		if !review {
+			invalidate()
+		}
+		setShown(settingsStep, !review)
+		setShown(reviewStep, review)
+		// The stepper only changes colour, so neither title ever has to be
+		// re-measured; a heading that changed text or appeared with its step
+		// came out clipped.
+		current, other := stepOne, stepTwo
+		if review {
+			current, other = stepTwo, stepOne
+		}
+		current.SetTextColor(colorBrand)
+		other.SetTextColor(colorHint)
+		if review {
+			preview.SetFocus()
+		} else {
+			setShown(advancedPanel, advanced.Checked())
+			profile.SetFocus()
+		}
+	}
+	invalidate = func() {
 		prepared = nil
 		if exportButton != nil {
 			exportButton.SetEnabled(false)
@@ -108,6 +137,11 @@ func (a *app) onIntuneWizard() {
 		}
 	}
 	review := func() {
+		// While Microsoft's tool runs, leaving the review would re-arm Export and
+		// let Close skip stopping the tool. Stay put until it finishes.
+		if running {
+			return
+		}
 		suggestOutput()
 		rev, err := strconv.Atoi(revision.Text())
 		if err != nil {
@@ -132,7 +166,7 @@ func (a *app) onIntuneWizard() {
 		// json.MarshalIndent's LF output, is what dev-process.md already
 		// recorded once as the fix for an unreadable-plan regression.
 		preview.SetText(lines("Export folder: " + reviewedOutput + "\n\n" + string(data)))
-		pages.SetCurrentIndex(1)
+		showStep(true)
 		prepared = candidate
 		// A new review is a new export: the previous folder is no longer what this
 		// page is about, and its package output belongs beside the new one.
@@ -180,33 +214,47 @@ func (a *app) onIntuneWizard() {
 			})
 		}()
 	}
-	err := (Dialog{AssignTo: &dialog, Title: "Build an Intune printer app", MinSize: Size{Width: 760, Height: 560}, Size: Size{Width: 880, Height: 740}, Layout: VBox{Spacing: 10}, Children: []Widget{
+	err := (Dialog{AssignTo: &dialog, Title: "Build an Intune printer app", MinSize: Size{Width: 760, Height: 520}, Size: Size{Width: 880, Height: 600}, Background: SolidColorBrush{Color: colorPage}, Layout: dialogLayout(), Children: dialogFrame("Build an Intune printer app",
 		Label{Text: "Package one prevalidated printer for Required or Company Portal deployment."},
-		TabWidget{AssignTo: &pages, OnCurrentIndexChanged: func() {
-			if pages.CurrentIndex() != 1 {
-				invalidate()
-				if advancedPanel != nil && advanced != nil {
-					advancedPanel.SetVisible(advanced.Checked())
-				}
-			}
-		}, Pages: []TabPage{
-			{Title: "1. Package settings", Layout: VBox{Spacing: 8}, Children: []Widget{
-				Label{Text: "Choose a validated profile or SpoolSmith bundle (.ssb) and approved Windows x64 CLI. Review the package before exporting."},
-				Composite{Layout: HBox{}, Children: []Widget{LineEdit{AssignTo: &profile, CueBanner: "Profile JSON or SpoolSmith bundle (.ssb) file", Accessibility: name("intune-profile"), OnTextChanged: profileChanged}, PushButton{Text: "Browse profile...", OnClicked: func() {
-					browse(&profile, "Profile or bundle (*.json;*.ssb)|*.json;*.ssb|JSON files (*.json)|*.json|SpoolSmith bundle (*.ssb)|*.ssb|All files (*.*)|*.*")
-				}}}},
-				Composite{Layout: HBox{}, Children: []Widget{LineEdit{AssignTo: &binary, CueBanner: "SpoolSmith CLI .exe", Accessibility: name("intune-binary"), OnTextChanged: binaryChanged}, PushButton{Text: "Browse CLI...", OnClicked: func() { browse(&binary, "Windows executable (*.exe)|*.exe") }}}},
-				Label{Text: "The CLI hash is calculated automatically and included in review. Use a build approved by your organization."},
-				Composite{Layout: Grid{Columns: 2, Spacing: 8}, Children: []Widget{
-					Label{Text: "App display name:"}, LineEdit{AssignTo: &display, Accessibility: name("intune-display-name"), OnTextChanged: invalidate},
-					Label{Text: "Export folder:"}, LineEdit{AssignTo: &output, Accessibility: name("intune-output"), OnTextChanged: invalidate},
+		Composite{Layout: row(), Children: []Widget{
+			Label{AssignTo: &stepOne, Text: "1  Package settings", Font: stepFont, TextColor: colorBrand},
+			Label{Text: "›", Font: stepFont, TextColor: colorHint},
+			// walk under-measures this bold title and wraps its last word out of
+			// sight; an explicit minimum width is what the row layout honors.
+			Label{AssignTo: &stepTwo, Text: "2  Review and export", MinSize: Size{Width: 240}, Font: stepFont, TextColor: colorHint},
+			HSpacer{},
+		}},
+		Composite{Layout: VBox{MarginsZero: true}, Children: []Widget{
+			Composite{AssignTo: &settingsStep, Layout: VBox{MarginsZero: true, Spacing: 8, Alignment: AlignHNearVNear}, Children: []Widget{
+				hint("Choose a saved printer and the SpoolSmith CLI your organization approved."),
+				Composite{Layout: formGrid(3), Children: []Widget{
+					Label{Text: "Saved printer:"},
+					LineEdit{AssignTo: &profile, CueBanner: "Saved printer (.ssb) file", Accessibility: name("intune-profile"), OnTextChanged: profileChanged},
+					PushButton{Text: "Browse profile...", OnClicked: func() {
+						browse(&profile, printerFilter)
+					}},
+					Label{Text: "SpoolSmith CLI:"},
+					LineEdit{AssignTo: &binary, CueBanner: "SpoolSmith CLI .exe", Accessibility: name("intune-binary"), OnTextChanged: binaryChanged},
+					PushButton{Text: "Browse CLI...", OnClicked: func() { browse(&binary, "Windows executable (*.exe)|*.exe") }},
+					Label{Text: "App display name:"},
+					LineEdit{AssignTo: &display, ColumnSpan: 2, Accessibility: name("intune-display-name"), OnTextChanged: invalidate},
+					Label{Text: "Export folder:"},
+					LineEdit{AssignTo: &output, Accessibility: name("intune-output"), OnTextChanged: invalidate},
+					PushButton{Text: "Browse folder...", OnClicked: func() {
+						picker := walk.FileDialog{Title: "Choose where to export the package", FilePath: output.Text()}
+						if ok, err := picker.ShowBrowseFolder(dialog); err != nil {
+							showErr(dialog, "Choose folder", err)
+						} else if ok {
+							output.SetText(picker.FilePath)
+						}
+					}},
 				}},
-				Label{Text: "An unused folder beside the profile is suggested. You can edit the path; existing folders are never overwritten."},
+				hint("The CLI's hash is pinned in the package automatically. An existing export folder is never overwritten."),
 				CheckBox{AssignTo: &prerequisite, Text: "Driver is managed separately and will be registered before installation", OnCheckedChanged: invalidate},
-				Label{Text: "Leave unchecked to include the profile's supported local archive or the selected bundle's driver payload. A profile or bundle without one requires this choice."},
+				hint("Leave unchecked to package the printer file's own driver. A file without one needs this checked."),
 				CheckBox{AssignTo: &advanced, Text: "Advanced settings (updates, metadata and policy)", OnCheckedChanged: func() {
 					if advancedPanel != nil {
-						advancedPanel.SetVisible(advanced.Checked())
+						setShown(advancedPanel, advanced.Checked())
 					}
 				}},
 				Composite{AssignTo: &advancedPanel, Layout: VBox{Spacing: 6}, Children: []Widget{
@@ -221,10 +269,10 @@ func (a *app) onIntuneWizard() {
 					CheckBox{AssignTo: &adopt, Text: "Allow adoption of an existing, exactly matching unmanaged queue", OnCheckedChanged: invalidate},
 					Label{Text: "For updates, keep the existing ID and queue name and increase the revision. Reuse any previously chosen custom ID."},
 				}},
-				Label{Text: "Default: the app checks the printer is really there when it installs, no adoption, revision 1. Offline setup still needs connectivity for printing."},
-				VSpacer{}, PushButton{Text: "Validate and preview package", OnClicked: review},
+				hint("By default the app checks the printer and falls back to offline setup if it can't reach it; no adoption; revision 1."),
+				Composite{Layout: row(), Children: []Widget{HSpacer{}, PushButton{Text: "Validate and preview package", OnClicked: review}}},
 			}},
-			{Title: "2. Review and export", Layout: VBox{Spacing: 8}, Children: []Widget{
+			Composite{AssignTo: &reviewStep, Visible: false, Layout: VBox{MarginsZero: true, Spacing: 8, Alignment: AlignHNearVNear}, Children: []Widget{
 				Label{Text: "Review the destination, deployment ID, commands, payload hashes and policy. Export creates local files."},
 				TextEdit{AssignTo: &preview, ReadOnly: true, VScroll: true, HScroll: true, Accessibility: name("intune-preview")},
 				Label{Text: "Optional: also create the .intunewin file with Microsoft's Win32 Content Prep Tool (IntuneWinAppUtil.exe)."},
@@ -248,7 +296,11 @@ func (a *app) onIntuneWizard() {
 				}},
 				Label{AssignTo: &prepStatus, Text: "", Accessibility: name("intune-prep-status")},
 				Composite{Layout: HBox{MarginsZero: true, Spacing: 8}, Children: []Widget{
-					PushButton{Text: "Back to settings", OnClicked: func() { pages.SetCurrentIndex(0) }},
+					PushButton{Text: "Back to settings", OnClicked: func() {
+						if !running {
+							showStep(false)
+						}
+					}},
 					PushButton{AssignTo: &exportButton, Text: "Export reviewed package", Enabled: false, OnClicked: func() {
 						if prepared == nil || running {
 							return
@@ -288,12 +340,17 @@ func (a *app) onIntuneWizard() {
 				}},
 			}},
 		}},
-		PushButton{Text: "Close", OnClicked: func() { dialog.Accept() }},
-	}}).Create(a.mw)
+		VSpacer{},
+		Composite{Layout: row(), Children: []Widget{HSpacer{}, PushButton{Text: "Close", OnClicked: func() { dialog.Accept() }}}},
+	)}).Create(a.mw)
 	if err != nil {
 		showErr(a.mw, "Intune packaging", err)
 		return
 	}
+	// Hide the review step before the first layout so the dialog is sized for
+	// the settings step alone, not both steps stacked.
+	setShown(reviewStep, false)
+	dialog.SetSize(walk.Size{Width: 880, Height: 600})
 	dialog.Closing().Attach(func(canceled *bool, _ walk.CloseReason) {
 		if running {
 			*canceled = true
@@ -302,14 +359,20 @@ func (a *app) onIntuneWizard() {
 			}
 		}
 	})
-	// Walk's visibility query includes ancestors. Apply the collapsed state
-	// after the dialog becomes visible, and again when returning to settings.
-	// Create has already created the child HWNDs. Hiding their parent may omit
-	// them from UIA's tree; expanding does not require another creation pass.
+	// Walk's visibility query includes ancestors, so hidden-at-creation state
+	// only takes effect once the dialog is visible: apply the first step then.
 	dialog.VisibleChanged().Attach(func() {
-		if dialog.Visible() && pages.CurrentIndex() == 0 {
-			advancedPanel.SetVisible(advanced.Checked())
+		if dialog.Visible() && !onReview {
+			showStep(false)
 		}
 	})
 	a.runDialog(dialog)
+}
+
+var stepFont = Font{Family: "Segoe UI", PointSize: 12, Bold: true}
+
+// hint is secondary guidance under a control: smaller and quieter than the
+// labels that name things, so the form reads as fields first.
+func hint(text string) Label {
+	return Label{Text: text, TextColor: colorHint, Font: Font{Family: "Segoe UI", PointSize: 9}}
 }

@@ -34,3 +34,6 @@ summary:focus-visible{outline:3px solid var(--orange);outline-offset:4px}
 @media(max-width:900px){.file-grid,.guide-grid{gap:14px}.file-grid article,.guide-grid>a{padding:22px}}
 @media(max-width:760px){.file-grid,.guide-grid{grid-template-columns:1fr}.faq-section{padding-top:0}.header{height:auto;min-height:90px;flex-wrap:wrap;gap:16px;padding-block:20px}nav{flex-wrap:wrap;gap:18px}nav a{padding-block:6px}.hero-meta{font-size:12px}.tabs{gap:4px 18px}.tabs button{font-size:13px}.hero{padding-top:36px}}
 @media(max-width:380px){nav a:first-child{display:inline}.saved-card div>span{font-size:11px}.saved-card strong{font-size:13px}.saved-card{transform:none}}
+
+.release-summary{display:grid;grid-template-columns:1fr 1fr;gap:48px;padding-block:42px}.release-summary h2{font-size:30px;margin:0}.release-summary ul{margin:0;padding-left:22px;color:var(--muted);font-size:14px}.release-summary li+li{margin-top:14px}.release-summary strong{color:var(--ink)}
+@media(max-width:760px){.release-summary{grid-template-columns:1fr;gap:24px;padding-block:32px}.release-summary h2{font-size:27px}}

@@ -16,7 +16,7 @@ func bulkCopyInventoryText(queues []install.InstalledQueue) string {
 			copyable++
 		}
 	}
-	fmt.Fprintf(&text, "%d printers can be copied; %d will be skipped.\r\nThe current Windows inventory is read again when copying starts.\r\n\r\n", copyable, len(queues)-copyable)
+	fmt.Fprintf(&text, "%s can be copied into the set; %d will be skipped.\r\nThe current Windows inventory is read again when copying starts.\r\n\r\n", countPrinters(copyable), len(queues)-copyable)
 	for _, q := range queues {
 		if reason := q.CopyBlockedReason(); reason != "" {
 			fmt.Fprintf(&text, "Skip: %s\r\n  %s\r\n\r\n", q.PrinterName, reason)
@@ -27,13 +27,21 @@ func bulkCopyInventoryText(queues []install.InstalledQueue) string {
 	return text.String()
 }
 
-func bulkCopyResultText(result bundle.AllResult, includeDriver bool) string {
+func bulkCopyResultText(result bundle.AllResult) string {
 	var text strings.Builder
-	fmt.Fprintf(&text, "Folder: %s\r\n\r\n", result.OutputDir)
+	if result.Written > 0 {
+		fmt.Fprintf(&text, "Printer set: %s\r\n\r\n", result.SetPath)
+	}
+	withoutDriver := 0
 	for _, q := range result.Queues {
 		switch q.Status {
 		case "written":
-			fmt.Fprintf(&text, "Copied: %s\r\n  %s\r\n", q.Name, q.Bundle)
+			driver := "driver included"
+			if !q.DriverIncluded {
+				driver = "settings only"
+				withoutDriver++
+			}
+			fmt.Fprintf(&text, "Copied: %s\r\n  %s, %s\r\n", q.Name, q.Member, driver)
 			if q.Reason != "" {
 				fmt.Fprintf(&text, "  %s\r\n", q.Reason)
 			}
@@ -45,15 +53,23 @@ func bulkCopyResultText(result bundle.AllResult, includeDriver bool) string {
 		}
 	}
 	if result.Written > 0 {
-		if !includeDriver {
-			text.WriteString("Drivers were not included. The other PC must already have the exact drivers installed.\r\n\r\n")
+		if withoutDriver > 0 {
+			fmt.Fprintf(&text, "%s copied without a driver. The other PC must already have those drivers installed.\r\n\r\n", countPrinters(withoutDriver))
 		}
-		text.WriteString("Take the copied .ssb files to the other PC. Use Add a printer > Open a copied printer (.ssb) to review and apply each printer.\r\n")
+		text.WriteString("Take the set to the other PC and choose Add a printer > Open a printer file to review and apply each printer.\r\n")
 	} else {
-		text.WriteString("No printer files were copied. Resolve the reasons above and try again.\r\n")
+		text.WriteString("No printers were copied, so no set was saved. Resolve the reasons above and try again.\r\n")
 	}
 	if result.Failed > 0 {
 		text.WriteString("\r\nFor a failed printer, use Copy to a file to retry it with a different filename or options. Existing files are never replaced.")
 	}
 	return text.String()
+}
+
+// countPrinters reads "1 printer" or "3 printers".
+func countPrinters(n int) string {
+	if n == 1 {
+		return "1 printer"
+	}
+	return fmt.Sprintf("%d printers", n)
 }

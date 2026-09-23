@@ -96,7 +96,7 @@ func (a *app) showSavedSetups(paths []string, message string, readErr error) {
 			case folderErr != nil:
 				detail.SetText("Couldn't read this folder: " + folderErr.Error() + "\r\n\r\nUse Open another folder to choose a different location.")
 			case len(current) == 0:
-				detail.SetText("No saved setups in this folder yet.\r\n\r\nImport a collection, open another folder, or save a printer from Add a printer.")
+				detail.SetText("No saved setups in this folder yet.\r\n\r\nImport a printer set (.zip), open another folder, or save a printer from Add a printer.")
 			default:
 				detail.SetText("Choose a saved setup.")
 			}
@@ -122,7 +122,9 @@ func (a *app) showSavedSetups(paths []string, message string, readErr error) {
 	}
 	start := func(kind operationKind) {
 		path, ok := selected()
-		if !ok {
+		// Enter reaches the default button even while it is disabled, and every
+		// action shares its enablement: nothing usable is selected.
+		if !ok || !setupBtn.Enabled() {
 			return
 		}
 		dialog.Accept()
@@ -131,9 +133,9 @@ func (a *app) showSavedSetups(paths []string, message string, readErr error) {
 
 	err := (Dialog{
 		AssignTo: &dialog, Title: "Saved printer setups",
-		MinSize: Size{Width: 720, Height: 420}, Size: Size{Width: 820, Height: 480}, Layout: pagePadding(),
-		CancelButton: &cancelBtn,
-		Children: []Widget{
+		MinSize: Size{Width: 720, Height: 420}, Size: Size{Width: 820, Height: 480}, Background: SolidColorBrush{Color: colorPage}, Layout: dialogLayout(),
+		DefaultButton: &setupBtn, CancelButton: &cancelBtn,
+		Children: dialogFrame("Saved printer setups",
 			Label{Text: "Setups saved on this PC. Set one up again, or update a printer to match its saved settings."},
 			Label{AssignTo: &status, Text: shownOr(message, "Folder: "+a.profilesDirectory())},
 			HSplitter{Children: []Widget{
@@ -148,7 +150,6 @@ func (a *app) showSavedSetups(paths []string, message string, readErr error) {
 						a.checkSavedStatus(dialog, path)
 					}
 				}},
-				PushButton{AssignTo: &removeBtn, Text: "Remove printer from this PC...", Enabled: false, OnClicked: func() { start(opRemove) }},
 				PushButton{AssignTo: &editBtn, Text: "Edit...", Enabled: false, OnClicked: func() {
 					path, ok := selected()
 					if !ok {
@@ -161,6 +162,8 @@ func (a *app) showSavedSetups(paths []string, message string, readErr error) {
 						refreshDetail()
 					}
 				}},
+				HSpacer{},
+				PushButton{AssignTo: &removeBtn, Text: "Remove printer from this PC...", Enabled: false, OnClicked: func() { start(opRemove) }},
 			}},
 			Composite{Layout: row(), Children: []Widget{
 				PushButton{Text: "Export all...", OnClicked: func() { a.exportSetups(dialog) }},
@@ -193,7 +196,7 @@ func (a *app) showSavedSetups(paths []string, message string, readErr error) {
 				}},
 				PushButton{AssignTo: &cancelBtn, Text: "Close", OnClicked: func() { dialog.Cancel() }},
 			}},
-		},
+		),
 	}).Create(a.mw)
 	if err != nil {
 		showErr(a.mw, "Saved setups", err)
@@ -235,9 +238,9 @@ func (a *app) editSavedSetup(owner walk.Form, path string) bool {
 
 	err := (Dialog{
 		AssignTo: &dialog, Title: "Edit " + filepath.Base(path),
-		MinSize: Size{Width: 620, Height: 340}, Layout: pagePadding(),
+		MinSize: Size{Width: 620, Height: 340}, Background: SolidColorBrush{Color: colorPage}, Layout: dialogLayout(),
 		DefaultButton: &saveBtn, CancelButton: &cancelBtn,
-		Children: []Widget{
+		Children: dialogFrame("Edit "+filepath.Base(path),
 			Label{Text: path},
 			Composite{Layout: formGrid(2), Children: []Widget{
 				Label{Text: "Printer name:"}, LineEdit{AssignTo: &nameEdit, Text: profile.PrinterName, Accessibility: name("edit-name")},
@@ -285,7 +288,7 @@ func (a *app) editSavedSetup(owner walk.Form, path string) bool {
 					dialog.Accept()
 				}},
 			}},
-		},
+		),
 	}).Create(owner)
 	if err != nil {
 		showErr(owner, "Edit setup", err)

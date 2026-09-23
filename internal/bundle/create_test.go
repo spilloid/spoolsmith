@@ -12,7 +12,7 @@ import (
 )
 
 // TestCreatePreflightsExistingDestination guards against a single copy paying
-// for a network probe (and, with --include-driver, an elevated driver
+// for a network probe (and, by default, an elevated driver
 // export) before discovering the destination file already exists -- the same
 // problem CreateAll's batch preflight (TestCreateAllPreflightsExistingFilesAndBatchNameCollisions)
 // solves for a batch of queues.
@@ -107,5 +107,58 @@ func TestCreateStillFailsOnCancellation(t *testing.T) {
 	}
 	if _, statErr := os.Stat(path); !os.IsNotExist(statErr) {
 		t.Fatal("a canceled copy left a bundle file behind")
+	}
+}
+
+// TestCreatePrefersTheDriverAndFallsBackToSettingsOnly pins the operator's
+// direction: the driver rides along whenever it can, and the copy only
+// degrades to settings-only -- still succeeding, and saying why -- when it
+// cannot.
+func TestCreatePrefersTheDriverAndFallsBackToSettingsOnly(t *testing.T) {
+	isolateTemp(t)
+	for _, tc := range []struct {
+		name         string
+		elevated     bool
+		exportErr    error
+		settingsOnly bool
+		wantDriver   bool
+		wantReason   string
+		wantExports  int
+	}{
+		{name: "elevated", elevated: true, wantDriver: true, wantExports: 1},
+		{name: "not elevated", elevated: false, wantReason: "administrator rights", wantExports: 0},
+		{name: "export fails", elevated: true, exportErr: errors.New("pnputil exploded"), wantReason: "pnputil exploded", wantExports: 1},
+		{name: "settings only", elevated: true, settingsOnly: true, wantReason: "settings only", wantExports: 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			env := newBatchEnvironment(t, "Front Desk")
+			env.elevated, env.exportErr = tc.elevated, tc.exportErr
+			path := filepath.Join(t.TempDir(), "front-desk.ssb")
+			result, err := Create(context.Background(), env, batchCollect, CreateOptions{QueueName: "Front Desk", Path: path, SettingsOnly: tc.settingsOnly})
+			if err != nil {
+				t.Fatalf("Create() = %v, want success", err)
+			}
+			if (result.Manifest.Driver != nil) != tc.wantDriver || len(env.exports) != tc.wantExports {
+				t.Fatalf("driver = %+v; exports = %v", result.Manifest.Driver, env.exports)
+			}
+			if tc.wantDriver {
+				if result.DriverNotIncluded != "" {
+					t.Fatalf("DriverNotIncluded = %q with the driver embedded", result.DriverNotIncluded)
+				}
+			} else if !strings.Contains(result.DriverNotIncluded, tc.wantReason) || !strings.Contains(result.DriverNotIncluded, `"Driver for Front Desk"`) {
+				t.Fatalf("DriverNotIncluded = %q, want it to mention %q and the driver name", result.DriverNotIncluded, tc.wantReason)
+			}
+			if tc.settingsOnly && env.elevationRead != 0 {
+				t.Fatal("settings-only copy checked elevation")
+			}
+			opened, err := Open(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer opened.Close()
+			if err := opened.Verify(); err != nil || (opened.Manifest.Driver != nil) != tc.wantDriver {
+				t.Fatalf("written bundle driver = %+v; verify = %v", opened.Manifest.Driver, err)
+			}
+		})
 	}
 }

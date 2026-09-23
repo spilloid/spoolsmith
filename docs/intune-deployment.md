@@ -9,7 +9,7 @@ Win32 app in Intune, uploading the package, and assigning it stay manual steps i
 the Intune admin center — see "Prepare and upload" and "Required and Company
 Portal" below. Tenant sign-in and automatic upload/assignment are a distinct,
 broader feature that isn't planned; see the [roadmap](roadmap.md). The desktop
-GUI offers the same wizard (Tools tab → "Build an Intune printer app..."), for
+GUI offers the same wizard (sidebar → **Intune package** → "Build an Intune printer app..."), for
 anyone who'd rather not use the CLI — validated on real Windows hardware in
 [the UX-simplification record](validation/2026-09-18-gui-intune-ux-simplification.md)
 (building on [the original dialog's validation](validation/2026-09-17-gui-intune-wizard.md)).
@@ -40,7 +40,8 @@ See Microsoft's [Win32 prerequisites and setup](https://learn.microsoft.com/en-u
    not device authentication.
 2. Supply a profile (`.ssb`, written by `profile capture` or `spoolsmith copy`)
    referencing the supported pinned Brother local archive recipe, carrying its
-   own embedded driver payload (from `spoolsmith copy --include-driver`), or
+   own embedded driver payload (`spoolsmith copy` includes the driver whenever it
+   can; check its result or `bundle inspect`), or
    explicitly accept a separately managed registered-driver prerequisite.
    Arbitrary OEM installers and downloaded payloads are still not supported by
    this packaging path. Both the archive hash and Windows signature checks
@@ -48,7 +49,7 @@ See Microsoft's [Win32 prerequisites and setup](https://learn.microsoft.com/en-u
    payload is verified and catalog-signature-checked instead, on the narrower
    terms described below. Keeping a driver registered does not prove it is
    compatible with the printer; validate that first.
-3. Build the CLI. `spoolsmith capabilities` must report `intune-endpoint-v1`; an
+3. Build the CLI. `spoolsmith capabilities` must report `SpoolSmith:intune-endpoint-v2:ssb,offline,status`; an
    older release binary or the GUI executable is refused by `intune build`/`wizard`.
 
 ```powershell
@@ -71,8 +72,9 @@ The interactive CLI and desktop GUI use the same defaults:
 1. Choose the validated profile and approved CLI executable. The app name comes
    from the profile’s queue name; a description includes its name and address.
    Revision starts at 1. A stable deployment ID is suggested from the queue name,
-   and the binary hash is calculated automatically. If the profile has no local
-   archive, explicitly accept that the driver will be registered separately.
+   and the binary hash is calculated automatically. If the printer file has neither a local
+   archive reference nor embedded drivers, explicitly accept that the driver
+   will be registered separately.
 2. Review the destination and manifest, including the ID, commands, hashes,
    filenames, target, driver and policy. Type `export` in the CLI or click
    **Export reviewed package** in the GUI to create the local package.
@@ -81,19 +83,24 @@ The interactive CLI and desktop GUI use the same defaults:
 .\spoolsmith.exe intune wizard
 ```
 
-The desktop GUI’s Tools tab → **Build an Intune printer app...** now has two
-pages: **Package settings** and **Review and export**. The common path needs only
-file selection, the driver prerequisite choice if applicable, and review/export.
-App name and destination are editable on the first page. **Advanced settings**
-contains ID, revision, optional location, description, an approved hash override,
-offline provisioning and adoption. Returning to settings or editing any package
-input invalidates the previous preview; validate again before exporting.
-The CLI wizard offers the same advanced settings when requested.
+In the desktop GUI, open **Intune package** in the sidebar and choose **Build an
+Intune printer app...**. The wizard has two steps: **1 Package settings** and
+**2 Review and export**, shown as a stepper at the top. Only **Validate and preview
+package** moves to the review step, and **Back to settings** discards that review.
+The common path needs only file selection, the driver prerequisite choice if
+applicable, and review/export. App name and destination are editable in step 1.
+**Advanced settings** contains ID, revision, optional location, description, an
+approved hash override, offline provisioning and adoption. Returning to settings
+or editing any package input invalidates the previous preview; validate again
+before exporting. The CLI wizard offers the same advanced settings when requested.
 
-Live identity validation and no adoption remain the defaults. Offline provisioning
-and adoption of an exactly matching unmanaged queue require explicit choices.
-Offline skips live identity checks at installation; printing still needs network
-connectivity. A failed strict probe never falls back to offline mode.
+By default, installation checks live identity and does not adopt existing queues.
+If the printer is unreachable or never confirms its identity after one retry,
+installation falls back to offline setup from the reviewed saved settings and
+`logs\lifecycle.log` records the fallback. A live identity that conflicts with
+the profile still fails (exit code 3). Explicit offline provisioning skips the
+check from the start; it and adoption of an exactly matching unmanaged queue
+require explicit choices. Printing still needs network connectivity.
 
 The suggested ID combines a readable queue-name slug with a short hash of the
 exact queue name, preserving distinctions between punctuation, Unicode and long
@@ -147,36 +154,31 @@ optional description empty.
 
 ### Packaging from a `.ssb` bundle
 
-`--profile` also accepts a `.ssb` bundle written by `spoolsmith copy` (dispatch
-is by file extension, matching the CLI and GUI elsewhere). Its embedded profile
-is the same `install.Profile` a captured JSON carries, validated identically —
-captured evidence is still required, and there is no separate, weaker path for
-bundle input. If the bundle was written with `--include-driver`, its driver
-payload satisfies the local-payload requirement in place of a vendor archive
-and `--driver-prerequisite` must be omitted; a driverless bundle needs
-`--driver-prerequisite` exactly like a driverless profile does. A bundle whose
-embedded profile also names a local vendor archive path is refused — that
-archive does not travel inside the bundle, so there is nothing to resolve it
-against.
+Every input is now an `.ssb` printer file, whether written by `profile capture`
+or `copy`. The same profile validation applies. If it carries an embedded
+driver payload, omit `--driver-prerequisite`. Otherwise, supply a supported
+local vendor archive reference or explicitly select the registered-driver
+prerequisite. An embedded payload and a vendor archive cannot be combined.
+Relative vendor archive paths resolve beside the selected printer file.
 
-The exported package ships the original `.ssb` file (pinned by SHA-256, exactly
-like `driver.exe` is for the vendor-archive path) alongside a `profile.json`
-extracted from it, purely for local status/detection checks. At install time,
-a bundle-sourced driver payload is staged through `apply`'s existing trust
-chain — every payload byte hash-verified against the bundle manifest, then a
-valid Windows catalog (.cat) Authenticode signature required before `pnputil`
-stages the INF — deliberately narrower than, and never described as
-equivalent to, the pinned-vendor-archive-hash-plus-Authenticode-on-the-EXE/MSI
-path. `README.txt` and `deployment.json` in the exported package record which
-path a given deployment used, plus the bundle's own recorded source host for
-provenance (display only, never a trust decision).
+The package includes a settings-only `profile.ssb` for local status, removal
+and archive/prerequisite installation. Its SHA-256 is pinned. When the source
+carries embedded drivers, the original file also travels as `bundle.ssb`;
+installation uses `apply` and verifies payload hashes and the Windows catalog
+signature before staging. `deployment.json` carries readable settings and
+provenance for review.
 
-The export contains `profile.json`, `deployment.json`, `spoolsmith.exe`,
+A package is one printer, so select one printer's `.ssb`. A printer set (`.zip`)
+is not a package source; package each of its `.ssb` files separately.
+
+The export contains `profile.ssb`, `deployment.json`, `spoolsmith.exe`,
 `install.ps1`, `uninstall.ps1`, `runtime.ps1`, `detect.ps1`, and `README.txt`,
-plus `driver.exe` when using the supported archive or `bundle.ssb` when
-packaging from a bundle with a driver payload. Existing output directories
-are refused. The sample [profile](../examples/intune/accounting.ssb) is illustrative
-and must be replaced with an actual captured, validated profile before deployment.
+plus `driver.exe` for a vendor archive or `bundle.ssb` for embedded drivers.
+Use the v1.1.0 or newer CLI from the same release as the packager; older CLIs
+are rejected because their status/removal commands expect JSON profiles.
+Existing output directories are refused. The sample
+[printer file](../examples/intune/accounting.ssb) is illustrative and must be
+replaced with a captured, validated setup before deployment.
 
 ## Prepare and upload
 
@@ -236,7 +238,7 @@ Configure these return codes (remove unrelated default success/reboot mappings):
 | 0 | Success | Locally configured and verified, or explicitly removed/already absent |
 | 1 | Failed | Inventory, conflict, package verification, execution or wrapper failure; inspect logs |
 | 2 | Failed | Invalid profile, deployment inputs or arguments |
-| 3 | Failed | Strict identity unresolved/mismatched; `status` uses this for local mismatch |
+| 3 | Failed | Live identity conflicts with the profile (an unreachable or unconfirmed printer falls back to offline instead); `status` uses this for local mismatch |
 | 4 | Failed | Elevation/driver prerequisite failure; repair prerequisites |
 | 5 | Failed | Confirmation contract failed; generated installers always supply approval flags |
 | 1618 | Retry | Another SpoolSmith deployment holds the machine lock |
@@ -314,8 +316,9 @@ Start with `logs\lifecycle.log`, then the invocation's `*.stdout.log` and
 without contacting the printer. Missing drivers require staging the approved archive
 or registering the separately managed exact driver. Hash/signature failures require
 an approved replacement payload, not a bypass. Spooler failures require restoring
-Windows printing services. Reachability problems affect strict validation and
-printing, and do not establish whether the local queue is configured correctly.
+Windows printing services. Reachability problems trigger the offline fallback
+(recorded in `lifecycle.log`) and affect printing; they do not establish whether
+the local queue is configured correctly.
 
 Record OS/build, architecture, CLI SHA-256, recipe/hash, tenant app ID, assignment
 and observed results for each pilot case. No cases below have been certified by

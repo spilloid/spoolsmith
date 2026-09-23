@@ -13,7 +13,7 @@ import (
 func TestImportPreviewDoesNotCreateDestinationAndRetainsReviewedProfiles(t *testing.T) {
 	source := t.TempDir()
 	writeSaved(t, source, "office.ssb", sample())
-	collection := filepath.Join(t.TempDir(), "all.ssb")
+	collection := filepath.Join(t.TempDir(), "all.zip")
 	if _, err := Export(source, collection); err != nil {
 		t.Fatal(err)
 	}
@@ -29,11 +29,9 @@ func TestImportPreviewDoesNotCreateDestinationAndRetainsReviewedProfiles(t *test
 	if _, err := os.Stat(dest); !os.IsNotExist(err) {
 		t.Fatalf("preview created destination: %v", err)
 	}
-	// Modifying the source collection or the returned summary after review
-	// cannot change what the technician already reviewed and is about to import.
-	if err := os.WriteFile(collection, []byte("corrupted after review"), 0600); err != nil {
-		t.Fatal(err)
-	}
+	// Modifying the returned summary after review cannot change what the
+	// technician reviewed; replacing the set with different content makes
+	// Execute refuse rather than import something nobody reviewed.
 	preview.Profiles[0].PrinterName = "Mutated preview"
 	newDest := filepath.Join(t.TempDir(), "chosen-folder")
 	transfer, err = transfer.WithDestination(newDest)
@@ -42,6 +40,29 @@ func TestImportPreviewDoesNotCreateDestinationAndRetainsReviewedProfiles(t *test
 	}
 	if _, err := os.Stat(newDest); !os.IsNotExist(err) {
 		t.Fatalf("destination review wrote files: %v", err)
+	}
+	reviewed, err := os.ReadFile(collection)
+	if err != nil {
+		t.Fatal(err)
+	}
+	other := sample()
+	other.Target = "192.0.2.99"
+	otherSource := t.TempDir()
+	writeSaved(t, otherSource, "office.ssb", other)
+	if err := os.Remove(collection); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Export(otherSource, collection); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := transfer.Execute(); err == nil || !strings.Contains(err.Error(), "changed after it was reviewed") {
+		t.Fatalf("imported a set that changed after review: %v", err)
+	}
+	if entries, _ := os.ReadDir(newDest); len(entries) != 0 {
+		t.Fatalf("refused import left files behind: %v", entries)
+	}
+	if err := os.WriteFile(collection, reviewed, 0600); err != nil {
+		t.Fatal(err)
 	}
 	if count, err := transfer.Execute(); err != nil || count != 1 {
 		t.Fatalf("execute: %d %v", count, err)
@@ -57,7 +78,7 @@ func TestPreviewListsEveryConflictAndExecutionRechecksDestination(t *testing.T) 
 	for _, name := range []string{"office.ssb", "second.ssb", "third.ssb"} {
 		writeSaved(t, source, name, sample())
 	}
-	collection := filepath.Join(t.TempDir(), "all.ssb")
+	collection := filepath.Join(t.TempDir(), "all.zip")
 	if _, err := Export(source, collection); err != nil {
 		t.Fatal(err)
 	}
@@ -100,7 +121,7 @@ func TestPreviewListsEveryConflictAndExecutionRechecksDestination(t *testing.T) 
 func TestExportPreviewRetainsSourceAndRechecksOutput(t *testing.T) {
 	source := t.TempDir()
 	profile := writeSaved(t, source, "office.ssb", sample())
-	output := filepath.Join(t.TempDir(), "all.ssb")
+	output := filepath.Join(t.TempDir(), "all.zip")
 	transfer, err := PrepareExport(source, output)
 	if err != nil {
 		t.Fatal(err)
@@ -114,14 +135,27 @@ func TestExportPreviewRetainsSourceAndRechecksOutput(t *testing.T) {
 	if _, err := transfer.Execute(); err == nil {
 		t.Fatal("export replaced a file created after review")
 	}
-	// Corrupting the source after review must not change what gets exported:
-	// the transfer already captured the reviewed bytes.
+	// Changing the source after review must not change what gets exported:
+	// Execute refuses a file whose bytes differ from the reviewed ones.
+	reviewed, err := os.ReadFile(profile)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(profile, []byte("broken source now"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	other := filepath.Join(t.TempDir(), "reviewed.ssb")
+	other := filepath.Join(t.TempDir(), "reviewed.zip")
 	transfer, err = transfer.WithDestination(other)
 	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := transfer.Execute(); err == nil || !strings.Contains(err.Error(), "changed after it was reviewed") {
+		t.Fatalf("exported a file that changed after review: %v", err)
+	}
+	if _, err := os.Stat(other); !os.IsNotExist(err) {
+		t.Fatalf("refused export left a set behind: %v", err)
+	}
+	if err := os.WriteFile(profile, reviewed, 0600); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := transfer.Execute(); err != nil {
@@ -138,7 +172,7 @@ func TestExportPreviewRetainsSourceAndRechecksOutput(t *testing.T) {
 }
 
 func TestEmptyExportHasActionableError(t *testing.T) {
-	_, err := PrepareExport(t.TempDir(), filepath.Join(t.TempDir(), "all.ssb"))
+	_, err := PrepareExport(t.TempDir(), filepath.Join(t.TempDir(), "all.zip"))
 	if err == nil || !strings.Contains(err.Error(), "no saved printers") || !strings.Contains(err.Error(), "save a printer") {
 		t.Fatalf("unhelpful empty folder error: %v", err)
 	}

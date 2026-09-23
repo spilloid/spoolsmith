@@ -14,24 +14,69 @@ public sealed class SiteScreenshots
     public void Capture_site_screenshots()
     {
         if (Environment.GetEnvironmentVariable("SPOOLSMITH_CAPTURE_SITE_SHOTS") != "1") return;
-        using var fixture = new AppFixture();
+        // Images are published, so every path they show lives in a neutral demo
+        // folder rather than under the capturing operator's user profile. The
+        // example setup gives the saved-setups capture a real entry to show.
+        var repo = AppFixture.FindRepoRoot();
+        Directory.CreateDirectory(DemoSetups);
+        File.Copy(Path.Combine(repo, "examples", "intune", "accounting.ssb"), Path.Combine(DemoSetups, "accounting.ssb"), overwrite: true);
+        File.Copy(Path.Combine(repo, "dist", "spoolsmith.exe"), DemoCli, overwrite: true);
+        using var fixture = new AppFixture(profilesDirectory: DemoSetups);
         var images = Path.Combine(fixture.RepoRoot, "docs", "img");
         Directory.CreateDirectory(images);
         foreach (var (tab, file) in new[] {
             ("This PC", "gui-this-pc.png"),
             ("Add a printer", "gui-add-printer.png"),
             ("Review and apply", "gui-review-and-apply.png"),
-            ("Inspect", "gui-tools.png") })
+            ("Inspect", "gui-tools.png"),
+            ("Intune package", "gui-intune-page.png") })
         {
-            fixture.SelectTab(tab);
+            fixture.GoTo(tab);
+            if (tab == "This PC")
+            {
+                // Show the inventory, not the "Reading this PC's printers..." state.
+                FunctionalTests.WaitUntil(() => FunctionalTests.FindButton(fixture.MainWindow, "Refresh").IsEnabled,
+                    "Printer inventory did not finish loading.");
+            }
             Thread.Sleep(500);
             fixture.MainWindow.CaptureToFile(Path.Combine(images, file));
         }
         // Before CaptureIntuneWizard, which is written to be the last step
         // in this method: it never closes its own modal dialog, so anything
         // run after it would fight that leftover dialog for the main window.
+        CaptureSavedSetups(fixture, images);
         CaptureCopyAllDialog(fixture, images);
         CaptureIntuneWizard(fixture, images);
+    }
+
+    private static readonly string DemoRoot = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "SpoolSmith-demo");
+    private static readonly string DemoSetups = Path.Combine(DemoRoot, "setups");
+    private static readonly string DemoCli = Path.Combine(DemoRoot, "spoolsmith.exe");
+
+    /// <summary>
+    /// Saved setups is a dialog opened from Add a printer. Captured with the
+    /// repository's example setup folder so the list is never empty.
+    /// </summary>
+    private static void CaptureSavedSetups(AppFixture fixture, string images)
+    {
+        fixture.GoTo("Add a printer");
+        FunctionalTests.FindButton(fixture.MainWindow, "Open a saved setup...").Invoke();
+        Window? dialog = null;
+        FunctionalTests.WaitUntil(() => (dialog = fixture.MainWindow.ModalWindows
+            .Concat(fixture.App.GetAllTopLevelWindows(fixture.Automation))
+            .FirstOrDefault(w => w.Title == "Saved printer setups")) != null,
+            "Saved setups did not open.");
+        try
+        {
+            Thread.Sleep(300);
+            dialog!.CaptureToFile(Path.Combine(images, "gui-saved-setups.png"));
+        }
+        finally
+        {
+            FunctionalTests.FindButton(dialog!, "Close").Invoke();
+            FunctionalTests.WaitUntil(() => fixture.MainWindow.IsEnabled, "Saved setups did not close.");
+        }
     }
 
     /// <summary>
@@ -44,7 +89,7 @@ public sealed class SiteScreenshots
     /// </summary>
     private static void CaptureCopyAllDialog(AppFixture fixture, string images)
     {
-        fixture.SelectTab("This PC");
+        fixture.GoTo("This PC");
         var copyAll = FunctionalTests.FindButton(fixture.MainWindow, "Copy all printers...");
         FunctionalTests.WaitUntil(() => FunctionalTests.FindButton(fixture.MainWindow, "Refresh").IsEnabled,
             "Printer inventory did not finish loading.");
@@ -57,6 +102,7 @@ public sealed class SiteScreenshots
             "Bulk copy did not open.");
         try
         {
+            FunctionalTests.SetText(FunctionalTests.Find(dialog!, "copy-all-file").AsTextBox(), Path.Combine(DemoRoot, "SpoolSmith-printers.zip"));
             Thread.Sleep(300);
             dialog!.CaptureToFile(Path.Combine(images, "gui-copy-all.png"));
         }
@@ -76,9 +122,9 @@ public sealed class SiteScreenshots
     /// </summary>
     private static void CaptureIntuneWizard(AppFixture fixture, string images)
     {
-        var profilePath = Path.Combine(fixture.RepoRoot, "examples", "intune", "accounting.ssb");
-        var outputDir = Path.Combine(Path.GetTempPath(), "spoolsmith-intune-screenshot-" + Guid.NewGuid().ToString("N"));
-        fixture.SelectTab("Tools");
+        var profilePath = Path.Combine(DemoSetups, "accounting.ssb");
+        var outputDir = Path.Combine(DemoRoot, "intune-" + DateTime.Now.ToString("yyyyMMdd-HHmmss"));
+        fixture.GoTo("Intune package");
         FunctionalTests.FindButton(fixture.MainWindow, "Build an Intune printer app...").Invoke();
         Window? dialog = null;
         FunctionalTests.WaitUntil(() => (dialog = fixture.MainWindow.ModalWindows
@@ -89,7 +135,7 @@ public sealed class SiteScreenshots
         {
             FunctionalTests.FindVisibleIntuneControl(dialog!, "intune-profile");
             FunctionalTests.SetText(FunctionalTests.Find(dialog!, "intune-profile").AsTextBox(), profilePath);
-            FunctionalTests.SetText(FunctionalTests.Find(dialog!, "intune-binary").AsTextBox(), fixture.CliExePath);
+            FunctionalTests.SetText(FunctionalTests.Find(dialog!, "intune-binary").AsTextBox(), DemoCli);
             // The bundled example profile carries no local driver archive.
             FunctionalTests.Find(dialog!, "Driver is managed separately and will be registered before installation").AsCheckBox().Click();
             FunctionalTests.WaitForText(FunctionalTests.Find(dialog!, "intune-display-name").AsTextBox(),

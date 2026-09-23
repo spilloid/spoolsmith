@@ -24,6 +24,7 @@ type batchEnvironment struct {
 	elevated      bool
 	elevationRead int
 	exports       []string
+	exportErr     error
 }
 
 func newBatchEnvironment(t *testing.T, names ...string) *batchEnvironment {
@@ -84,6 +85,9 @@ func (e *batchEnvironment) LookupPort(_ context.Context, name string) (install.P
 
 func (e *batchEnvironment) ExportDriver(_ context.Context, name, dest string) (install.DriverExport, error) {
 	e.exports = append(e.exports, name)
+	if e.exportErr != nil {
+		return install.DriverExport{}, e.exportErr
+	}
 	if err := os.WriteFile(filepath.Join(dest, "printer.inf"), []byte("[Version]\n"), 0600); err != nil {
 		return install.DriverExport{}, err
 	}
@@ -94,22 +98,50 @@ func batchCollect(_ context.Context, address string) (probe.Result, error) {
 	return probe.Result{Evidence: evidence.Evidence{IP: address, Provenance: "captured", HTTPTitle: "Office printer"}}, nil
 }
 
-func TestCreateAllReportsMixedOutcomesAndPreservesEachQueue(t *testing.T) {
+// isolateTemp points every temp-directory lookup at a fresh directory, so a
+// test can prove the batch left nothing behind.
+func isolateTemp(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	t.Setenv("TMPDIR", dir)
+	t.Setenv("TMP", dir)
+	t.Setenv("TEMP", dir)
+	return dir
+}
+
+// setMemberManifest extracts one member of a set and returns its manifest.
+func setMemberManifest(t *testing.T, set *Set, name string) Manifest {
+	t.Helper()
+	path, err := set.Extract(name, t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	opened, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer opened.Close()
+	return opened.Manifest
+}
+
+func TestCreateAllWritesOneSetWithDriversAndMixedOutcomes(t *testing.T) {
+	temp := isolateTemp(t)
 	env := newBatchEnvironment(t, "Office", "PDF", "Gone", "Warehouse")
 	env.queues[1].HostAddress = ""
 	env.lookupErrors["Gone"] = errors.New("queue was removed")
 	var probed, progressed []string
+	setPath := filepath.Join(t.TempDir(), "printers.zip")
 	result, err := CreateAll(context.Background(), env, func(ctx context.Context, address string) (probe.Result, error) {
 		probed = append(probed, address)
 		return batchCollect(ctx, address)
 	}, AllOptions{
-		OutputDir: filepath.Join(t.TempDir(), "bundles"), Note: "Site move", CreatedBy: "test build", SourceHost: "DESK-01",
+		SetPath: setPath, Note: "Site move", CreatedBy: "test build", SourceHost: "DESK-01",
 		Progress: func(name, _ string) { progressed = append(progressed, name) },
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Requested != 4 || result.Written != 2 || result.Skipped != 1 || result.Failed != 1 || len(result.Queues) != 4 {
+	if result.SetPath != setPath || result.Requested != 4 || result.Written != 2 || result.Skipped != 1 || result.Failed != 1 || len(result.Queues) != 4 {
 		t.Fatalf("result = %+v", result)
 	}
 	if !slices.Equal(env.lookups, []string{"Office", "Gone", "Warehouse"}) || !slices.Equal(probed, []string{"192.0.2.10", "192.0.2.13"}) {
@@ -118,44 +150,57 @@ func TestCreateAllReportsMixedOutcomesAndPreservesEachQueue(t *testing.T) {
 	if result.Queues[1].Status != "skipped" || !strings.Contains(result.Queues[1].Reason, "no printer host address") || result.Queues[2].Status != "error" || !strings.Contains(result.Queues[2].Reason, "queue was removed") {
 		t.Fatalf("missing failure reasons: %+v", result.Queues)
 	}
+
+	set, err := OpenSet(setPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer set.Close()
+	if set.Note != "Site move" || !slices.Equal(set.Members, []string{"Office.ssb", "Warehouse.ssb"}) {
+		t.Fatalf("set = note %q members %v", set.Note, set.Members)
+	}
 	for _, index := range []int{0, 3} {
 		outcome := result.Queues[index]
-		opened, err := Open(outcome.Bundle)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := opened.Verify(); err != nil {
-			t.Fatal(err)
-		}
-		manifest := opened.Manifest
-		opened.Close()
 		queue := env.queues[index]
-		if outcome.Status != "written" || manifest.Profile.PrinterName != queue.PrinterName || manifest.Profile.Target != queue.HostAddress || manifest.Profile.DriverName != queue.DriverName {
-			t.Fatalf("queue %q has the wrong bundle: %+v", queue.PrinterName, manifest)
+		if outcome.Status != "written" || !outcome.DriverIncluded || outcome.Reason != "" {
+			t.Fatalf("queue %q outcome = %+v", queue.PrinterName, outcome)
 		}
-		if manifest.Note != "Site move" || manifest.CreatedBy != "test build" || manifest.SourceHost != "DESK-01" || manifest.Driver != nil {
+		manifest := setMemberManifest(t, set, outcome.Member)
+		if manifest.Profile.PrinterName != queue.PrinterName || manifest.Profile.Target != queue.HostAddress || manifest.Profile.DriverName != queue.DriverName {
+			t.Fatalf("queue %q has the wrong member: %+v", queue.PrinterName, manifest)
+		}
+		if manifest.Note != "Site move" || manifest.CreatedBy != "test build" || manifest.SourceHost != "DESK-01" {
 			t.Fatalf("manifest options were not preserved: %+v", manifest)
+		}
+		if manifest.Driver == nil || manifest.Driver.WindowsDriverName != queue.DriverName {
+			t.Fatalf("driver was not embedded by default: %+v", manifest.Driver)
 		}
 		if !slices.Contains(progressed, queue.PrinterName) {
 			t.Fatalf("no progress for %q: %v", queue.PrinterName, progressed)
 		}
 	}
-	if env.elevationRead != 0 || len(env.exports) != 0 {
-		t.Fatal("settings-only copy touched the protected driver store")
+	if !slices.Equal(env.exports, []string{"Driver for Office", "Driver for Warehouse"}) {
+		t.Fatalf("exports = %v", env.exports)
+	}
+	leftovers, _ := filepath.Glob(filepath.Join(temp, "spoolsmith-*"))
+	if len(leftovers) != 0 {
+		t.Fatalf("batch left working files behind: %v", leftovers)
 	}
 }
 
 // TestCreateAllReportsDegradedWritesAlongsideConfirmedOnes checks that one
-// unreachable printer in a batch still yields a written, applyable bundle for
+// unreachable printer in a batch still yields a written, applyable member for
 // that queue -- clearly flagged -- while the rest of the batch is unaffected.
 func TestCreateAllReportsDegradedWritesAlongsideConfirmedOnes(t *testing.T) {
+	isolateTemp(t)
 	env := newBatchEnvironment(t, "Office", "Front Desk")
+	setPath := filepath.Join(t.TempDir(), "printers.zip")
 	result, err := CreateAll(context.Background(), env, func(ctx context.Context, address string) (probe.Result, error) {
 		if address == env.queues[1].HostAddress {
 			return probe.Result{}, errors.New("connection refused")
 		}
 		return batchCollect(ctx, address)
-	}, AllOptions{OutputDir: filepath.Join(t.TempDir(), "bundles")})
+	}, AllOptions{SetPath: setPath})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -168,129 +213,153 @@ func TestCreateAllReportsDegradedWritesAlongsideConfirmedOnes(t *testing.T) {
 	if result.Queues[1].Status != "written" || !strings.Contains(result.Queues[1].Reason, "identity was not confirmed") {
 		t.Fatalf("degraded queue not reported: %+v", result.Queues[1])
 	}
-	opened, err := Open(result.Queues[1].Bundle)
+	set, err := OpenSet(setPath)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer opened.Close()
-	if opened.Manifest.Profile.Evidence.Provenance != "unconfirmed" {
-		t.Fatalf("bundle Provenance = %q", opened.Manifest.Profile.Evidence.Provenance)
+	defer set.Close()
+	if got := setMemberManifest(t, set, result.Queues[1].Member).Profile.Evidence.Provenance; got != "unconfirmed" {
+		t.Fatalf("member Provenance = %q", got)
 	}
 }
 
-func TestCreateAllPreflightsExistingFilesAndBatchNameCollisions(t *testing.T) {
-	for _, existing := range []bool{false, true} {
-		t.Run(fmt.Sprintf("existing=%t", existing), func(t *testing.T) {
-			env := newBatchEnvironment(t, "Front Desk", "front/desk", "Warehouse")
-			dir := t.TempDir()
-			existingPath := filepath.Join(dir, "FRONT-DESK.ssb")
-			if existing {
-				if err := os.WriteFile(existingPath, []byte("keep this file"), 0600); err != nil {
-					t.Fatal(err)
-				}
-			}
-			var probes int
-			result, err := CreateAll(context.Background(), env, func(ctx context.Context, address string) (probe.Result, error) {
-				probes++
-				return batchCollect(ctx, address)
-			}, AllOptions{OutputDir: dir})
-			if err != nil {
-				t.Fatal(err)
-			}
-			wantWritten := 2
-			wantLookups := []string{"Front Desk", "Warehouse"}
-			if existing {
-				wantWritten, wantLookups = 1, []string{"Warehouse"}
-				data, err := os.ReadFile(existingPath)
-				if err != nil || string(data) != "keep this file" {
-					t.Fatalf("existing file changed: %q, %v", data, err)
-				}
-			}
-			if result.Written != wantWritten || result.Failed != 3-wantWritten || probes != wantWritten || !slices.Equal(env.lookups, wantLookups) {
-				t.Fatalf("result = %+v; probes = %d; lookups = %v", result, probes, env.lookups)
-			}
-			if result.Queues[1].Status != "error" || !strings.Contains(result.Queues[1].Reason, "already used") {
-				t.Fatalf("collision not explained: %+v", result.Queues[1])
-			}
-		})
+func TestCreateAllSuffixesCollidingMemberNames(t *testing.T) {
+	isolateTemp(t)
+	env := newBatchEnvironment(t, "Front Desk", "front/desk", "FRONT DESK", "CON")
+	setPath := filepath.Join(t.TempDir(), "printers.zip")
+	result, err := CreateAll(context.Background(), env, batchCollect, AllOptions{SetPath: setPath})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var members []string
+	for _, outcome := range result.Queues {
+		members = append(members, outcome.Member)
+	}
+	want := []string{"Front-Desk.ssb", "front-desk-2.ssb", "FRONT-DESK-3.ssb", "printer-CON.ssb"}
+	if result.Written != 4 || !slices.Equal(members, want) {
+		t.Fatalf("result = %+v; members = %v", result, members)
+	}
+	set, err := OpenSet(setPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer set.Close()
+	if !slices.Equal(set.Members, want) {
+		t.Fatalf("set members = %v", set.Members)
 	}
 }
 
-func TestCreateAllDriverPayloadRequiresOptInAndElevation(t *testing.T) {
-	t.Setenv("TMPDIR", t.TempDir())
-	for _, elevated := range []bool{false, true} {
-		t.Run(fmt.Sprintf("elevated=%t", elevated), func(t *testing.T) {
-			env := newBatchEnvironment(t, "Office")
-			env.elevated = elevated
-			result, err := CreateAll(context.Background(), env, batchCollect, AllOptions{OutputDir: t.TempDir(), IncludeDriver: true})
-			if err != nil {
-				t.Fatal(err)
-			}
-			if !elevated {
-				if result.Failed != 1 || len(env.exports) != 0 || len(env.lookups) != 0 || !strings.Contains(result.Queues[0].Reason, "administrator") {
-					t.Fatalf("unelevated result = %+v; lookups = %v; exports = %v", result, env.lookups, env.exports)
-				}
-				return
-			}
-			if result.Written != 1 || !slices.Equal(env.exports, []string{"Driver for Office"}) {
-				t.Fatalf("result = %+v; exports = %v", result, env.exports)
-			}
-			opened, err := Open(result.Queues[0].Bundle)
-			if err != nil {
-				t.Fatal(err)
-			}
-			defer opened.Close()
-			if err := opened.Verify(); err != nil || opened.Manifest.Driver == nil || len(opened.Manifest.Driver.Files) != 1 {
-				t.Fatalf("driver payload = %+v; verify = %v", opened.Manifest.Driver, err)
-			}
-		})
+func TestCreateAllRefusesBadOrExistingSetPathUpFront(t *testing.T) {
+	dir := t.TempDir()
+	existing := filepath.Join(dir, "Printers.ZIP")
+	if err := os.WriteFile(existing, []byte("keep this file"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{"", filepath.Join(dir, "printers"), filepath.Join(dir, "printers.ssb"), existing} {
+		env := newBatchEnvironment(t, "Office")
+		_, err := CreateAll(context.Background(), env, batchCollect, AllOptions{SetPath: path})
+		if err == nil {
+			t.Fatalf("CreateAll(%q) accepted a bad destination", path)
+		}
+		if env.listed != 0 || len(env.lookups) != 0 {
+			t.Fatalf("CreateAll(%q) did work before refusing", path)
+		}
+	}
+	data, err := os.ReadFile(existing)
+	if err != nil || string(data) != "keep this file" {
+		t.Fatalf("existing file changed: %q, %v", data, err)
+	}
+	// The extension check is case-insensitive in the accepting direction too.
+	env := newBatchEnvironment(t, "Office")
+	if _, err := CreateAll(context.Background(), env, batchCollect, AllOptions{SetPath: filepath.Join(dir, "new.ZIP")}); err != nil {
+		t.Fatalf("refused an upper-case .ZIP: %v", err)
 	}
 }
 
-func TestCreateAllCancellationKeepsCompletedAndAccountsForUnstartedQueues(t *testing.T) {
+func TestCreateAllFallsBackToSettingsOnlyWhenNotElevated(t *testing.T) {
+	isolateTemp(t)
+	env := newBatchEnvironment(t, "Office")
+	env.elevated = false
+	setPath := filepath.Join(t.TempDir(), "printers.zip")
+	result, err := CreateAll(context.Background(), env, batchCollect, AllOptions{SetPath: setPath})
+	if err != nil {
+		t.Fatal(err)
+	}
+	outcome := result.Queues[0]
+	if result.Written != 1 || outcome.DriverIncluded || !strings.Contains(outcome.Reason, "administrator") || !strings.Contains(outcome.Reason, "Driver for Office") || len(env.exports) != 0 {
+		t.Fatalf("result = %+v; exports = %v", result, env.exports)
+	}
+	set, err := OpenSet(setPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer set.Close()
+	if setMemberManifest(t, set, outcome.Member).Driver != nil {
+		t.Fatal("unelevated copy carried a driver payload")
+	}
+}
+
+func TestCreateAllSettingsOnlyNeverTouchesTheDriverStore(t *testing.T) {
+	isolateTemp(t)
+	env := newBatchEnvironment(t, "Office")
+	result, err := CreateAll(context.Background(), env, batchCollect, AllOptions{SetPath: filepath.Join(t.TempDir(), "printers.zip"), SettingsOnly: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Written != 1 || result.Queues[0].DriverIncluded || env.elevationRead != 0 || len(env.exports) != 0 {
+		t.Fatalf("result = %+v; elevation reads = %d; exports = %v", result, env.elevationRead, env.exports)
+	}
+}
+
+func TestCreateAllWritesNothingWhenEveryQueueIsSkipped(t *testing.T) {
+	isolateTemp(t)
+	env := newBatchEnvironment(t, "PDF", "Fax")
+	for i := range env.queues {
+		env.queues[i].HostAddress = ""
+	}
+	setPath := filepath.Join(t.TempDir(), "printers.zip")
+	result, err := CreateAll(context.Background(), env, batchCollect, AllOptions{SetPath: setPath})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Written != 0 || result.Skipped != 2 || result.SetPath != "" {
+		t.Fatalf("result = %+v", result)
+	}
+	if _, err := os.Stat(setPath); !os.IsNotExist(err) {
+		t.Fatalf("wrote a set with no members: %v", err)
+	}
+}
+
+func TestCreateAllCancellationWritesNoSetAndAccountsForEveryQueue(t *testing.T) {
+	isolateTemp(t)
 	env := newBatchEnvironment(t, "Office", "Warehouse", "Lobby")
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+	setPath := filepath.Join(t.TempDir(), "printers.zip")
 	result, err := CreateAll(ctx, env, batchCollect, AllOptions{
-		OutputDir: t.TempDir(),
+		SetPath: setPath,
 		Progress: func(_ string, step string) {
 			if step == "Checking the file can be read back..." {
 				cancel()
 			}
 		},
 	})
-	if !errors.Is(err, context.Canceled) || result.Requested != 3 || result.Written != 1 || result.Failed != 2 || len(result.Queues) != 3 {
+	if !errors.Is(err, context.Canceled) || result.Requested != 3 || result.Written != 0 || result.Failed != 3 || len(result.Queues) != 3 || result.SetPath != "" {
 		t.Fatalf("result = %+v; error = %v", result, err)
 	}
-	if !slices.Equal(env.lookups, []string{"Office"}) || result.Queues[0].Status != "written" {
-		t.Fatalf("unexpected work after cancellation: %+v; lookups = %v", result, env.lookups)
+	if !slices.Equal(env.lookups, []string{"Office"}) {
+		t.Fatalf("unexpected work after cancellation: lookups = %v", env.lookups)
+	}
+	if result.Queues[0].Status != "error" || !strings.Contains(result.Queues[0].Reason, "not saved") {
+		t.Fatalf("copied-but-unsaved queue = %+v", result.Queues[0])
 	}
 	for _, outcome := range result.Queues[1:] {
 		if outcome.Status != "error" || !strings.Contains(outcome.Reason, "not copied: context canceled") {
 			t.Fatalf("unstarted queue = %+v", outcome)
 		}
 	}
-}
-
-func TestCreateAllCancellationBeforeWriteDoesNotWriteOrStartNextQueue(t *testing.T) {
-	env := newBatchEnvironment(t, "Office", "Warehouse")
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	dir := t.TempDir()
-	result, err := CreateAll(ctx, env, batchCollect, AllOptions{
-		OutputDir: dir,
-		Progress: func(_ string, step string) {
-			if step == "Writing the file..." {
-				cancel()
-			}
-		},
-	})
-	if !errors.Is(err, context.Canceled) || result.Written != 0 || result.Failed != 2 || len(result.Queues) != 2 || !slices.Equal(env.lookups, []string{"Office"}) {
-		t.Fatalf("result = %+v; error = %v; lookups = %v", result, err, env.lookups)
-	}
-	files, err := os.ReadDir(dir)
-	if err != nil || len(files) != 0 {
-		t.Fatalf("canceled copy wrote files: %v, %v", files, err)
+	if _, err := os.Stat(setPath); !os.IsNotExist(err) {
+		t.Fatalf("canceled copy wrote a set: %v", err)
 	}
 }
 
@@ -298,12 +367,12 @@ func TestCreateAllAlreadyCanceledDoesNoWork(t *testing.T) {
 	env := newBatchEnvironment(t, "Office")
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	dir := filepath.Join(t.TempDir(), "uncreated")
-	result, err := CreateAll(ctx, env, batchCollect, AllOptions{OutputDir: dir})
+	setPath := filepath.Join(t.TempDir(), "printers.zip")
+	result, err := CreateAll(ctx, env, batchCollect, AllOptions{SetPath: setPath})
 	if !errors.Is(err, context.Canceled) || env.listed != 0 || len(env.lookups) != 0 || result.Written != 0 {
 		t.Fatalf("result = %+v; error = %v; inventory reads = %d", result, err, env.listed)
 	}
-	if _, err := os.Stat(dir); !os.IsNotExist(err) {
-		t.Fatalf("canceled copy created its output directory: %v", err)
+	if _, err := os.Stat(setPath); !os.IsNotExist(err) {
+		t.Fatalf("canceled copy created its set: %v", err)
 	}
 }
