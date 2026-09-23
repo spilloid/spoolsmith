@@ -77,7 +77,10 @@ func main(){json.NewEncoder(os.Stdout).Encode(map[string]any{"argv":os.Args[1:]}
 			// The fake CLI echoes argv; real profile parsing belongs to each retained CLI.
 			profile := []byte("pinned revision profile")
 			mustWrite(filepath.Join(dir, name), profile)
-			mustWrite(filepath.Join(dir, "spoolsmith.exe"), binaryBytes)
+			// Executable on every OS: the runtime starts it as the retained CLI.
+			if err := os.WriteFile(filepath.Join(dir, "spoolsmith.exe"), binaryBytes, 0700); err != nil {
+				t.Fatal(err)
+			}
 			manifest := Manifest{Format: format, BinarySHA256: digest(binaryBytes), ProfileSHA256: digest(profile)}
 			data, err := json.Marshal(manifest)
 			if err != nil {

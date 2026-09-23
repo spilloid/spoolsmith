@@ -194,6 +194,9 @@ func TestExportRejectsSourceDirectoryAlias(t *testing.T) {
 	if err := os.Symlink(source, alias); err != nil {
 		t.Skipf("directory symlinks unavailable: %v", err)
 	}
+	// A real printer to export, so the refusal is about the destination alias
+	// rather than an empty source.
+	writeSaved(t, source, "office.ssb", sample())
 	if _, err := Export(source, filepath.Join(alias, "all.zip")); err == nil || !strings.Contains(err.Error(), "outside") {
 		t.Fatalf("expected source-directory alias to be rejected, got %v", err)
 	}
