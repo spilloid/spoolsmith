@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/spilloid/spoolsmith/internal/evidence"
 	"github.com/spilloid/spoolsmith/internal/install"
 	"github.com/spilloid/spoolsmith/internal/probe"
 )
@@ -111,7 +112,7 @@ func Create(ctx context.Context, env install.Environment, collect Collector, opt
 	// so applying the bundle elsewhere still checks it is talking to the same
 	// device rather than trusting the file.
 	report(fmt.Sprintf("Checking the printer at %s...", cloned.HostAddress))
-	probed, err := collectIdentity(ctx, collect, cloned.HostAddress, report)
+	probed, confirmed, err := collectIdentity(ctx, collect, cloned.HostAddress, report)
 	if err != nil {
 		return CreateResult{}, err
 	}
@@ -125,6 +126,16 @@ func Create(ctx context.Context, env install.Environment, collect Collector, opt
 		PrinterName: cloned.PrinterName,
 		DriverName:  cloned.DriverName,
 		Evidence:    probed.Evidence,
+	}
+	if !confirmed {
+		// The printer wouldn't answer -- still worth writing a bundle from
+		// what Windows already knows about this queue, rather than sending
+		// the operator away with nothing. Applying it later already requires
+		// this exact fallback (RunInstall's offline path), so the two halves
+		// of a degraded copy line up on the same guarantee: nothing here was
+		// ever confirmed against the real device.
+		profile.Evidence.Provenance = "unconfirmed"
+		profile.Evidence.ProvenanceNote = fmt.Sprintf("the printer at %s did not answer during copy; identity was never confirmed", cloned.HostAddress)
 	}
 	if err := profile.Validate(); err != nil {
 		return CreateResult{}, err
@@ -197,27 +208,30 @@ func Create(ctx context.Context, env install.Environment, collect Collector, opt
 // four. Failing the whole copy on that first thin answer would send an
 // operator away from a machine that was about to work.
 //
-// The retry only repeats the probe. It never lowers the bar for what counts as
-// identity, and a second thin answer still fails.
-func collectIdentity(ctx context.Context, collect Collector, address string, report func(string)) (probe.Result, error) {
-	result, err := collect(ctx, address)
+// The retry only repeats the probe; it never lowers the bar for what counts as
+// identity. When the printer still hasn't answered after that retry --
+// unreachable, powered off for a physical move, still asleep -- this reports
+// that back instead of failing the whole copy: Create writes the bundle from
+// what Windows already knows about the queue and marks its evidence
+// unconfirmed, matching the same offline fallback RunInstall already uses when
+// applying one. Only a canceled context is still a hard error here.
+func collectIdentity(ctx context.Context, collect Collector, address string, report func(string)) (result probe.Result, confirmed bool, err error) {
+	result, err = collect(ctx, address)
 	if err == nil && hasIdentity(result) {
-		return result, nil
+		return result, true, nil
 	}
 	report(fmt.Sprintf("The printer at %s did not answer clearly. Waking it and trying once more...", address))
 	select {
 	case <-ctx.Done():
-		return probe.Result{}, ctx.Err()
+		return probe.Result{}, false, ctx.Err()
 	case <-time.After(2 * time.Second):
 	}
 	retry, retryErr := collect(ctx, address)
-	if retryErr != nil {
-		return probe.Result{}, fmt.Errorf("copy: check the printer at %s: %w", address, retryErr)
+	if retryErr == nil && hasIdentity(retry) {
+		return retry, true, nil
 	}
-	if !hasIdentity(retry) {
-		return probe.Result{}, fmt.Errorf("copy: the printer at %s did not identify itself after two attempts. It may be asleep or unreachable from this PC. Wake it and try again", address)
-	}
-	return retry, nil
+	report(fmt.Sprintf("The printer at %s still could not be reached or confirmed. Capturing this queue's settings offline; the file will record that its identity was never confirmed.", address))
+	return probe.Result{Evidence: evidence.Evidence{IP: address}}, false, nil
 }
 
 // hasIdentity reports whether a probe found any of the three identity sources

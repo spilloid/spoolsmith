@@ -29,6 +29,15 @@ product hardening, with additional protocols as future scope.
    Hosted Windows automation covers navigation, minimum-size layout and selected
    workflows; it does not establish those accessibility or hardware outcomes.
    Extend end-to-end coverage through actual GUI copy/apply and JSON transfer.
+5. **Validate the automatic offline fallback (2026-09-22, see CLAUDE.md) against
+   a real printer.** Power off (or unplug) a printer mid-copy and mid-apply on
+   actual hardware, on both the CLI and desktop, and confirm: `copy` still
+   writes a usable, clearly-marked bundle; `apply`/`install --profile` still
+   falls back to offline and completes with a correct plan; the operator-visible
+   notices are legible in the GUI transcript, not just on CLI stderr; and
+   powering the printer back on and re-running `status`/`check-status` reports
+   the mismatch (or match) correctly. Only unit tests with fake environments
+   exist today.
 
 ## Known behavior to harden
 

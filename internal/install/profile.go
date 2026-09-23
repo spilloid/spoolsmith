@@ -47,11 +47,21 @@ func (p Profile) Validate() error {
 			return err
 		}
 	}
-	if p.Evidence.Provenance != "captured" {
-		return errors.New("profile: captured evidence is required")
-	}
-	if strings.TrimSpace(p.Evidence.HTTPTitle) == "" && strings.TrimSpace(p.Evidence.PJLID) == "" && strings.TrimSpace(p.Evidence.SNMPSysDescr) == "" {
-		return errors.New("profile: HTTP, PJL, or SNMP identity is required; capture again when the printer is awake")
+	switch p.Evidence.Provenance {
+	case "captured":
+		if !p.hasCapturedIdentity() {
+			return errors.New("profile: HTTP, PJL, or SNMP identity is required; capture again when the printer is awake")
+		}
+	case "unconfirmed":
+		// The source printer never answered when this profile was captured
+		// (see bundle.Create's offline fallback). There is deliberately no
+		// identity here to check -- RunInstall always treats a profile like
+		// this as offline, never as a silent pass on a live comparison.
+		if strings.TrimSpace(p.Evidence.ProvenanceNote) == "" {
+			return errors.New("profile: provenance_note is required when evidence is unconfirmed")
+		}
+	default:
+		return errors.New("profile: captured or unconfirmed evidence is required")
 	}
 	return nil
 }
@@ -170,6 +180,15 @@ func EditProfile(path string, p Profile) (string, error) {
 		return backupPath, closeErr
 	}
 	return backupPath, os.Rename(next.Name(), path)
+}
+
+// hasCapturedIdentity reports whether this profile carries any live-captured
+// identity signal at all. A profile captured offline (Provenance
+// "unconfirmed") has none by definition, which RunInstall uses to skip
+// straight to its offline fallback instead of probing for a comparison that
+// can never succeed.
+func (p Profile) hasCapturedIdentity() bool {
+	return strings.TrimSpace(p.Evidence.HTTPTitle) != "" || strings.TrimSpace(p.Evidence.PJLID) != "" || strings.TrimSpace(p.Evidence.SNMPSysDescr) != ""
 }
 
 func (p Profile) resolution(current evidence.Evidence) (catalog.ResolutionResult, error) {

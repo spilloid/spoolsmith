@@ -33,7 +33,11 @@ func bulkCopyResultText(result bundle.AllResult, includeDriver bool) string {
 	for _, q := range result.Queues {
 		switch q.Status {
 		case "written":
-			fmt.Fprintf(&text, "Copied: %s\r\n  %s\r\n\r\n", q.Name, q.Bundle)
+			fmt.Fprintf(&text, "Copied: %s\r\n  %s\r\n", q.Name, q.Bundle)
+			if q.Reason != "" {
+				fmt.Fprintf(&text, "  Degraded success: %s\r\n", q.Reason)
+			}
+			text.WriteString("\r\n")
 		case "skipped":
 			fmt.Fprintf(&text, "Skipped: %s\r\n  %s\r\n\r\n", q.Name, q.Reason)
 		default:

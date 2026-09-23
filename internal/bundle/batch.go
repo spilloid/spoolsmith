@@ -116,7 +116,7 @@ func CreateAll(ctx context.Context, env install.Environment, collect Collector, 
 			continue
 		}
 		occupied[key] = fmt.Sprintf("queue %q", queue.PrinterName)
-		_, err := Create(ctx, env, collect, CreateOptions{
+		created, err := Create(ctx, env, collect, CreateOptions{
 			QueueName: queue.PrinterName, Path: path, IncludeDriver: opts.IncludeDriver,
 			Note: opts.Note, CreatedBy: opts.CreatedBy, SourceHost: opts.SourceHost,
 			Progress: func(step string) {
@@ -130,6 +130,9 @@ func CreateAll(ctx context.Context, env install.Environment, collect Collector, 
 			result.Failed++
 		} else {
 			outcome.Status, outcome.Bundle = "written", path
+			if created.Manifest.Profile.Evidence.Provenance != "captured" {
+				outcome.Reason = "written offline: the printer did not answer, so its identity was not confirmed"
+			}
 			result.Written++
 		}
 		result.Queues = append(result.Queues, outcome)

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"slices"
@@ -145,6 +146,54 @@ func TestCloneThenApplyAcrossMachines(t *testing.T) {
 		if len(env.ran) == 0 || !strings.Contains(env.ran[0], "pnputil.exe /add-driver") {
 			t.Fatalf("%s: driver staging was not the first command: %#v", machine, env.ran)
 		}
+	}
+}
+
+// TestCloneDegradesToOfflineWhenPrinterUnreachable is the actual operator
+// complaint this feature exists for: physically moving a printer routinely
+// means it can't be reached exactly when someone wants to copy its settings
+// off the old PC. copy now writes a bundle from what Windows already knows
+// about the queue instead of failing outright, and says so plainly on stderr
+// rather than quietly.
+func TestCloneDegradesToOfflineWhenPrinterUnreachable(t *testing.T) {
+	t.Setenv("TMPDIR", t.TempDir())
+	app, _ := bundleTestApplication(t)
+	unreachable := func(context.Context, string) (probe.Result, error) {
+		return probe.Result{}, errors.New("connection refused")
+	}
+	app.collect = unreachable
+	bundlePath := filepath.Join(t.TempDir(), "office.ssb")
+
+	var stdout, stderr bytes.Buffer
+	code := run(context.Background(), []string{"copy", "Test Printer", bundlePath}, strings.NewReader(""), &stdout, &stderr, app)
+	if code != 0 {
+		t.Fatalf("copy code=%d\n%s\n%s", code, stdout.String(), stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "Degraded success") {
+		t.Fatalf("no degraded-success notice on stderr:\n%s", stderr.String())
+	}
+
+	opened, err := bundle.Open(bundlePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer opened.Close()
+	if err := opened.Verify(); err != nil {
+		t.Fatalf("degraded copy wrote a bundle that does not verify: %v", err)
+	}
+	if opened.Manifest.Profile.Evidence.Provenance != "unconfirmed" {
+		t.Fatalf("Provenance = %q, want unconfirmed", opened.Manifest.Profile.Evidence.Provenance)
+	}
+	if opened.Manifest.Profile.PrinterName != "Test Printer" {
+		t.Fatalf("profile did not carry the locally known queue: %+v", opened.Manifest.Profile)
+	}
+
+	// bundle inspect must tell an operator reading it later the same thing.
+	stdout.Reset()
+	stderr.Reset()
+	code = run(context.Background(), []string{"bundle", "inspect", bundlePath}, strings.NewReader(""), &stdout, &stderr, app)
+	if code != 0 || !strings.Contains(stderr.String(), "unconfirmed") {
+		t.Fatalf("bundle inspect code=%d\n%s\n%s", code, stdout.String(), stderr.String())
 	}
 }
 

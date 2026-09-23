@@ -241,6 +241,9 @@ func (a *app) onCopyQueue() {
 func copySuccessMessage(path string, manifest bundle.Manifest) string {
 	text := fmt.Sprintf("Saved %s\r\n\r\nPrinter: %s\r\nAddress: %s\r\nDriver: %s\r\n\r\n",
 		path, manifest.Profile.PrinterName, manifest.Profile.Target, manifest.Profile.DriverName)
+	if manifest.Profile.Evidence.Provenance != "captured" {
+		text += "Degraded success: the printer did not answer, so its identity was not confirmed. Setting this up on the other PC will run offline; check the printer once it's reachable.\r\n\r\n"
+	}
 	if manifest.Driver == nil {
 		text += "The driver was not included, so the other PC must already have this driver installed.\r\n\r\n"
 	} else {

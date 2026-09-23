@@ -145,6 +145,39 @@ func TestCreateAllReportsMixedOutcomesAndPreservesEachQueue(t *testing.T) {
 	}
 }
 
+// TestCreateAllReportsDegradedWritesAlongsideConfirmedOnes checks that one
+// unreachable printer in a batch still yields a written, applyable bundle for
+// that queue -- clearly flagged -- while the rest of the batch is unaffected.
+func TestCreateAllReportsDegradedWritesAlongsideConfirmedOnes(t *testing.T) {
+	env := newBatchEnvironment(t, "Office", "Front Desk")
+	result, err := CreateAll(context.Background(), env, func(ctx context.Context, address string) (probe.Result, error) {
+		if address == env.queues[1].HostAddress {
+			return probe.Result{}, errors.New("connection refused")
+		}
+		return batchCollect(ctx, address)
+	}, AllOptions{OutputDir: filepath.Join(t.TempDir(), "bundles")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Written != 2 || result.Failed != 0 || result.Skipped != 0 {
+		t.Fatalf("result = %+v", result)
+	}
+	if result.Queues[0].Reason != "" {
+		t.Fatalf("confirmed queue unexpectedly flagged: %+v", result.Queues[0])
+	}
+	if result.Queues[1].Status != "written" || !strings.Contains(result.Queues[1].Reason, "identity was not confirmed") {
+		t.Fatalf("degraded queue not reported: %+v", result.Queues[1])
+	}
+	opened, err := Open(result.Queues[1].Bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer opened.Close()
+	if opened.Manifest.Profile.Evidence.Provenance != "unconfirmed" {
+		t.Fatalf("bundle Provenance = %q", opened.Manifest.Profile.Evidence.Provenance)
+	}
+}
+
 func TestCreateAllPreflightsExistingFilesAndBatchNameCollisions(t *testing.T) {
 	for _, existing := range []bool{false, true} {
 		t.Run(fmt.Sprintf("existing=%t", existing), func(t *testing.T) {

@@ -96,6 +96,9 @@ func runClone(ctx context.Context, args []string, input io.Reader, stdout, stder
 	if manifest.Driver == nil {
 		fmt.Fprintln(stderr, "No driver payload: the target machine must already have this driver registered. Re-run with --include-driver to carry it.")
 	}
+	if manifest.Profile.Evidence.Provenance != "captured" {
+		fmt.Fprintln(stderr, "Degraded success: the printer did not answer, so its identity was not confirmed. Apply will set it up offline; check it once the printer is reachable.")
+	}
 	return encodeSuccess(stdout, stderr, "copy", manifest)
 }
 
@@ -117,6 +120,9 @@ func runCloneAll(ctx context.Context, outputDir string, includeDriver bool, note
 		switch queue.Status {
 		case "written":
 			fmt.Fprintf(stderr, "Wrote %s -> %s\n", queue.Name, queue.Bundle)
+			if queue.Reason != "" {
+				fmt.Fprintf(stderr, "  ! %s\n", queue.Reason)
+			}
 		case "skipped":
 			fmt.Fprintf(stderr, "! %s: skipped -- %s\n", queue.Name, queue.Reason)
 		case "error":
@@ -242,6 +248,11 @@ func runBundle(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "  Note: %s\n", m.Note)
 	}
 	fmt.Fprintf(stderr, "  Queue: %s\n  Target: %s (RAW TCP 9100)\n  Driver: %s\n", m.Profile.PrinterName, m.Profile.Target, m.Profile.DriverName)
+	if m.Profile.Evidence.Provenance == "captured" {
+		fmt.Fprintln(stderr, "  Identity: confirmed against the printer when copied.")
+	} else {
+		fmt.Fprintf(stderr, "  Identity: unconfirmed — %s. Applying it runs offline.\n", shown(m.Profile.Evidence.ProvenanceNote))
+	}
 	if m.Driver == nil {
 		fmt.Fprintln(stderr, "  Driver payload: none — the target machine must already have this driver registered.")
 	} else {

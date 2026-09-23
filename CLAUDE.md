@@ -2,6 +2,36 @@
 
 ## Project Mission
 
+**Operator update, 2026-09-22:** offline fallback is now first-class across
+`install`/`apply`/`copy`, on both the CLI and desktop, instead of a manual
+`--offline` flag the operator had to already know to reach for. A printer
+that won't answer right now — still booting after a physical move, a cable
+not yet seated, DHCP settling on a new subnet — no longer fails the whole
+operation outright:
+- `install --profile` / `apply <bundle>`: if the live probe can't reach the
+  printer, or the printer answers but never confirms identity (even after the
+  existing one-retry-for-a-sleeping-printer path), the run now falls back to
+  the same offline path `--offline` already supported, and says so on the
+  transcript (`Note: offline fallback: ...`) and in `Outcome.Resolution`
+  (`offline-fallback-operator-profile`, distinct from an operator-requested
+  `offline-operator-profile`). A profile with no captured identity at all is
+  never retried against a live probe it can't possibly match. This never
+  skips the one required plan confirmation — see the trust model below.
+- `copy` (rip a bundle off an already-installed queue): if the source printer
+  never answers after the existing retry, `copy` no longer fails the whole
+  operation. It writes the bundle anyway from what Windows already knows
+  about the queue (name/driver/address), with the profile's evidence marked
+  `"provenance": "unconfirmed"` and a note explaining why. `copy --all`
+  reports this per queue rather than failing the batch. Applying such a
+  bundle always runs the offline path above — there is nothing in it to ever
+  confirm against a live printer. A canceled operation is still a hard
+  failure; only "the printer never answered" is degraded.
+- See `internal/install/workflow.go` (RunInstall), `internal/bundle/create.go`
+  (collectIdentity/Create) and their tests for the exact boundary between
+  "degrade to offline" and "still fail closed" — an identity *mismatch*
+  (saved vs. observed) is a conflict, never treated as unreachable, and always
+  still fails outright.
+
 **Operator update, 2026-09-17 (v0.7.0 track):** the desktop GUI's Intune wizard
 ("Build an Intune printer app..." on the Tools tab) is now enabled — it calls the
 same `internal/intune` `Prepare`/`Export` the CLI's `intune build`/`wizard` uses,

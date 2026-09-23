@@ -398,11 +398,15 @@ func (a *app) onOpenBundle() {
 		showErr(a.mw, "Open printer file", err)
 		return
 	}
+	// A bundle whose printer never answered during copy has no live identity
+	// to ever check here either -- say so on the review screen up front
+	// rather than let the operator discover it mid-run.
 	a.startOperation(operation{
 		Kind:        opApply,
 		BundlePath:  dialog.FilePath,
 		PrinterName: opened.Manifest.Profile.PrinterName,
 		Target:      opened.Manifest.Profile.Target,
+		Offline:     opened.Manifest.Profile.Evidence.Provenance != "captured",
 	})
 }
 
