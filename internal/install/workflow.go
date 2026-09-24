@@ -307,6 +307,7 @@ func (w Workflow) RunInstall(ctx context.Context, env Environment, input io.Read
 			return failOutcome(outcome, fmt.Errorf("install: bundle payload provides driver %q but the profile maps %q", payload.WindowsDriverName, plan.DriverName), ExitUsageError)
 		}
 		plan.BundleDriver = &payload
+		plan.PublisherTrust = bundlePublisherTrust()
 		plan.Driver.Strategy = "bundle-payload-if-missing"
 		plan.Driver.Source = bundleDriverSource(payload)
 		command, bundleErr := bundleDriverCommand(payload)
@@ -589,7 +590,11 @@ func writeInstallPlan(writer io.Writer, plan Plan, compact bool) {
 	}
 	if plan.BundleDriver != nil {
 		fmt.Fprintf(writer, "  Bundle driver payload: %s\n  Files: %d (%d bytes), staged only if the driver is missing\n  Payload digest: %s\n", plan.BundleDriver.WindowsDriverName, plan.BundleDriver.FileCount, plan.BundleDriver.TotalBytes, plan.BundleDriver.PayloadDigest)
-		fmt.Fprintln(writer, "  Payload bytes were verified against the bundle manifest. Catalog signature is checked, and Windows enforces driver signing when pnputil stages the INF. This is not a vendor-package hash check.")
+		fmt.Fprintln(writer, "  Payload bytes were verified against the bundle manifest. Windows enforces driver signing when pnputil stages the INF. This is not a vendor-package hash check.")
+	}
+	if plan.PublisherTrust != nil {
+		fmt.Fprintf(writer, "  Driver publisher trust: if the driver is staged, the signer of each catalog its INF names is added to %s unless that exact certificate (by thumbprint) is already there.\n", plan.PublisherTrust.Store)
+		fmt.Fprintln(writer, "  Only a signer from a catalog Windows validates is eligible, never certificate material from the bundle. Nothing is added to Root; an unsigned or untrusted-root catalog is left for Windows to accept or refuse.")
 	}
 	if plan.ForcedOverride {
 		fmt.Fprintln(writer, "  Warning: manually selected mapping; not an automatic high-confidence driver match.")

@@ -122,6 +122,23 @@ func TestCloneThenApplyAcrossMachines(t *testing.T) {
 	if preview.Plan.BundleDriver == nil {
 		t.Fatal("preview plan does not mention the bundle's driver payload")
 	}
+	// The one trust-store change staging may make is part of the reviewed,
+	// fingerprinted plan, stated as a rule rather than as this machine's state,
+	// so machines that do and don't already trust the publisher still match
+	// the fingerprint below.
+	if trust := preview.Plan.PublisherTrust; trust == nil || trust.Store != `LocalMachine\TrustedPublisher` || !trust.OnlyIfMissing || !trust.RequireValidCatalog {
+		t.Fatalf("preview plan publisher trust = %#v", preview.Plan.PublisherTrust)
+	}
+	stdout.Reset()
+	stderr.Reset()
+	if code = run(context.Background(), []string{"apply", bundlePath, "--dry-run"}, strings.NewReader(""), &stdout, &stderr, app); code != 0 {
+		t.Fatalf("apply --dry-run code=%d\n%s\n%s", code, stdout.String(), stderr.String())
+	}
+	for _, want := range []string{`Driver publisher trust:`, `LocalMachine\TrustedPublisher`, "by thumbprint", "Only a signer from a catalog Windows validates is eligible"} {
+		if !strings.Contains(stdout.String()+stderr.String(), want) {
+			t.Fatalf("human-readable plan is missing %q:\n%s\n%s", want, stdout.String(), stderr.String())
+		}
+	}
 
 	// Machines 2..N: the same file plus the reviewed fingerprint, no prompt.
 	for _, machine := range []string{"desk-02", "desk-03"} {

@@ -144,7 +144,7 @@ func TestBundleDriverCommandValidation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"Get-PrinterDriver", "Unchanged driver", "*.cat", "Get-AuthenticodeSignature", "pnputil.exe /add-driver", "Add-PrinterDriver"} {
+	for _, want := range []string{"Get-PrinterDriver", "Unchanged driver", "CatalogFile", "Get-AuthenticodeSignature", "-ne 'Valid'", "SignerCertificate", "Thumbprint", `Cert:\LocalMachine\TrustedPublisher\`, "'TrustedPublisher', 'LocalMachine'", "pnputil.exe /add-driver", "Add-PrinterDriver", "Registered driver from bundle"} {
 		if !strings.Contains(command, want) {
 			t.Fatalf("bundleDriverCommand() is missing %q: %s", want, command)
 		}

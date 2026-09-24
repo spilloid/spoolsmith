@@ -441,7 +441,11 @@ Read this before pointing SpoolSmith at a printer you actually depend on:
 - **A copied bundle carries driver files from another machine's driver store.** That is a
   different provenance from the vendor-installer path: the bundle's hashes detect corruption and
   casual edits, and Windows' own driver-signing enforcement is what actually gates staging. Treat
-  a bundle as trusted exactly as much as the machine it came from. Since v1.1 copies and
+  a bundle as trusted exactly as much as the machine it came from. When the driver's catalog
+  signature is valid but its publisher isn't yet trusted on the new PC, `apply` adds that exact
+  signer certificate to `LocalMachine\TrustedPublisher` before staging (it's in the plan you
+  confirm); certificates are only ever taken from a catalog Windows validates, never from the
+  bundle itself, and nothing is added to the Root store. Since v1.1 copies and
   printer sets carry drivers by default, so this applies to most copies; use
   `--settings-only` (or clear the desktop's driver checkbox) when you'd rather install the
   driver yourself.
