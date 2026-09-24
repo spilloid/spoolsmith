@@ -66,10 +66,12 @@ vendor installers and driver downloads are unsupported either way.
 This package's driver payload came from a SpoolSmith bundle (.ssb), not a vendor
 archive. Its trust chain is narrower and must not be described as equivalent to
 the pinned-vendor-archive path: every payload byte is hash-verified against the
-bundle manifest, and install requires a valid Windows catalog (.cat) Authenticode
-signature on the payload before pnputil stages it -- there is no vendor hash pin
-because the payload came from an operator's own driver store, not a vendor
-download. bundle.ssb is pinned by SHA-256 ({{.BundleSHA256}}) exactly like
+bundle manifest, and Windows enforces driver signing when pnputil stages it --
+there is no vendor hash pin because the payload came from an operator's own
+driver store, not a vendor download. If a catalog the driver's INF names has a
+Valid signature whose signer is not yet in LocalMachine\TrustedPublisher, install
+adds that exact certificate (by thumbprint) there first; nothing from the bundle
+itself is ever trusted, and nothing is added to the Root store. bundle.ssb is pinned by SHA-256 ({{.BundleSHA256}}) exactly like
 driver.exe would be for the vendor-archive path.
 {{end}}
 

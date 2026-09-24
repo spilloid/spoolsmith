@@ -42,6 +42,7 @@ type Plan struct {
 	Offline          bool                  `json:"offline,omitempty"`
 	DriverPackage    *PackageSelection     `json:"driver_package,omitempty"`
 	BundleDriver     *BundleDriver         `json:"bundle_driver,omitempty"`
+	PublisherTrust   *PublisherTrust       `json:"publisher_trust,omitempty"`
 }
 
 // Result records the plan and every command attempted.
