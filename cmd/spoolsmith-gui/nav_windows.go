@@ -348,3 +348,11 @@ func fill(canvas *walk.Canvas, color walk.Color, bounds walk.Rectangle) {
 	defer brush.Dispose()
 	canvas.FillRectanglePixels(brush, bounds)
 }
+
+// setLabel changes a label's text and lays the page out again. A label keeps
+// the width it measured for its first text, so a longer status line was cut
+// short ("1 can't" for "1 can't be copied.").
+func setLabel(label *walk.Label, text string) {
+	label.SetText(text)
+	label.RequestLayout()
+}

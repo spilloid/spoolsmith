@@ -338,12 +338,12 @@ func (a *app) startNetworkDiscovery() {
 	a.discoverCIDR.TextChanged().Attach(func() { a.networkTouched = true })
 	a.discoverBtn.Clicked().Attach(func() { a.networkTouched = true })
 	if os.Getenv("SPOOLSMITH_GUI_NO_AUTOSCAN") == "1" {
-		a.networkStatus.SetText("Automatic scan is off. Enter a network or printer IP to scan.")
+		setLabel(a.networkStatus, "Automatic scan is off. Enter a network or printer IP to scan.")
 		a.otherNetworkShown = true
 		a.otherNetworkBtn.SetText("Hide network or IP")
 		return
 	}
-	a.networkStatus.SetText("Finding your network...")
+	setLabel(a.networkStatus, "Finding your network...")
 	go func() {
 		cidr, description, err := recommendedNetwork()
 		a.mw.Synchronize(func() {
@@ -351,11 +351,11 @@ func (a *app) startNetworkDiscovery() {
 				return
 			}
 			if err != nil {
-				a.networkStatus.SetText("Couldn't pick a network to scan: " + err.Error())
+				setLabel(a.networkStatus, "Couldn't pick a network to scan: "+err.Error())
 				a.showOtherNetwork(true)
 				return
 			}
-			a.networkStatus.SetText(description)
+			setLabel(a.networkStatus, description)
 			a.discoverCIDR.SetText(cidr)
 			a.networkTouched = false
 			a.onDiscover()

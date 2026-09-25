@@ -139,7 +139,7 @@ func (a *app) onCopyToClipboard() {
 		for i, queue := range queues {
 			name := queue.PrinterName
 			a.mw.Synchronize(func() {
-				a.queueStatus.SetText(fmt.Sprintf("Copying %s (%d of %d)...", name, i+1, len(queues)))
+				setLabel(a.queueStatus, fmt.Sprintf("Copying %s (%d of %d)...", name, i+1, len(queues)))
 			})
 			path := filepath.Join(folder, uniqueClipboardName(written, bundleFileName(name)))
 			_, err := bundle.Create(context.Background(), a.env, a.collector(), bundle.CreateOptions{
@@ -160,12 +160,12 @@ func (a *app) onCopyToClipboard() {
 			}
 			switch {
 			case err != nil:
-				a.queueStatus.SetText("Couldn't put the printer files on the clipboard.")
+				setLabel(a.queueStatus, "Couldn't put the printer files on the clipboard.")
 				showErr(a.mw, "Copy printers", err)
 			case len(written) == 0:
-				a.queueStatus.SetText("Nothing was copied.")
+				setLabel(a.queueStatus, "Nothing was copied.")
 			default:
-				a.queueStatus.SetText(fmt.Sprintf("Copied %s. Paste into a folder, a share or a chat.", countPrinters(len(written))))
+				setLabel(a.queueStatus, fmt.Sprintf("Copied %s. Paste into a folder, a share or a chat.", countPrinters(len(written))))
 			}
 			if len(failures) > 0 {
 				showErr(a.mw, "Copy printers", fmt.Errorf("%s", friendlyOperationError(strings.Join(failures, "\r\n"))))

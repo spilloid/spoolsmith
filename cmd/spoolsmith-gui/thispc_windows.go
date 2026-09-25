@@ -154,7 +154,7 @@ func (a *app) onRefreshQueues() {
 	a.queuesBusy = true
 	a.queueRefresh.SetEnabled(false)
 	a.updateQueueActions()
-	a.queueStatus.SetText("Reading this PC's printers...")
+	setLabel(a.queueStatus, "Reading this PC's printers...")
 	start := time.Now()
 	go func() {
 		queues, err := install.ListPrinters(context.Background(), a.env)
@@ -165,7 +165,7 @@ func (a *app) onRefreshQueues() {
 			if err != nil {
 				a.queues = nil
 				a.queueModel.set(nil)
-				a.queueStatus.SetText("Could not read this PC's printers.")
+				setLabel(a.queueStatus, "Could not read this PC's printers.")
 				a.queueDetail.SetText(friendlyOperationError(err.Error()))
 				a.updateQueueActions()
 				return
@@ -180,11 +180,11 @@ func (a *app) onRefreshQueues() {
 			}
 			switch {
 			case len(queues) == 0:
-				a.queueStatus.SetText("This PC has no printers set up yet.")
+				setLabel(a.queueStatus, "This PC has no printers set up yet.")
 			case copyable == len(queues):
-				a.queueStatus.SetText(countPrinters(len(queues)) + " on this PC.")
+				setLabel(a.queueStatus, countPrinters(len(queues))+" on this PC.")
 			default:
-				a.queueStatus.SetText(fmt.Sprintf("%s on this PC; %d can't be copied.", countPrinters(len(queues)), len(queues)-copyable))
+				setLabel(a.queueStatus, fmt.Sprintf("%s on this PC; %d can't be copied.", countPrinters(len(queues)), len(queues)-copyable))
 			}
 			if copyable > 0 {
 				a.queueTable.SetSelectedIndexes([]int{0})

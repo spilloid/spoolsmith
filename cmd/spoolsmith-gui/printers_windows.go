@@ -77,7 +77,7 @@ func (a *app) onDiscover() {
 	a.discoverCIDR.SetEnabled(false)
 	a.discoverTable.SetEnabled(false)
 	setShown(a.discoverCancelBtn, true)
-	a.networkStatus.SetText("Scanning " + cidr + "...")
+	setLabel(a.networkStatus, "Scanning "+cidr+"...")
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	a.discoverCancel = cancel
 	a.discovered = nil
@@ -126,7 +126,7 @@ func (a *app) onDiscover() {
 				network = cidr
 			}
 			checked := fmt.Sprintf("%d %s", result.Scanned, plural(result.Scanned, "address", "addresses"))
-			a.networkStatus.SetText(fmt.Sprintf("Found %d %s on %s.", len(rows), plural(len(rows), "printer", "printers"), network))
+			setLabel(a.networkStatus, fmt.Sprintf("Found %d %s on %s.", len(rows), plural(len(rows), "printer", "printers"), network))
 			summary := fmt.Sprintf("Found %d possible %s on %s after checking %s. Confirm the model before choosing a driver.",
 				len(rows), plural(len(rows), "printer", "printers"), network, checked)
 			if len(rows) == 0 {
