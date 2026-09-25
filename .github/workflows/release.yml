@@ -92,41 +92,90 @@ jobs:
         shell: pwsh
         run: ./scripts/build-release.ps1 -Tag ${{ steps.meta.outputs.tag }} -Stage package
 
-      - name: Upload release asset
-        uses: actions/github-script@v7
-        env:
-          RELEASE_TAG: ${{ steps.meta.outputs.tag }}
-          ASSET_PATHS: |
+      # Handed to the MSI workflow and the publish job; nothing is attached to
+      # the release until the MSI built from these same files is signed too.
+      - name: Keep the signed release payload
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-payload
+          path: |
             ${{ steps.meta.outputs.asset }}
             ${{ steps.meta.outputs.asset }}.sha256
+          if-no-files-found: error
+
+    outputs:
+      tag: ${{ steps.meta.outputs.tag }}
+
+  # Builds the MSI from exactly the signed files in the ZIP above, signs it
+  # with the same profile, and proves it (see .github/workflows/msi.yml).
+  msi:
+    name: MSI
+    needs: build
+    uses: ./.github/workflows/msi.yml
+    with:
+      tag: ${{ needs.build.outputs.tag }}
+      payload-artifact: release-payload
+    secrets: inherit
+    permissions:
+      contents: read
+      id-token: write
+
+  # Publishes all four assets together, only after every file is signed and
+  # verified. A failure anywhere above attaches nothing to the release.
+  publish:
+    name: Publish release assets
+    needs: [build, msi]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-payload
+          path: assets
+      - uses: actions/download-artifact@v4
+        with:
+          name: msi-signed
+          path: assets
+      - name: Check every asset against its checksum
+        working-directory: assets
+        env:
+          TAG: ${{ needs.build.outputs.tag }}
+        run: |
+          for name in "spoolsmith-$TAG-windows-amd64.zip" "SpoolSmith-$TAG-x64.msi"; do
+            sha256sum --check --strict "$name.sha256"
+          done
+      - name: Upload release assets
+        uses: actions/github-script@v7
+        env:
+          RELEASE_TAG: ${{ needs.build.outputs.tag }}
         with:
           script: |
             const fs = require("fs");
-            const path = require("path");
             const { owner, repo } = context.repo;
             const tag = process.env.RELEASE_TAG;
-            const assetPaths = process.env.ASSET_PATHS.split(/\r?\n/).map((item) => item.trim()).filter(Boolean);
+            const names = [
+              `spoolsmith-${tag}-windows-amd64.zip`,
+              `spoolsmith-${tag}-windows-amd64.zip.sha256`,
+              `SpoolSmith-${tag}-x64.msi`,
+              `SpoolSmith-${tag}-x64.msi.sha256`,
+            ];
 
-            let release = context.payload.release;
-            if (!release) {
-              const response = await github.rest.repos.getReleaseByTag({ owner, repo, tag });
-              release = response.data;
-            }
-
+            const release = (await github.rest.repos.getReleaseByTag({ owner, repo, tag })).data;
             const assets = await github.paginate(github.rest.repos.listReleaseAssets, {
               owner,
               repo,
               release_id: release.id,
             });
 
-            for (const assetPath of assetPaths) {
-              const name = path.basename(assetPath);
+            // A rerun for the same tag replaces this release's own four assets
+            // and nothing else.
+            for (const name of names) {
               const existing = assets.find((asset) => asset.name === name);
               if (existing) {
                 await github.rest.repos.deleteReleaseAsset({ owner, repo, asset_id: existing.id });
               }
-
-              const data = fs.readFileSync(assetPath);
+              const data = fs.readFileSync(`assets/${name}`);
               await github.rest.repos.uploadReleaseAsset({
                 owner,
                 repo,
@@ -138,4 +187,5 @@ jobs:
                   "content-length": data.length,
                 },
               });
+              core.info(`uploaded ${name}`);
             }
