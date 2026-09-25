@@ -25,7 +25,7 @@ New-Item -ItemType Directory -Force dist | Out-Null
 if ($Stage -eq 'all' -or $Stage -eq 'build') {
     go build -trimpath -ldflags "-s -w -X main.version=$Tag" -o dist/spoolsmith.exe ./cmd/spoolsmith
     if ($LASTEXITCODE -ne 0) { throw 'CLI build failed' }
-    go build -trimpath -ldflags '-s -w -H windowsgui' -o dist/spoolsmith-gui.exe ./cmd/spoolsmith-gui
+    go build -trimpath -ldflags "-s -w -H windowsgui -X main.version=$Tag" -o dist/spoolsmith-gui.exe ./cmd/spoolsmith-gui
     if ($LASTEXITCODE -ne 0) { throw 'GUI build failed' }
 }
 
