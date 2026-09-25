@@ -1,0 +1,152 @@
+name: MSI
+
+# Builds, signs and verifies SpoolSmith-<tag>-x64.msi from an already-built,
+# already-signed release payload. Called by the release workflow (payload just
+# built) and the backfill workflow (payload downloaded from a published
+# release). It never compiles or signs application binaries: the MSI carries
+# the exact files that are in the release ZIP.
+#
+# Result: the "msi-signed" artifact, holding the signed MSI and its .sha256.
+# Nothing is published here; callers publish only after this succeeds.
+on:
+  workflow_call:
+    inputs:
+      tag:
+        description: Release tag, vX.Y.Z.
+        required: true
+        type: string
+      payload-artifact:
+        description: Artifact holding spoolsmith-<tag>-windows-amd64.zip and its .sha256.
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  # 1. The payload is what the release says it is, and its EXEs are signed,
+  #    before anything is packaged from it.
+  verify-payload:
+    name: Verify release payload
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.payload-artifact }}
+          path: payload-zip
+      - name: Check checksum and signatures
+        shell: pwsh
+        env:
+          TAG: ${{ inputs.tag }}
+        run: ./scripts/expand-release-payload.ps1 -Tag $env:TAG -From payload-zip -To payload -VerifySignatures
+
+  # 2. wixl (GNOME msitools, LGPL) builds the MSI from those same bytes, and
+  #    the MSI's tables are checked.
+  build:
+    name: Build MSI (wixl)
+    needs: verify-payload
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.payload-artifact }}
+          path: payload-zip
+      - name: Install msitools (wixl)
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends wixl msitools unzip
+      - name: Check checksum and unpack
+        env:
+          TAG: ${{ inputs.tag }}
+        run: |
+          zip="spoolsmith-$TAG-windows-amd64.zip"
+          (cd payload-zip && sha256sum --check --strict "$zip.sha256")
+          unzip -q "payload-zip/$zip" -d unpacked
+          test -d unpacked/spoolsmith
+      - name: Build and check MSI
+        env:
+          TAG: ${{ inputs.tag }}
+        run: installer/build-msi.sh "$TAG" unpacked/spoolsmith msi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: msi-unsigned
+          path: msi/SpoolSmith-${{ inputs.tag }}-x64.msi
+          if-no-files-found: error
+          retention-days: 1
+
+  # 3. Sign the MSI with the same Artifact Signing profile as the EXEs, then
+  #    prove the result: valid timestamped signature, signed EXEs inside that
+  #    match the payload byte for byte, and a real quiet install, launch of the
+  #    installed CLI, and uninstall on this throwaway runner.
+  sign:
+    name: Sign and verify MSI
+    needs: build
+    runs-on: windows-latest
+    # The federated credential trusts repo:spilloid/spoolsmith:environment:release.
+    environment: release
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: msi-unsigned
+          path: msi
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.payload-artifact }}
+          path: payload-zip
+      - name: Unpack payload for comparison
+        shell: pwsh
+        env:
+          TAG: ${{ inputs.tag }}
+        run: ./scripts/expand-release-payload.ps1 -Tag $env:TAG -From payload-zip -To payload
+
+      - name: Sign and verify MSI
+        uses: ./.github/actions/sign-release
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          endpoint: ${{ vars.SIGNING_ENDPOINT }}
+          account: ${{ vars.SIGNING_ACCOUNT }}
+          profile: ${{ vars.SIGNING_PROFILE }}
+          expected-subject: ${{ vars.SIGNING_EXPECTED_SUBJECT }}
+          folder: msi
+          filter: msi
+          verify: msi/SpoolSmith-${{ inputs.tag }}-x64.msi
+
+      - name: Check signed MSI, its payload, and install/uninstall
+        shell: pwsh
+        env:
+          TAG: ${{ inputs.tag }}
+          EXPECTED_SUBJECT: ${{ vars.SIGNING_EXPECTED_SUBJECT }}
+        run: >-
+          ./scripts/test-msi.ps1 -Msi "msi/SpoolSmith-$env:TAG-x64.msi" -Tag $env:TAG
+          -Signed -ExpectedSubject $env:EXPECTED_SUBJECT -Payload payload -Lifecycle
+
+      - name: Write checksum
+        shell: pwsh
+        env:
+          TAG: ${{ inputs.tag }}
+        run: |
+          $name = "SpoolSmith-$env:TAG-x64.msi"
+          $path = Join-Path msi $name
+          $hash = (Get-FileHash $path -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  $name" | Out-File "$path.sha256" -Encoding ascii
+          Get-Content "$path.sha256"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: msi-signed
+          path: |
+            msi/SpoolSmith-${{ inputs.tag }}-x64.msi
+            msi/SpoolSmith-${{ inputs.tag }}-x64.msi.sha256
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: msi-logs
+          path: ${{ runner.temp }}/spoolsmith-msi-logs

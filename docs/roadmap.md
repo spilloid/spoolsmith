@@ -73,9 +73,12 @@ product hardening, with additional protocols as future scope.
 - **Improve library portability.** The default profile folder is beside the app;
   a writable extraction folder is needed. Folder selection is per session.
   Consider a persistent per-user location and clearer missing-archive recovery.
-- **Distribution polish.** Evaluate an installer and update delivery. Releases are portable Windows x64
-  ZIPs with checksums and Authenticode-signed executables. Driver signature
-  enforcement is a separate mechanism.
+- **Update delivery.** Releases ship a portable ZIP and a signed, machine-wide MSI
+  (from v1.3.0; see `installer/README.md`) with checksums and Authenticode-signed
+  executables. A newer MSI upgrades an older one when it is installed, but nothing
+  checks for or delivers updates: there is no auto-updater, and deployment tools or the
+  operator decide when to move to a new version. Driver signature enforcement is a
+  separate mechanism.
 
 ## Future feature scope
 

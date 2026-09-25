@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  SpoolSmith machine-wide installer. Built with wixl (GNOME msitools) by
+  installer/build-msi.sh; see installer/README.md.
+
+  Identity (do not change without reading installer/README.md):
+    UpgradeCode  62631A50-5FE9-4696-B410-92BEAAE13C52  fixed for every version
+    ProductCode  "*"  a new one per build, so each version is a major upgrade
+    Component GUIDs  fixed: each names the same file at the same path forever
+
+  Defined by build-msi.sh:
+    Version    MSI ProductVersion, from the release tag (vX.Y.Z -> X.Y.Z)
+    SourceDir  folder holding the exact files published in the release ZIP
+-->
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+  <Product Id="*"
+           Name="SpoolSmith"
+           Language="1033"
+           Version="$(var.Version)"
+           Manufacturer="Joseph Spillers"
+           UpgradeCode="62631A50-5FE9-4696-B410-92BEAAE13C52">
+
+    <Package InstallerVersion="500"
+             Compressed="yes"
+             InstallScope="perMachine"
+             Platform="x64"
+             Description="SpoolSmith $(var.Version)"
+             Comments="Copy network printers between Windows PCs."
+             Manufacturer="Joseph Spillers" />
+
+    <Media Id="1" Cabinet="spoolsmith.cab" EmbedCab="yes" />
+
+    <!-- A newer SpoolSmith replaces an older one; an older one refuses to
+         install over a newer one instead of silently replacing it. A rebuild
+         of the same version (a new ProductCode) replaces it too, rather than
+         installing beside it. -->
+    <MajorUpgrade AllowSameVersionUpgrades="yes"
+                  DowngradeErrorMessage="A newer version of SpoolSmith is already installed." />
+
+    <Property Id="ARPHELPLINK" Value="https://github.com/spilloid/spoolsmith" />
+    <Property Id="ARPURLINFOABOUT" Value="https://spilloid.github.io/spoolsmith/" />
+    <Property Id="ARPNOMODIFY" Value="1" />
+
+    <Directory Id="TARGETDIR" Name="SourceDir">
+      <Directory Id="ProgramFiles64Folder">
+        <Directory Id="INSTALLDIR" Name="SpoolSmith">
+          <Component Id="CliExe" Guid="2C3288B2-8A9D-482F-A11F-2A60649EEF65" Win64="yes">
+            <File Id="SpoolSmithExe" Name="spoolsmith.exe" Source="$(var.SourceDir)/spoolsmith.exe" KeyPath="yes" />
+          </Component>
+          <Component Id="GuiExe" Guid="D5E44133-1110-4AAE-ADD4-D212B20AC1BA" Win64="yes">
+            <File Id="SpoolSmithGuiExe" Name="spoolsmith-gui.exe" Source="$(var.SourceDir)/spoolsmith-gui.exe" KeyPath="yes" />
+            <!-- A plain shortcut to the file, not an advertised one: it opens the
+                 program directly and reads as a normal shortcut in Explorer. -->
+            <Shortcut Id="StartMenuShortcut" Directory="ProgramMenuFolder" Name="SpoolSmith"
+                      Target="[#SpoolSmithGuiExe]"
+                      Description="Copy network printers between Windows PCs"
+                      WorkingDirectory="INSTALLDIR" />
+          </Component>
+          <Component Id="Readme" Guid="0EFCC784-249A-4D12-87EC-57A5EDE36354" Win64="yes">
+            <File Id="ReadmeMd" Name="README.md" Source="$(var.SourceDir)/README.md" KeyPath="yes" />
+          </Component>
+          <Component Id="License" Guid="AF021D90-D296-43FC-AC74-0F4FD9F40DB8" Win64="yes">
+            <File Id="LicenseFile" Name="LICENSE" Source="$(var.SourceDir)/LICENSE" KeyPath="yes" />
+          </Component>
+        </Directory>
+      </Directory>
+      <Directory Id="ProgramMenuFolder" />
+    </Directory>
+
+    <Feature Id="SpoolSmith" Title="SpoolSmith" Level="1">
+      <ComponentRef Id="CliExe" />
+      <ComponentRef Id="GuiExe" />
+      <ComponentRef Id="Readme" />
+      <ComponentRef Id="License" />
+    </Feature>
+  </Product>
+</Wix>

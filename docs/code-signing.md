@@ -139,7 +139,10 @@ organization validation and a second certificate profile, which is a separate de
 
 ## How the release pipeline uses it
 
-`.github/workflows/release.yml`, in order:
+`.github/workflows/release.yml` has three jobs. Nothing is attached to the release until the
+last one, so a failure anywhere publishes nothing.
+
+**build** (Windows, `release` environment)
 
 1. **Check release tag and signing configuration** — rejects a malformed tag, a tag that
    disagrees with `VERSION`, and any missing signing configuration. It fails here, before
@@ -150,12 +153,49 @@ organization validation and a second certificate profile, which is a separate de
    login over OIDC, `azure/artifact-signing-action@v2` over `dist\*.exe`, then
    `scripts/verify-signature.ps1`, which fails the release if anything is unsigned,
    untimestamped, or signed by an unexpected subject.
-4. **Package signed release** — `scripts/build-release.ps1 -Stage package`.
-5. **Upload release asset** — unchanged.
+4. **Package signed release** — `scripts/build-release.ps1 -Stage package`: the ZIP and its
+   `.sha256`, kept as the `release-payload` workflow artifact.
+
+**msi** (`.github/workflows/msi.yml`, reusable)
+
+5. **Verify release payload** (Windows) — the ZIP against its `.sha256`, and both EXEs'
+   signatures, before anything is packaged from them.
+6. **Build MSI** (Ubuntu) — `installer/build-msi.sh` with wixl, from exactly the files in
+   that ZIP, then `installer/check-msi.sh` on the result (identity, files, shortcut, upgrade
+   rule, byte-identical payload).
+7. **Sign and verify MSI** (Windows, `release` environment) — the same composite action with
+   `folder: msi`, `filter: msi`, so the MSI goes through the same signing profile and the
+   same verification rule as the EXEs. Then `scripts/test-msi.ps1 -Signed -Payload
+   -Lifecycle`: valid timestamped MSI signature from the expected subject, EXEs inside it
+   still validly signed and identical to the ZIP's, and a real quiet install, CLI run and
+   uninstall on the runner. Then the MSI's `.sha256`.
+
+**publish** (Ubuntu)
+
+8. Checks all four files against their `.sha256` and uploads them: the ZIP, the MSI and
+   both checksums.
 
 The build/package split exists because the published SHA-256 must cover the *signed* zip.
 Signing after packaging would leave the signature outside the hashed artifact and the hash
-describing binaries nobody shipped.
+describing binaries nobody shipped. The MSI follows the same rule: it is built from the
+already-signed EXEs, then signed itself, then hashed.
+
+### Adding an MSI to an earlier release
+
+`.github/workflows/msi-backfill.yml` (manual) adds the MSI to a release published before
+releases carried one, without touching its application files. It downloads that release's
+own ZIP and `.sha256`, checks one against the other, and runs the same `msi.yml` — so the
+MSI is built from the exact signed EXEs that release already published. It uploads only
+`SpoolSmith-<tag>-x64.msi` and its `.sha256`, and never modifies, rebuilds or re-uploads the
+ZIP. If the release already has an MSI it stops unless **replace** is checked, and then it
+replaces those two assets only. **dry-run** does everything but touch the release.
+
+```sh
+gh workflow run msi-backfill.yml --ref main -f tag=v1.3.0 -f dry-run=true   # prove it
+gh workflow run msi-backfill.yml --ref main -f tag=v1.3.0                   # attach it
+```
+
+Like every job in the `release` environment, it must run from `main`.
 
 The signing action authenticates through `DefaultAzureCredential`. `azure/login` leaves an
 **Azure CLI session**; it does not export `AZURE_*` variables or a token file. So the CLI

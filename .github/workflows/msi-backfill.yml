@@ -1,0 +1,153 @@
+name: MSI backfill
+
+# Adds an MSI to a release that was published before releases carried one,
+# without touching that release's application files.
+#
+# It downloads the release's own ZIP and .sha256, checks the ZIP against it,
+# verifies the signed EXEs inside, builds the MSI from exactly those files
+# (.github/workflows/msi.yml), signs and verifies it, and uploads ONLY
+# SpoolSmith-<tag>-x64.msi and its .sha256. The ZIP and its checksum are never
+# modified, rebuilt or re-uploaded.
+#
+# If the release already has MSI assets it stops, unless `replace` is checked;
+# then it replaces those two MSI assets and nothing else.
+#
+# With `dry-run` checked it does everything except touch the release: the
+# signed, verified MSI stays in the run's "msi-signed" artifact.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Published release tag to add the MSI to (vX.Y.Z)
+        required: true
+        type: string
+      replace:
+        description: Replace MSI assets this release already has
+        required: false
+        type: boolean
+        default: false
+      dry-run:
+        description: Build, sign and verify, but keep the MSI as a workflow artifact and leave the release alone
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  fetch:
+    name: Fetch published payload
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.check.outputs.tag }}
+    steps:
+      - name: Check the release and its assets
+        id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+          REPLACE: ${{ inputs.replace }}
+          DRY_RUN: ${{ inputs.dry-run }}
+        run: |
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then echo "Invalid release tag '$TAG'"; exit 1; fi
+          assets="$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name')"
+          for name in "spoolsmith-$TAG-windows-amd64.zip" "spoolsmith-$TAG-windows-amd64.zip.sha256"; do
+            grep -qxF "$name" <<<"$assets" || { echo "$TAG has no $name to build from"; exit 1; }
+          done
+          if grep -qxF -e "SpoolSmith-$TAG-x64.msi" -e "SpoolSmith-$TAG-x64.msi.sha256" <<<"$assets" && [[ "$REPLACE" != "true" && "$DRY_RUN" != "true" ]]; then
+            echo "$TAG already has an MSI. Run again with 'replace' checked to rebuild and replace only the MSI assets."
+            exit 1
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+      - name: Download the published ZIP and checksum
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          mkdir payload-zip
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --dir payload-zip \
+            --pattern "spoolsmith-$TAG-windows-amd64.zip" \
+            --pattern "spoolsmith-$TAG-windows-amd64.zip.sha256"
+          (cd payload-zip && sha256sum --check --strict "spoolsmith-$TAG-windows-amd64.zip.sha256")
+      - uses: actions/upload-artifact@v4
+        with:
+          name: published-payload
+          path: payload-zip/
+          if-no-files-found: error
+          retention-days: 1
+
+  msi:
+    name: MSI
+    needs: fetch
+    uses: ./.github/workflows/msi.yml
+    with:
+      tag: ${{ needs.fetch.outputs.tag }}
+      payload-artifact: published-payload
+    secrets: inherit
+    permissions:
+      contents: read
+      id-token: write
+
+  publish:
+    name: Attach MSI to the release
+    needs: [fetch, msi]
+    if: ${{ !inputs.dry-run }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: msi-signed
+          path: assets
+      - name: Check the MSI against its checksum
+        working-directory: assets
+        env:
+          TAG: ${{ needs.fetch.outputs.tag }}
+        run: sha256sum --check --strict "SpoolSmith-$TAG-x64.msi.sha256"
+      - name: Upload the MSI and its checksum only
+        uses: actions/github-script@v7
+        env:
+          RELEASE_TAG: ${{ needs.fetch.outputs.tag }}
+          REPLACE: ${{ inputs.replace }}
+        with:
+          script: |
+            const fs = require("fs");
+            const { owner, repo } = context.repo;
+            const tag = process.env.RELEASE_TAG;
+            const replace = process.env.REPLACE === "true";
+            // The only names this workflow may create or replace.
+            const names = [`SpoolSmith-${tag}-x64.msi`, `SpoolSmith-${tag}-x64.msi.sha256`];
+
+            const release = (await github.rest.repos.getReleaseByTag({ owner, repo, tag })).data;
+            const assets = await github.paginate(github.rest.repos.listReleaseAssets, {
+              owner,
+              repo,
+              release_id: release.id,
+            });
+            const present = assets.filter((asset) => names.includes(asset.name));
+            if (present.length && !replace) {
+              core.setFailed(`${tag} gained MSI assets while this ran; nothing was changed.`);
+              return;
+            }
+            for (const asset of present) {
+              await github.rest.repos.deleteReleaseAsset({ owner, repo, asset_id: asset.id });
+              core.info(`replaced ${asset.name}`);
+            }
+            for (const name of names) {
+              const data = fs.readFileSync(`assets/${name}`);
+              await github.rest.repos.uploadReleaseAsset({
+                owner,
+                repo,
+                release_id: release.id,
+                name,
+                data,
+                headers: {
+                  "content-type": "application/octet-stream",
+                  "content-length": data.length,
+                },
+              });
+              core.info(`uploaded ${name}`);
+            }

@@ -1,9 +1,11 @@
-name: Sign and verify release binaries
+name: Sign and verify release files
 description: >
-  Signs dist/spoolsmith.exe and dist/spoolsmith-gui.exe with Azure Artifact
-  Signing, then fails unless both carry a valid, timestamped signature from the
-  expected certificate profile. Shared by the release workflow and the signing
-  check so a dry run exercises exactly what a release does.
+  Signs release files with Azure Artifact Signing -- by default
+  dist/spoolsmith.exe and dist/spoolsmith-gui.exe, or the MSI when the inputs
+  say so -- then fails unless every listed file carries a valid, timestamped
+  signature from the expected certificate profile. Shared by the release
+  workflow, the MSI workflow and the signing check, so every signed file goes
+  through one signing path and one verification rule.
 
 inputs:
   client-id:
@@ -28,6 +30,18 @@ inputs:
     description: Substring the signer subject must contain. Empty skips the subject check.
     required: false
     default: ''
+  folder:
+    description: Folder whose files are signed, relative to the workspace.
+    required: false
+    default: dist
+  filter:
+    description: File extension(s) to sign in that folder, e.g. exe or msi.
+    required: false
+    default: exe
+  verify:
+    description: Files that must verify afterwards, comma-separated. Signing succeeds only if all of them do.
+    required: false
+    default: dist/spoolsmith.exe, dist/spoolsmith-gui.exe
 
 runs:
   using: composite
@@ -40,14 +54,14 @@ runs:
         tenant-id: ${{ inputs.tenant-id }}
         subscription-id: ${{ inputs.subscription-id }}
 
-    - name: Sign binaries
+    - name: Sign files
       uses: azure/artifact-signing-action@v2
       with:
         endpoint: ${{ inputs.endpoint }}
         signing-account-name: ${{ inputs.account }}
         certificate-profile-name: ${{ inputs.profile }}
-        files-folder: ${{ github.workspace }}\dist
-        files-folder-filter: exe
+        files-folder: ${{ github.workspace }}\${{ inputs.folder }}
+        files-folder-filter: ${{ inputs.filter }}
         file-digest: SHA256
         # Signing certificates are valid for three days; without this
         # countersignature the release stops verifying almost immediately.
@@ -70,10 +84,14 @@ runs:
         exclude-azure-developer-cli-credential: true
         exclude-interactive-browser-credential: true
 
-    # Fails the job if a binary came back unsigned or without a timestamp,
+    # Fails the job if a file came back unsigned or without a timestamp,
     # rather than discovering it once users cannot launch the download.
     - name: Verify signatures
       shell: pwsh
       env:
         EXPECTED_SUBJECT: ${{ inputs.expected-subject }}
-      run: ./scripts/verify-signature.ps1 -Files dist/spoolsmith.exe, dist/spoolsmith-gui.exe -ExpectedSubject $env:EXPECTED_SUBJECT
+        VERIFY_FILES: ${{ inputs.verify }}
+      run: |
+        $files = @($env:VERIFY_FILES -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+        if (-not $files) { throw 'No files to verify' }
+        ./scripts/verify-signature.ps1 -Files $files -ExpectedSubject $env:EXPECTED_SUBJECT
