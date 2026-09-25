@@ -60,6 +60,12 @@ type reviewUI struct {
 	needsElevation bool
 	// returnTo is where Back and Done go.
 	returnTo page
+	// settingOptions is set while startOperation loads the option controls,
+	// so their change events do not each start a preview.
+	settingOptions bool
+	// previewStale is set when an option changes while a preview is being
+	// prepared; that preview is discarded and prepared again.
+	previewStale bool
 }
 
 // sheetPage is the apply sheet's layout.
@@ -153,10 +159,13 @@ func (a *app) startOperation(op operation) {
 	a.sheetDone = false
 	a.sheetOutcome = nil
 	a.resetPending()
+	a.previewStale = false
+	a.settingOptions = true
 	a.offlineCheck.SetChecked(a.pending.Offline)
 	a.updateCheck.SetChecked(a.pending.UpdateExisting)
 	a.purgeDriverCheck.SetChecked(a.pending.PurgeDriver)
 	a.forceFamilyCombo.SetCurrentIndex(0)
+	a.settingOptions = false
 	setShown(a.copyNotesBtn, false)
 	a.renderSheet()
 	a.goTo(pageReview)
@@ -299,7 +308,12 @@ func setShield(button *walk.PushButton, on bool) {
 }
 
 func (a *app) invalidateReview() {
-	if a.mutationBusy || a.sheetDone || a.pending.Kind == "" {
+	if a.settingOptions || a.sheetDone || a.pending.Kind == "" || a.mutationExecuting {
+		return
+	}
+	if a.mutationBusy {
+		// A preview is being prepared with the old options.
+		a.previewStale = true
 		return
 	}
 	a.resetPending()

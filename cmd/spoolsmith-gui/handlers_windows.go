@@ -442,6 +442,14 @@ func (a *app) finishPreview(op operation, args []string, start time.Time, err er
 	a.log("gui", string(op.Kind)+" preview", args, statusOf(err), err, start)
 	a.mw.Synchronize(func() {
 		a.setMutationBusy(false)
+		if a.previewStale {
+			// The options changed while this was prepared: its plan is not
+			// the one the operator is now asking about.
+			a.previewStale = false
+			a.resetPending()
+			a.onPreview()
+			return
+		}
 		a.sheetOutcome = outcome
 		if outcome != nil {
 			a.previewJSON = prettyJSON(*outcome)
@@ -492,7 +500,7 @@ func (a *app) onExecute() {
 		}
 		return
 	}
-	if !a.hasPending() {
+	if !a.hasPending() || a.sheetOutcome == nil {
 		return
 	}
 	steps := checklistText(planChecklist(*a.sheetOutcome), "\n")
