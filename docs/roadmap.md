@@ -1,6 +1,6 @@
 # Remaining work for SpoolSmith
 
-Updated September 23, 2026. The v1.1.0 release makes `.ssb` the one printer file
+Updated September 24, 2026. v1.3.0 rebuilt the desktop around copying a printer off one PC and double-clicking it onto the next (see `docs/v1.3-gui-spec.md`). The v1.1.0 release makes `.ssb` the one printer file
 and a plain `.zip` of `.ssb` files the one multi-printer set (`copy --all`, `apply`,
 saved-setup export/import), includes drivers by default wherever they can be
 exported, adds automatic offline fallback, replaces the desktop's tab strips with
