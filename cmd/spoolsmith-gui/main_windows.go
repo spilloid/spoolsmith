@@ -4,18 +4,19 @@ package main
 
 import (
 	"fmt"
-	"github.com/spilloid/spoolsmith/internal/evidence"
 	"log"
 	"net/netip"
+	"os"
 	"strings"
 
 	"github.com/spilloid/spoolsmith/internal/catalog"
+	"github.com/spilloid/spoolsmith/internal/evidence"
 	"github.com/tailscale/walk"
 	. "github.com/tailscale/walk/declarative"
 )
 
 func pagePadding() VBox {
-	return VBox{Margins: Margins{Left: 12, Top: 10, Right: 12, Bottom: 10}, Spacing: 7}
+	return VBox{Margins: Margins{Left: 20, Top: 14, Right: 20, Bottom: 14}, Spacing: 8}
 }
 func row() HBox                 { return HBox{Spacing: 6, MarginsZero: true} }
 func formGrid(columns int) Grid { return Grid{Columns: columns, Spacing: 6} }
@@ -30,10 +31,19 @@ func heading(text string) Label {
 // contentPage is one screen of the main window. Only the current page is
 // visible; the sidebar decides which.
 func contentPage(a *app, p page, children ...Widget) Composite {
-	return Composite{AssignTo: &a.pages[p], Background: SolidColorBrush{Color: colorPage}, Layout: pagePadding(), Children: children}
+	// Only the first page starts visible: the window sizes itself to its
+	// visible content when it is created, and seven stacked pages made it
+	// several screens tall.
+	return Composite{AssignTo: &a.pages[p], Visible: p == pageThisPC, Background: SolidColorBrush{Color: colorPage}, Layout: pagePadding(), Children: children}
 }
 
 func main() {
+	request, requestErr := parseLaunchArgs(os.Args[1:])
+	// A second double-click hands its file to the window already open. An
+	// elevated relaunch never does: it is the window the operator asked for.
+	if requestErr == nil && request.Review == nil && forwardToRunningInstance(request.Files) {
+		return
+	}
 	guiApp, err := walk.InitApp()
 	if err != nil {
 		log.Fatal(err)
@@ -46,6 +56,10 @@ func main() {
 		a.familyLabels = append(a.familyLabels, family.ID+" ("+family.Manufacturer+")")
 		a.familyIDs = append(a.familyIDs, family.ID)
 	}
+	tagline := "Printers, ready to carry."
+	if isElevated() {
+		tagline = "Running as administrator"
+	}
 	mainWindow := MainWindow{
 		AssignTo: &a.mw, Title: "SpoolSmith",
 		Background: SolidColorBrush{Color: colorPage},
@@ -53,23 +67,27 @@ func main() {
 		MinSize:    Size{Width: 960, Height: 640}, Size: Size{Width: 1060, Height: 720},
 		Layout: VBox{MarginsZero: true, SpacingZero: true},
 		Children: []Widget{
-			Composite{Background: SolidColorBrush{Color: colorBrand}, Layout: pagePadding(), Children: []Widget{
+			Composite{Background: SolidColorBrush{Color: colorBrand}, Layout: VBox{Margins: Margins{Left: 20, Top: 10, Right: 20, Bottom: 10}}, Children: []Widget{
 				Composite{Layout: row(), Children: []Widget{
 					Label{Text: "SpoolSmith", TextColor: walk.RGB(255, 255, 255), Font: Font{Family: "Segoe UI", PointSize: 18, Bold: true}},
-					HSpacer{}, Label{Text: "Printers, ready to carry.", TextColor: walk.RGB(230, 240, 255)},
+					HSpacer{}, Label{Text: tagline, TextColor: walk.RGB(230, 240, 255)},
 				}},
 			}},
+			Composite{AssignTo: &a.offerBar, Visible: false, Background: SolidColorBrush{Color: colorSurface},
+				Layout: HBox{Margins: Margins{Left: 20, Top: 6, Right: 20, Bottom: 6}, Spacing: 8}, Children: []Widget{
+					Label{Text: "Open printer files (.ssb) with SpoolSmith when you double-click them?"},
+					HSpacer{},
+					PushButton{Text: "Set up", OnClicked: a.toggleAssociation},
+					PushButton{Text: "Not now", OnClicked: func() { rememberAssociationOffer(); a.hideAssociationOffer() }},
+				}},
 			Composite{Layout: HBox{MarginsZero: true, SpacingZero: true}, Children: []Widget{
 				Composite{AssignTo: &a.navHost, Background: SolidColorBrush{Color: colorSidebar},
 					MinSize: Size{Width: 190}, MaxSize: Size{Width: 190},
-					Layout: VBox{Margins: Margins{Top: 10}, SpacingZero: true}},
+					Layout: VBox{Margins: Margins{Top: 10, Bottom: 10}, Spacing: 6}},
 				Composite{Background: SolidColorBrush{Color: colorDivider}, MinSize: Size{Width: 1}, MaxSize: Size{Width: 1}},
 				Composite{Background: SolidColorBrush{Color: colorPage}, Layout: VBox{MarginsZero: true, SpacingZero: true}, Children: []Widget{
-					thisPCPage(a), addPage(a), mutatePage(a), intunePage(a), inspectPage(a), catalogPage(a), logPage(a),
+					thisPCPage(a), addPage(a), sheetPage(a), intunePage(a), inspectPage(a), catalogPage(a), logPage(a),
 				}},
-			}},
-			Composite{Layout: HBox{Margins: Margins{Left: 12, Top: 4, Right: 12, Bottom: 6}}, Children: []Widget{
-				Label{AssignTo: &a.accessStatus, Text: "You can find printers and save settings without changing Windows."},
 			}},
 		},
 	}
@@ -86,10 +104,42 @@ func main() {
 	a.initializeThisPC()
 	a.initializeReview()
 	applyStyle(a)
+	a.enableFileDrop()
+	a.listenForHandOver()
 	a.goTo(pageThisPC)
 	a.nav.SetFocus()
 	a.startNetworkDiscovery()
+	go cleanClipboardFolders()
+	a.mw.Synchronize(func() {
+		switch {
+		case requestErr != nil:
+			showErr(a.mw, "SpoolSmith", requestErr)
+		case request.Review != nil:
+			a.startOperation(*request.Review)
+		case len(request.Files) > 0:
+			a.openPrinterFiles(request.Files, "open")
+		}
+		a.offerAssociation()
+	})
 	guiApp.Run()
+}
+
+// offerAssociation asks once whether .ssb files should open here. Never in an
+// elevated session: the question can wait for an ordinary launch.
+func (a *app) offerAssociation() {
+	if isElevated() || associationOfferAnswered() || os.Getenv("SPOOLSMITH_GUI_NO_OFFER") == "1" {
+		return
+	}
+	if exe, err := os.Executable(); err == nil && currentAssociation(exe) == associationThis {
+		return
+	}
+	setShown(a.offerBar, true)
+}
+
+func (a *app) hideAssociationOffer() {
+	if a.offerBar != nil {
+		setShown(a.offerBar, false)
+	}
 }
 
 func applyStyle(a *app) {
@@ -136,20 +186,26 @@ func (a *app) onPlanDetails() {
 	}
 }
 
-// addPage merges what used to be "Find a printer" and "Add printer", and adds
-// the two file-based ways in.
+// addPage is the other half of the app's job: putting a printer on this PC.
 //
-// Discovery and choosing settings were always one task: nobody scans a network
-// and then decides not to set anything up. Splitting them across tabs meant the
-// app navigated for you at the moment you were concentrating, and the settings
-// tab was reachable while empty. Here the settings appear underneath the
-// printer you picked, and the page is honest when nothing is picked yet.
+// The network is scanned as soon as the app starts, so this page usually
+// opens on a list of printers rather than an empty address box. Typing a
+// network or one address is the fallback, behind "Scan a different network
+// or IP". Printer files and saved setups open from here too, though a file is
+// just as easily dropped or pasted anywhere in the window.
 func addPage(a *app) Composite {
+	a.discoverModel = &discoveryTableModel{}
 	return contentPage(a, pageAdd,
 		heading("Add a printer to this PC"),
-		Label{Text: "Find it on the network, or open a printer file or saved setup."},
-		Composite{AssignTo: &a.searchGroup, Layout: VBox{MarginsZero: true, Spacing: 10}, Children: []Widget{
+		hint("Choose a printer found on your network, or open a printer file. Printer files can also be dropped or pasted anywhere in this window."),
+		Composite{AssignTo: &a.searchGroup, Layout: VBox{MarginsZero: true, Spacing: 8}, Children: []Widget{
 			Composite{Layout: row(), Children: []Widget{
+				Label{AssignTo: &a.networkStatus, Text: "Finding your network..."},
+				HSpacer{},
+				PushButton{AssignTo: &a.discoverCancelBtn, Text: "Stop scan", Visible: false, OnClicked: a.onCancelDiscovery},
+				PushButton{AssignTo: &a.otherNetworkBtn, Text: "Scan a different network or IP...", OnClicked: func() { a.showOtherNetwork(!a.otherNetworkShown) }},
+			}},
+			Composite{AssignTo: &a.otherNetwork, Visible: false, Layout: row(), Children: []Widget{
 				Label{Text: "Network or IP:"},
 				LineEdit{AssignTo: &a.discoverCIDR, CueBanner: "192.168.1.0/24 or 192.168.1.50", Accessibility: name("discover-cidr")},
 				PushButton{AssignTo: &a.discoverBtn, Text: "Scan", OnClicked: a.onDiscover},
@@ -164,19 +220,26 @@ func addPage(a *app) Composite {
 						a.openPrinterSetup(evidence.Evidence{IP: ip.String()})
 					}
 				}},
-				PushButton{AssignTo: &a.discoverCancelBtn, Text: "Cancel scan", Enabled: false, OnClicked: a.onCancelDiscovery},
 			}},
-			Label{AssignTo: &a.networkStatus, Text: "Looking for your Wi-Fi or Ethernet network..."},
-			ListBox{AssignTo: &a.discoverList, MinSize: Size{Height: 96}, Accessibility: name("discover-results"), OnItemActivated: a.onUseDiscovered},
+			TableView{
+				AssignTo: &a.discoverTable, Model: a.discoverModel, LastColumnStretched: true, NotSortableByHeaderClick: true,
+				MinSize: Size{Height: 120}, Accessibility: name("discover-results"),
+				Columns: []TableViewColumn{
+					{Title: "Printer", Width: 300},
+					{Title: "Address", Width: 130},
+					{Title: "Saved setup", Width: 120},
+				},
+				OnSelectedIndexesChanged: func() { a.updateDiscoveryActions() },
+				OnItemActivated:          a.onUseDiscovered,
+			},
+			Label{AssignTo: &a.discoverOut, Text: " ", TextColor: colorHint, EllipsisMode: EllipsisEnd},
 			Composite{Layout: row(), Children: []Widget{
-				PushButton{AssignTo: &a.discoverUseBtn, Text: "Use this printer", Enabled: false, OnClicked: a.onUseDiscovered},
-				PushButton{AssignTo: &a.discoverDetailsBtn, Text: "Scan details", Enabled: false, OnClicked: a.onDiscoveryDetails},
+				PushButton{AssignTo: &a.discoverUseBtn, Text: "Use this printer", Visible: false, OnClicked: a.onUseDiscovered},
+				PushButton{AssignTo: &a.discoverDetailsBtn, Text: "Scan details", Visible: false, OnClicked: a.onDiscoveryDetails},
 				HSpacer{},
 				PushButton{Text: "Open a printer file...", OnClicked: a.onOpenBundle},
 				PushButton{Text: "Open a saved setup...", OnClicked: a.onOpenSavedSetup},
 			}},
-			TextEdit{AssignTo: &a.discoverOut, Text: "Preparing discovery...", ReadOnly: true, VScroll: true,
-				MinSize: Size{Height: 48}, MaxSize: Size{Height: 64}, Accessibility: name("discover-output")},
 		}},
 		GroupBox{AssignTo: &a.setupGroup, Title: "Printer settings", Visible: false, Layout: VBox{Spacing: 8}, Children: []Widget{
 			Composite{Layout: formGrid(2), Children: []Widget{
@@ -204,48 +267,20 @@ func addPage(a *app) Composite {
 	)
 }
 
-// mutatePage states the one thing about to happen, instead of asking the
-// operator to reselect it.
-//
-// It used to carry three mode radios, a "use a saved profile" checkbox, and one
-// text field that meant a profile path, a queue name or an IP address depending
-// on which radio was active. All of that restated a decision already made by
-// whichever button opened this screen.
-func mutatePage(a *app) Composite {
-	return contentPage(a, pageReview,
-		heading("Review your change"),
-		Label{AssignTo: &a.summaryLabel, Text: "Choose a printer from This PC, or add one, to see its changes here.",
-			Font: Font{Family: "Segoe UI", PointSize: 11}, Accessibility: name("review-summary")},
-		Label{AssignTo: &a.reviewHint, Text: "Nothing has changed yet."},
-		Composite{Layout: row(), Children: []Widget{
-			CheckBox{AssignTo: &a.advancedCheck, Text: "More options", OnCheckedChanged: a.onToggleAdvanced},
-			HSpacer{},
-			PushButton{AssignTo: &a.previewBtn, Text: "Preview changes", OnClicked: a.onPreview},
-		}},
-		Composite{AssignTo: &a.advancedPanel, Visible: false, Layout: VBox{MarginsZero: true, Spacing: 8}, Children: []Widget{
-			CheckBox{AssignTo: &a.updateCheck, Text: "Update an existing queue to match this printer file"},
-			CheckBox{AssignTo: &a.offlineCheck, Text: "Offline setup — the printer will not be contacted or checked"},
-			Composite{AssignTo: &a.familyRow, Layout: row(), Children: []Widget{
-				Label{Text: "Printer family:"},
-				ComboBox{AssignTo: &a.forceFamilyCombo, Model: a.familyLabels, CurrentIndex: 0, Accessibility: name("mutate-force-family")},
-			}},
-			Composite{AssignTo: &a.purgeRow, Layout: row(), Children: []Widget{
-				CheckBox{AssignTo: &a.purgeDriverCheck, Text: "Also remove the driver, if nothing else uses it"},
-				HSpacer{},
-			}},
-			CheckBox{AssignTo: &a.dryRunOnlyCheck, Text: "Preview only (never apply)"},
-		}},
-		TextEdit{AssignTo: &a.planOut, Text: "Your preview will appear here. No changes are made until you review and confirm them.", ReadOnly: true, VScroll: true, Accessibility: name("mutate-output")},
-		Composite{Layout: row(), Children: []Widget{
-			PushButton{Text: "This PC", OnClicked: func() { a.goTo(pageThisPC) }},
-			PushButton{AssignTo: &a.planDetailsBtn, Text: "Full plan details", Enabled: false, OnClicked: a.onPlanDetails},
-			HSpacer{}, PushButton{AssignTo: &a.executeBtn, Text: "Apply", Enabled: false, OnClicked: a.onExecute},
-		}},
-	)
+// showOtherNetwork reveals or hides the manual network/IP row.
+func (a *app) showOtherNetwork(shown bool) {
+	a.otherNetworkShown = shown
+	setShown(a.otherNetwork, shown)
+	if shown {
+		a.otherNetworkBtn.SetText("Hide network or IP")
+		a.discoverCIDR.SetFocus()
+	} else {
+		a.otherNetworkBtn.SetText("Scan a different network or IP...")
+	}
 }
 
-// intunePage gives Intune packaging its own place in the sidebar. It used to
-// be one button at the foot of the Tools tab, under a nested tab strip.
+// intunePage keeps Intune packaging one menu away: it's a job for the
+// occasional deployment, not for every visit.
 func intunePage(a *app) Composite {
 	return contentPage(a, pageIntune,
 		heading("Package a printer for Intune"),
@@ -262,8 +297,8 @@ func intunePage(a *app) Composite {
 
 func inspectPage(a *app) Composite {
 	return contentPage(a, pageInspect,
-		heading("Inspect a printer"),
-		Label{Text: "See what a printer reports about itself and which driver family it resolves to. Nothing is installed."},
+		heading("Inspect a printer or printer file"),
+		Label{Text: "See what a printer reports about itself, or what a printer file or set contains. Nothing is installed."},
 		Composite{Layout: row(), Children: []Widget{
 			Label{Text: "IP, .ssb or .zip:"}, LineEdit{AssignTo: &a.inspectTarget, Accessibility: name("inspect-target")},
 			PushButton{AssignTo: &a.inspectBtn, Text: "Inspect", OnClicked: a.onInspect},

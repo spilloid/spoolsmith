@@ -18,49 +18,133 @@ import (
 )
 
 type thisPCUI struct {
-	queueList    *walk.ListBox
-	queueDetail  *walk.TextEdit
+	queueTable   *walk.TableView
+	queueModel   *queueTableModel
+	queueDetail  *walk.Label
 	queueStatus  *walk.Label
 	queueRefresh *walk.PushButton
 	copyBtn      *walk.PushButton
-	copyAllBtn   *walk.PushButton
 	repointBtn   *walk.PushButton
 	removeBtn    *walk.PushButton
 	queues       []install.InstalledQueue
 	queuesBusy   bool
+	clipBusy     bool
+}
+
+// queueTableModel shows copyable printers first, then the ones SpoolSmith
+// can't reproduce, greyed with their reason. It keeps Windows' own order
+// within each group.
+type queueTableModel struct {
+	walk.TableModelBase
+	rows []install.InstalledQueue
+}
+
+func (m *queueTableModel) RowCount() int { return len(m.rows) }
+
+func (m *queueTableModel) Value(row, col int) interface{} {
+	q := m.rows[row]
+	switch col {
+	case 0:
+		return q.PrinterName
+	case 1:
+		if host := strings.TrimSpace(q.HostAddress); host != "" {
+			return host
+		}
+		return q.PortName
+	case 2:
+		return q.DriverName
+	}
+	if q.Copyable() {
+		return "Can copy"
+	}
+	return "Can't copy"
+}
+
+func (m *queueTableModel) set(queues []install.InstalledQueue) {
+	m.rows = m.rows[:0]
+	for _, pass := range []bool{true, false} {
+		for _, q := range queues {
+			if q.Copyable() == pass {
+				m.rows = append(m.rows, q)
+			}
+		}
+	}
+	m.PublishRowsReset()
 }
 
 // thisPCPage answers "what does this computer actually have?" -- the question
-// an operator standing at someone else's desk asks first, and the one the app
-// previously could not answer at all. It reads Windows' own inventory rather
-// than SpoolSmith's saved files, so what it shows is the truth even for
-// printers SpoolSmith never set up.
+// an operator standing at someone else's desk asks first. It reads Windows'
+// own inventory rather than SpoolSmith's saved files, so what it shows is the
+// truth even for printers SpoolSmith never set up. It is the home screen: the
+// first half of the app's one job, taking printers off this PC.
 func thisPCPage(a *app) Composite {
+	a.queueModel = &queueTableModel{}
 	return contentPage(a, pageThisPC,
 		heading("Printers on this PC"),
-		Label{Text: "What Windows has set up right now. Choose one to copy it to another PC, move it to a new address, or remove it."},
+		hint("Select printers to copy them to another PC. To install one here, drop or paste its printer file anywhere in this window."),
 		Composite{Layout: row(), Children: []Widget{
-			PushButton{AssignTo: &a.queueRefresh, Text: "Refresh", OnClicked: a.onRefreshQueues},
 			Label{AssignTo: &a.queueStatus, Text: "Reading this PC's printers..."},
 			HSpacer{},
-			PushButton{AssignTo: &a.copyAllBtn, Text: "Copy all printers...", Enabled: false, OnClicked: a.onCopyAllQueues},
+			PushButton{AssignTo: &a.queueRefresh, Text: "Refresh", OnClicked: a.onRefreshQueues},
 		}},
-		HSplitter{Children: []Widget{
-			ListBox{AssignTo: &a.queueList, MinSize: Size{Width: 330, Height: 150}, Accessibility: name("thispc-list")},
-			TextEdit{AssignTo: &a.queueDetail, ReadOnly: true, VScroll: true, MinSize: Size{Width: 260, Height: 150}, Accessibility: name("thispc-detail")},
-		}},
+		TableView{
+			AssignTo: &a.queueTable, Model: a.queueModel, MultiSelection: true,
+			AlternatingRowBG: false, LastColumnStretched: true, NotSortableByHeaderClick: true,
+			MinSize: Size{Height: 150}, Accessibility: name("thispc-list"),
+			Columns: []TableViewColumn{
+				{Title: "Printer", Width: 230},
+				{Title: "Address", Width: 130},
+				{Title: "Driver", Width: 250},
+				{Title: "Copy", Width: 90},
+			},
+			StyleCell: func(style *walk.CellStyle) {
+				if row := style.Row(); row >= 0 && row < len(a.queueModel.rows) && !a.queueModel.rows[row].Copyable() {
+					style.TextColor = colorHint
+				}
+			},
+			OnSelectedIndexesChanged: func() { a.updateQueueActions() },
+			OnItemActivated:          func() { a.onCopySelected() },
+		},
+		Label{AssignTo: &a.queueDetail, Text: " ", TextColor: colorHint, EllipsisMode: EllipsisEnd},
 		Composite{Layout: row(), Children: []Widget{
-			PushButton{AssignTo: &a.copyBtn, Text: "Copy to a file...", Enabled: false, OnClicked: a.onCopyQueue},
-			PushButton{AssignTo: &a.repointBtn, Text: "Change address...", Enabled: false, OnClicked: a.onRepointQueue},
+			PushButton{AssignTo: &a.copyBtn, Text: "Select printers to copy", Enabled: false, OnClicked: a.onCopySelected},
 			HSpacer{},
-			PushButton{AssignTo: &a.removeBtn, Text: "Remove printer...", Enabled: false, OnClicked: a.onRemoveQueue},
+			PushButton{AssignTo: &a.repointBtn, Text: "Change address...", Visible: false, OnClicked: a.onRepointQueue},
+			PushButton{AssignTo: &a.removeBtn, Text: "Remove printer...", Visible: false, OnClicked: a.onRemoveQueue},
 		}},
 	)
 }
 
 func (a *app) initializeThisPC() {
-	a.queueList.CurrentIndexChanged().Attach(a.updateQueueActions)
+	copyAction := walk.NewAction()
+	copyAction.SetShortcut(walk.Shortcut{Modifiers: walk.ModControl, Key: walk.KeyC})
+	copyAction.Triggered().Attach(a.onCopyToClipboard)
+	a.queueTable.ShortcutActions().Add(copyAction)
+	selectAll := walk.NewAction()
+	selectAll.SetShortcut(walk.Shortcut{Modifiers: walk.ModControl, Key: walk.KeyA})
+	selectAll.Triggered().Attach(a.selectAllCopyable)
+	a.queueTable.ShortcutActions().Add(selectAll)
+	a.buildQueueContextMenu()
 	a.onRefreshQueues()
+}
+
+func (a *app) buildQueueContextMenu() {
+	menu, err := walk.NewMenu()
+	if err != nil {
+		return
+	}
+	add := func(text string, handler walk.EventHandler) {
+		action := walk.NewAction()
+		action.SetText(text)
+		action.Triggered().Attach(handler)
+		menu.Actions().Add(action)
+	}
+	add("Copy to the clipboard\tCtrl+C", a.onCopyToClipboard)
+	add("Save to a file...", a.onCopySelected)
+	menu.Actions().Add(walk.NewSeparatorAction())
+	add("Change address...", a.onRepointQueue)
+	add("Remove printer...", a.onRemoveQueue)
+	a.queueTable.SetContextMenu(menu)
 }
 
 func (a *app) onRefreshQueues() {
@@ -80,68 +164,158 @@ func (a *app) onRefreshQueues() {
 			a.queueRefresh.SetEnabled(true)
 			if err != nil {
 				a.queues = nil
-				a.queueList.SetModel([]string{})
+				a.queueModel.set(nil)
 				a.queueStatus.SetText("Could not read this PC's printers.")
 				a.queueDetail.SetText(friendlyOperationError(err.Error()))
 				a.updateQueueActions()
 				return
 			}
 			a.queues = queues
-			labels := make([]string, 0, len(queues))
-			for _, queue := range queues {
-				labels = append(labels, queueRow(queue))
+			a.queueModel.set(queues)
+			copyable := 0
+			for _, q := range queues {
+				if q.Copyable() {
+					copyable++
+				}
 			}
-			a.queueList.SetModel(labels)
-			switch len(queues) {
-			case 0:
+			switch {
+			case len(queues) == 0:
 				a.queueStatus.SetText("This PC has no printers set up yet.")
-				a.queueDetail.SetText("Use Add a printer to set one up.")
-			case 1:
-				a.queueStatus.SetText("1 printer on this PC.")
-			default:
+			case copyable == len(queues):
 				a.queueStatus.SetText(countPrinters(len(queues)) + " on this PC.")
+			default:
+				a.queueStatus.SetText(fmt.Sprintf("%s on this PC; %d can't be copied.", countPrinters(len(queues)), len(queues)-copyable))
 			}
-			if len(queues) > 0 {
-				a.queueList.SetCurrentIndex(0)
+			if copyable > 0 {
+				a.queueTable.SetSelectedIndexes([]int{0})
+				a.queueTable.SetCurrentIndex(0)
 			}
 			a.updateQueueActions()
 		})
 	}()
 }
 
+// selectedQueues returns the selected rows, in table order.
+func (a *app) selectedQueues() []install.InstalledQueue {
+	if a.queueTable == nil {
+		return nil
+	}
+	var selected []install.InstalledQueue
+	for _, index := range a.queueTable.SelectedIndexes() {
+		if index >= 0 && index < len(a.queueModel.rows) {
+			selected = append(selected, a.queueModel.rows[index])
+		}
+	}
+	return selected
+}
+
+func copyableOnly(queues []install.InstalledQueue) []install.InstalledQueue {
+	var copyable []install.InstalledQueue
+	for _, q := range queues {
+		if q.Copyable() {
+			copyable = append(copyable, q)
+		}
+	}
+	return copyable
+}
+
+// selectedQueue is the one selected printer, for the single-printer actions.
 func (a *app) selectedQueue() (install.InstalledQueue, bool) {
-	index := a.queueList.CurrentIndex()
-	if index < 0 || index >= len(a.queues) {
+	selected := a.selectedQueues()
+	if len(selected) != 1 {
 		return install.InstalledQueue{}, false
 	}
-	return a.queues[index], true
+	return selected[0], true
 }
 
-func (a *app) updateQueueActions() {
-	queue, ok := a.selectedQueue()
-	ready := !a.queuesBusy && !a.mutationBusy
-	a.copyBtn.SetEnabled(ok && queue.Copyable() && ready)
-	a.copyAllBtn.SetEnabled(len(a.queues) > 0 && ready)
-	a.repointBtn.SetEnabled(ok && ready)
-	a.removeBtn.SetEnabled(ok && ready)
-	if !ok {
-		if len(a.queues) > 0 {
-			a.queueDetail.SetText("Choose a printer to see its details.")
+func (a *app) selectAllCopyable() {
+	var indexes []int
+	for i, q := range a.queueModel.rows {
+		if q.Copyable() {
+			indexes = append(indexes, i)
 		}
+	}
+	a.queueTable.SetSelectedIndexes(indexes)
+}
+
+// updateQueueActions keeps the buttons honest about the selection: the copy
+// button counts what will be copied, and the single-printer actions only
+// appear when exactly one printer is selected.
+func (a *app) updateQueueActions() {
+	if a.copyBtn == nil || a.queueModel == nil {
 		return
 	}
-	a.queueDetail.SetText(queueDetail(queue))
+	ready := !a.queuesBusy && !a.mutationBusy && !a.clipBusy
+	selected := a.selectedQueues()
+	copyable := copyableOnly(selected)
+	switch {
+	case len(copyable) == 0:
+		a.copyBtn.SetText("Select printers to copy")
+	case len(copyable) == 1:
+		a.copyBtn.SetText("Copy 1 printer...")
+	default:
+		a.copyBtn.SetText(fmt.Sprintf("Copy %d printers...", len(copyable)))
+	}
+	a.copyBtn.SetEnabled(ready && len(copyable) > 0)
+	queue, single := a.selectedQueue()
+	setShown(a.repointBtn, single && queue.Copyable())
+	setShown(a.removeBtn, single)
+	a.repointBtn.SetEnabled(ready)
+	a.removeBtn.SetEnabled(ready)
+	a.queueDetail.SetText(selectionDetail(selected, isElevated()))
 }
 
-// onCopyQueue writes the selected queue to a file another PC can open.
+// selectionDetail is one or two quiet lines about the selection.
+func selectionDetail(selected []install.InstalledQueue, elevated bool) string {
+	if len(selected) == 0 {
+		return " "
+	}
+	if len(selected) == 1 {
+		q := selected[0]
+		if reason := q.CopyBlockedReason(); reason != "" {
+			return "Can't copy " + q.PrinterName + ": " + reason
+		}
+		var facts []string
+		if q.ProtocolName != "" {
+			facts = append(facts, fmt.Sprintf("%s on TCP %d, port %s", q.ProtocolName, q.PortNumber, q.PortName))
+		}
+		if q.Shared {
+			facts = append(facts, "shared with other computers")
+		}
+		line := strings.Join(facts, " · ")
+		if !elevated {
+			line = strings.TrimPrefix(line+" · Copies include settings only; drivers need administrator.", " · ")
+		}
+		return shownOr(line, " ")
+	}
+	copyable := len(copyableOnly(selected))
+	text := fmt.Sprintf("%d selected; %s will go into one printer set (.zip).", len(selected), countPrinters(copyable))
+	if copyable < len(selected) {
+		text = fmt.Sprintf("%d selected; %s can be copied into one printer set (.zip).", len(selected), countPrinters(copyable))
+	}
+	return text
+}
+
+// onCopySelected saves the selection: one printer as a .ssb, several as one
+// set. Nothing on this PC changes, so this never goes through review.
+func (a *app) onCopySelected() {
+	copyable := copyableOnly(a.selectedQueues())
+	switch {
+	case len(copyable) == 1:
+		a.onCopyQueue(copyable[0])
+	case len(copyable) > 1:
+		a.onCopyQueues(copyable)
+	}
+}
+
+// onCopyQueue writes one queue to a file another PC can open.
 //
 // This does not go through Review, because it changes nothing on this PC: it
 // reads the queue and writes a file. Review exists to gate changes to Windows,
 // and routing a read-only export through it would teach operators that the
 // confirmation step is a formality.
-func (a *app) onCopyQueue() {
-	queue, ok := a.selectedQueue()
-	if !ok || !queue.Copyable() || a.queuesBusy || a.mutationBusy {
+func (a *app) onCopyQueue(queue install.InstalledQueue) {
+	if !queue.Copyable() || a.queuesBusy || a.mutationBusy {
 		return
 	}
 	var dialog *walk.Dialog
@@ -160,9 +334,9 @@ func (a *app) onCopyQueue() {
 	err := (Dialog{
 		AssignTo: &dialog, Title: "Copy " + queue.PrinterName,
 		MinSize: Size{Width: 560, Height: 300}, Background: SolidColorBrush{Color: colorPage}, Layout: dialogLayout(),
-		CancelButton: &cancelButton,
+		DefaultButton: &copyButton, CancelButton: &cancelButton,
 		Children: dialogFrame("Copy "+queue.PrinterName,
-			Label{Text: "This saves the printer's settings to one file. Copy that file to the other PC and open it there."},
+			Label{Text: "This saves the printer to one file. Open that file on the other PC, or drop it onto SpoolSmith there."},
 			Composite{Layout: formGrid(3), Children: []Widget{
 				Label{Text: "Save to:"},
 				LineEdit{AssignTo: &pathEdit, Text: suggested, Accessibility: name("copy-path")},
@@ -201,7 +375,7 @@ func (a *app) onCopyQueue() {
 						Path:         path,
 						Note:         strings.TrimSpace(noteEdit.Text()),
 						SettingsOnly: !includeDriver.Checked(),
-						CreatedBy:    "SpoolSmith desktop",
+						CreatedBy:    "SpoolSmith desktop " + versionString(),
 						SourceHost:   hostName(),
 						Progress: func(step string) {
 							a.mw.Synchronize(func() { statusLabel.SetText(step) })
@@ -257,12 +431,12 @@ func copySuccessMessage(path string, manifest bundle.Manifest, driverNotIncluded
 	} else {
 		text += fmt.Sprintf("The driver is included (%d files), so the other PC does not need it beforehand.\r\n\r\n", len(manifest.Driver.Files))
 	}
-	return text + "Copy this file to the other PC, open SpoolSmith there, and choose Add a printer > Open a printer file."
+	return text + "On the other PC, double-click this file, or drop it onto SpoolSmith."
 }
 
 func (a *app) onRepointQueue() {
 	queue, ok := a.selectedQueue()
-	if !ok {
+	if !ok || !queue.Copyable() {
 		return
 	}
 	var dialog *walk.Dialog
@@ -322,7 +496,7 @@ func (a *app) onRemoveQueue() {
 	if !ok {
 		return
 	}
-	a.startOperation(operation{Kind: opRemove, PrinterName: queue.PrinterName})
+	a.startOperation(operation{Kind: opRemove, PrinterName: queue.PrinterName, Target: queue.HostAddress})
 }
 
 // defaultCopyDirectory prefers the operator's Desktop, because a file meant to

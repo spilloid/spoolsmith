@@ -50,7 +50,7 @@ func (a *app) initializePrinters() {
 		a.profileDirPath = dir
 	}
 	a.captureTarget.TextChanged().Attach(a.suggestCaptureFields)
-	a.discoverList.CurrentIndexChanged().Attach(a.updateDiscoveryActions)
+	// Discovery results are a table; its selection drives updateDiscoveryActions.
 	// Optional panels are re-applied when their page is shown; see pageShown.
 	a.setupGroup.SetVisible(false)
 	a.updateDiscoveryActions()
@@ -75,15 +75,16 @@ func (a *app) onDiscover() {
 	}
 	a.discoverBtn.SetEnabled(false)
 	a.discoverCIDR.SetEnabled(false)
-	a.discoverList.SetEnabled(false)
-	a.discoverCancelBtn.SetEnabled(true)
+	a.discoverTable.SetEnabled(false)
+	setShown(a.discoverCancelBtn, true)
+	a.networkStatus.SetText("Scanning " + cidr + "...")
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	a.discoverCancel = cancel
 	a.discovered = nil
 	a.discoveryJSON = ""
-	a.discoverList.SetModel([]string{})
+	a.discoverModel.set(nil)
 	a.updateDiscoveryActions()
-	a.discoverOut.SetText("Looking for printers on " + cidr + "...\r\nThis can take up to two minutes. You can cancel and type an IP address at any time.")
+	a.discoverOut.SetText("This can take up to two minutes. Printers appear here as soon as the scan finishes.")
 	start := time.Now()
 	go func() {
 		defer cancel()
@@ -104,20 +105,20 @@ func (a *app) onDiscover() {
 		a.mw.Synchronize(func() {
 			a.discoverBtn.SetEnabled(true)
 			a.discoverCIDR.SetEnabled(true)
-			a.discoverList.SetEnabled(true)
-			a.discoverCancelBtn.SetEnabled(false)
+			a.discoverTable.SetEnabled(true)
+			setShown(a.discoverCancelBtn, false)
 			a.discoverCancel = nil
 			a.discoveryJSON = prettyJSON(response)
 			a.discovered = result.Candidates
-			labels := []string{}
+			rows := make([]discoveryRow, 0, len(result.Candidates))
 			for _, candidate := range result.Candidates {
-				label := printerIdentity(candidate.Evidence) + "  ·  " + candidate.Evidence.IP
+				saved := ""
 				if len(savedProfilesForIP(a.profilesDirectory(), candidate.Evidence.IP)) > 0 {
-					label += "  ·  Saved settings available"
+					saved = "Available"
 				}
-				labels = append(labels, label)
+				rows = append(rows, discoveryRow{identity: printerIdentity(candidate.Evidence), address: candidate.Evidence.IP, saved: saved})
 			}
-			a.discoverList.SetModel(labels)
+			a.discoverModel.set(rows)
 			// Every outcome names the network that was actually scanned, so a
 			// result is never ambiguous about which subnet produced it.
 			network := response.Network
@@ -125,39 +126,68 @@ func (a *app) onDiscover() {
 				network = cidr
 			}
 			checked := fmt.Sprintf("%d %s", result.Scanned, plural(result.Scanned, "address", "addresses"))
-			summary := fmt.Sprintf("Found %d possible %s on %s after checking %s.\r\nSelect a printer to continue. Confirm its model before choosing a driver.",
-				len(labels), plural(len(labels), "printer", "printers"), network, checked)
-			if len(labels) == 0 {
-				summary = fmt.Sprintf("No printers found on %s after checking %s.\r\nCheck that the printer is awake and on this network, try another subnet, or type its IP address above.", network, checked)
+			a.networkStatus.SetText(fmt.Sprintf("Found %d %s on %s.", len(rows), plural(len(rows), "printer", "printers"), network))
+			summary := fmt.Sprintf("Found %d possible %s on %s after checking %s. Confirm the model before choosing a driver.",
+				len(rows), plural(len(rows), "printer", "printers"), network, checked)
+			if len(rows) == 0 {
+				summary = fmt.Sprintf("No printers found on %s after checking %s. Check that the printer is awake and on this network, or scan a different network or IP.", network, checked)
 			}
 			if errors.Is(err, context.Canceled) {
-				summary = "Scan canceled.\r\n" + summary
+				summary = "Scan stopped. " + summary
 			} else if errors.Is(err, context.DeadlineExceeded) {
-				summary = "The scan reached its time limit. Results may be incomplete.\r\n" + summary
+				summary = "The scan reached its time limit, so results may be incomplete. " + summary
 			} else if err != nil {
-				summary = "Some addresses could not be checked.\r\n" + summary + "\r\nOpen scan details for more information."
+				summary = "Some addresses could not be checked. " + summary + " Scan details has more."
 			}
 			a.discoverOut.SetText(summary)
-			if len(labels) == 1 {
-				a.discoverList.SetCurrentIndex(0)
+			if len(rows) > 0 {
+				a.discoverTable.SetCurrentIndex(0)
 			}
 			a.updateDiscoveryActions()
 		})
 	}()
 }
 
+// discoveryRow is one printer found on the network.
+type discoveryRow struct{ identity, address, saved string }
+
+type discoveryTableModel struct {
+	walk.TableModelBase
+	rows []discoveryRow
+}
+
+func (m *discoveryTableModel) RowCount() int { return len(m.rows) }
+
+func (m *discoveryTableModel) Value(row, col int) interface{} {
+	r := m.rows[row]
+	switch col {
+	case 0:
+		return r.identity
+	case 1:
+		return r.address
+	}
+	return r.saved
+}
+
+func (m *discoveryTableModel) set(rows []discoveryRow) {
+	m.rows = rows
+	m.PublishRowsReset()
+}
+
+// updateDiscoveryActions shows "Use this printer" only once there is a
+// printer to use, and names the saved setup when one will be reused.
 func (a *app) updateDiscoveryActions() {
-	if a.discoverUseBtn == nil {
+	if a.discoverUseBtn == nil || a.discoverTable == nil {
 		return
 	}
-	idx := a.discoverList.CurrentIndex()
+	idx := a.discoverTable.CurrentIndex()
 	ready := a.discoverCancel == nil && idx >= 0 && idx < len(a.discovered) && !a.captureBusy && !a.mutationBusy
-	a.discoverUseBtn.SetEnabled(ready)
+	setShown(a.discoverUseBtn, ready)
 	a.discoverUseBtn.SetText("Use this printer")
 	if ready && len(savedProfilesForIP(a.profilesDirectory(), a.discovered[idx].Evidence.IP)) == 1 {
 		a.discoverUseBtn.SetText("Use saved setup")
 	}
-	a.discoverDetailsBtn.SetEnabled(a.discoveryJSON != "" && a.discoverCancel == nil)
+	setShown(a.discoverDetailsBtn, a.discoveryJSON != "" && a.discoverCancel == nil)
 }
 
 func (a *app) onDiscoveryDetails() {
@@ -170,7 +200,7 @@ func (a *app) onUseDiscovered() {
 	if a.discoverCancel != nil || a.captureBusy || a.mutationBusy {
 		return
 	}
-	idx := a.discoverList.CurrentIndex()
+	idx := a.discoverTable.CurrentIndex()
 	if idx < 0 || idx >= len(a.discovered) {
 		return
 	}
