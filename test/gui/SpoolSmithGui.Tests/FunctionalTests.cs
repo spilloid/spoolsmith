@@ -576,7 +576,7 @@ public sealed class FunctionalTests : IDisposable
     /// internal/bundle.SaveProfile produces -- without a live network probe
     /// or running the Go CLI as a fixture-building step.
     /// </summary>
-    private static void WriteProfileBundle(string path, string profileJson)
+    internal static void WriteProfileBundle(string path, string profileJson)
     {
         var manifest = $$"""
             {
