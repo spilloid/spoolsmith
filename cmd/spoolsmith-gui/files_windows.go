@@ -95,17 +95,10 @@ func (a *app) enableFileDrop() {
 		win.ChangeWindowMessageFilterEx(a.mw.Handle(), message, 1 /* MSGFLT_ALLOW */, nil)
 	}
 
-	// Ctrl+C on This PC copies the selected printers as files, wherever the
-	// focus is on that page; in a text box it copies text as usual.
-	copyFiles := walk.NewAction()
-	copyFiles.SetShortcut(walk.Shortcut{Modifiers: walk.ModControl, Key: walk.KeyC})
-	copyFiles.Triggered().Attach(a.onCopyShortcut)
-	a.mw.ShortcutActions().Add(copyFiles)
-
-	paste := walk.NewAction()
-	paste.SetShortcut(walk.Shortcut{Modifiers: walk.ModControl, Key: walk.KeyV})
-	paste.Triggered().Attach(a.onPaste)
-	a.mw.ShortcutActions().Add(paste)
+	// Ctrl+C, Ctrl+V and Ctrl+A are handled for the whole window here. walk
+	// only checks shortcut actions when the focused control is itself a
+	// form, which a list, table or button never is, so they never fired.
+	walk.App().AddPreTranslateHandlerForHWND(a.mw.Handle(), windowKeys{a})
 }
 
 // onCopyShortcut sends Ctrl+C to a focused text box, and otherwise copies
@@ -603,4 +596,38 @@ type copyDataStruct struct {
 	dwData uintptr
 	cbData uint32
 	lpData uintptr
+}
+
+// windowKeys is the main window's keyboard shortcuts. It sees every key
+// press for the window and its controls before they do, and never those of
+// a dialog, which is a separate window.
+type windowKeys struct{ a *app }
+
+func (k windowKeys) OnPreTranslate(msg *win.MSG) bool {
+	if msg.Message != win.WM_KEYDOWN {
+		return false
+	}
+	main := k.a.mw.Handle()
+	if msg.HWnd != main && !win.IsChild(main, msg.HWnd) {
+		return false
+	}
+	down := func(key int32) bool { return win.GetKeyState(key) < 0 }
+	if !down(win.VK_CONTROL) || down(win.VK_SHIFT) || down(win.VK_MENU) {
+		return false
+	}
+	switch msg.WParam {
+	case 'C':
+		k.a.onCopyShortcut()
+	case 'V':
+		k.a.onPaste()
+	case 'A':
+		table := k.a.queueTable.Handle()
+		if msg.HWnd != table && !win.IsChild(table, msg.HWnd) {
+			return false
+		}
+		k.a.selectAllCopyable()
+	default:
+		return false
+	}
+	return true
 }

@@ -116,10 +116,6 @@ func thisPCPage(a *app) Composite {
 }
 
 func (a *app) initializeThisPC() {
-	selectAll := walk.NewAction()
-	selectAll.SetShortcut(walk.Shortcut{Modifiers: walk.ModControl, Key: walk.KeyA})
-	selectAll.Triggered().Attach(a.selectAllCopyable)
-	a.queueTable.ShortcutActions().Add(selectAll)
 	a.buildQueueContextMenu()
 	a.onRefreshQueues()
 }
