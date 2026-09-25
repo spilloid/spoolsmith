@@ -42,7 +42,6 @@ type reviewUI struct {
 	detailsPanel   *walk.Composite
 	offlineCheck   *walk.CheckBox
 	updateCheck    *walk.CheckBox
-	familyRow      *walk.Composite
 	purgeRow       *walk.Composite
 	networkTouched bool
 	// pending is the operation the originating screen described. The sheet
@@ -88,10 +87,6 @@ func sheetPage(a *app) Composite {
 		Composite{AssignTo: &a.advancedPanel, Visible: false, Layout: VBox{MarginsZero: true, Spacing: 8}, Children: []Widget{
 			CheckBox{AssignTo: &a.updateCheck, Text: "Update an existing queue to match this printer file"},
 			CheckBox{AssignTo: &a.offlineCheck, Text: "Offline setup — the printer will not be contacted or checked"},
-			Composite{AssignTo: &a.familyRow, Layout: row(), Children: []Widget{
-				Label{Text: "Printer family:"},
-				ComboBox{AssignTo: &a.forceFamilyCombo, Model: a.familyLabels, CurrentIndex: 0, Accessibility: name("mutate-force-family")},
-			}},
 			Composite{AssignTo: &a.purgeRow, Layout: row(), Children: []Widget{
 				CheckBox{AssignTo: &a.purgeDriverCheck, Text: "Also remove the driver, if nothing else uses it"},
 				HSpacer{},
@@ -164,7 +159,6 @@ func (a *app) startOperation(op operation) {
 	a.offlineCheck.SetChecked(a.pending.Offline)
 	a.updateCheck.SetChecked(a.pending.UpdateExisting)
 	a.purgeDriverCheck.SetChecked(a.pending.PurgeDriver)
-	a.forceFamilyCombo.SetCurrentIndex(0)
 	a.settingOptions = false
 	setShown(a.copyNotesBtn, false)
 	a.renderSheet()
@@ -196,11 +190,6 @@ func (a *app) currentOperation() operation {
 	}
 	if op.Kind == opRemove && a.purgeDriverCheck != nil {
 		op.PurgeDriver = a.purgeDriverCheck.Checked()
-	}
-	if op.Kind == opInstall && strings.TrimSpace(op.ProfilePath) == "" && a.forceFamilyCombo != nil {
-		if index := a.forceFamilyCombo.CurrentIndex(); index > 0 && index < len(a.familyIDs) {
-			op.ForceFamily = a.familyIDs[index]
-		}
 	}
 	return op.normalized()
 }
@@ -258,9 +247,6 @@ func (a *app) updateReviewControls() {
 	op := a.currentOperation()
 	busy := a.mutationBusy
 
-	if a.familyRow != nil {
-		a.familyRow.SetVisible(op.Kind == opInstall && strings.TrimSpace(op.ProfilePath) == "")
-	}
 	if a.purgeRow != nil {
 		a.purgeRow.SetVisible(op.Kind == opRemove)
 	}
@@ -273,7 +259,7 @@ func (a *app) updateReviewControls() {
 	}
 	a.updateCheck.SetVisible(op.Kind == opApply)
 	a.updateCheck.SetEnabled(!busy)
-	for _, control := range []walk.Widget{a.forceFamilyCombo, a.purgeDriverCheck, a.dryRunOnlyCheck} {
+	for _, control := range []walk.Widget{a.purgeDriverCheck, a.dryRunOnlyCheck} {
 		if control != nil {
 			control.SetEnabled(!busy && !a.sheetDone)
 		}

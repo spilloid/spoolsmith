@@ -5,7 +5,7 @@ using different words for the same thing, that's called out under the table inst
 of glossed over.
 
 The desktop sidebar has two pages, **This PC** and **Add a printer**. Intune
-package, Inspect, Driver catalog, Action log and Saved setups are under **More**
+package, Inspect, Action log and Saved setups are under **More**
 at the foot of the sidebar. Every change to Windows is reviewed on the **apply
 sheet**, which opens whenever there is something to apply: a printer file
 (double-clicked, dropped, pasted or opened), a scanned or saved printer, or
@@ -16,7 +16,7 @@ Remove / Change address on This PC.
 | Installed queues | `printers` (JSON on stdout, human table on stderr; `--json` suppresses the table) | This PC table; printers SpoolSmith can't copy are greyed with their reason |
 | Registered drivers | `drivers` | Add a printer → printer settings → Refresh drivers |
 | Network discovery | `discover` | Add a printer lists the connected subnet's printers on its own; Scan a different network or IP... |
-| Known IP | `profile capture` / `install <ip>` | Scan a different network or IP → Use IP directly → Save and review / Use catalog identification instead... |
+| Known IP | `profile capture` (`install <ip>` is pending deprecation) | Scan a different network or IP → Use IP directly → Save and review |
 | Copy one queue, driver where possible | `copy`, `clone` (driver included when possible; `--settings-only` opts out) | This PC → select → Copy 1 printer... (driver checkbox on by default; settings only, with the reason, when it can't be exported); or Ctrl+C to put the .ssb on the clipboard |
 | Copy several queues into one printer set | `copy --all [<printers.zip>] [--settings-only]` (every copyable queue) | This PC → select several (Ctrl+A for all) → Copy N printers...: one set (.zip), progress, stop, per-printer results and Copy results; or Ctrl+C for individual .ssb files on the clipboard |
 | Apply a copied printer | `apply <file.ssb>` | Double-click the .ssb (once the association is set up), drop or paste it on the window, `spoolsmith-gui.exe <file.ssb>`, or Add a printer → Open a printer file... |
@@ -31,8 +31,8 @@ Remove / Change address on This PC.
 | Remove by queue name | `uninstall` | This PC → Remove printer |
 | Offline setup | Automatic fallback for saved printers; `--offline` skips probing | Automatic fallback; sheet → More options → Offline setup skips probing |
 | Optional driver purge | `--purge-driver` | Removal sheet → More options |
-| Catalog family override | `--force-family` | Catalog setup sheet → More options |
-| Evidence and catalog | `inspect`, `catalog families`, `catalog probe` | More → Inspect / Driver catalog |
+| Catalog family override | `--force-family` (pending deprecation) | Not offered |
+| Evidence and catalog | `inspect`; `catalog families`, `catalog probe` (pending deprecation) | More → Inspect |
 | Intune packaging | `intune build`, `intune wizard` | More → Intune package → Build an Intune printer app... (two-step wizard) |
 | Complete plan and execution result | `--dry-run --json` / execution JSON | Sheet → Details (transcript) → Full plan and result → Copy |
 | Notes for a ticket | execution JSON | Finished sheet → Copy notes for the ticket |

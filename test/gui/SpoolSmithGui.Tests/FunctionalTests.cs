@@ -52,6 +52,10 @@ public sealed class FunctionalTests : IDisposable
     [StaFact]
     public void More_menu_reaches_every_occasional_page()
     {
+        // The driver catalog is gone from the desktop; its CLI commands are
+        // pending deprecation.
+        Assert.True(_fixture.MoreMenuHas("Inspect"));
+        Assert.False(_fixture.MoreMenuHas("Driver catalog"));
         foreach (var page in AppFixture.MorePages)
         {
             _fixture.GoTo(page);
@@ -137,20 +141,6 @@ public sealed class FunctionalTests : IDisposable
             var table = Find(_fixture.MainWindow, "discover-results");
             Assert.Contains(table.FindAllDescendants(), cell => (cell.Name ?? "").Contains(expectedIP));
         }
-    }
-
-    [StaFact]
-    public void Catalog_list_families_populates_output()
-    {
-        _fixture.GoTo("Driver catalog");
-
-        var button = FindButton(_fixture.MainWindow, "List families");
-        var output = Find(_fixture.MainWindow, "catalog-output").AsTextBox();
-
-        button.Invoke();
-
-        var text = WaitForText(output, t => t.Contains("hp-laserjet", StringComparison.OrdinalIgnoreCase));
-        Assert.Contains("brother-hl-l2xxx", text, StringComparison.OrdinalIgnoreCase);
     }
 
     [StaFact]

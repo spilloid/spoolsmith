@@ -14,7 +14,7 @@ import (
 
 // The sidebar holds the app's one job and nothing else: This PC (take
 // printers off it) and Add a printer (put them on). Everything used now and
-// then -- Intune packaging, inspecting, the catalog, the log, saved setups --
+// then -- Intune packaging, inspecting a file, the log, saved setups --
 // lives under More at the foot of the sidebar.
 //
 // It used to list seven places at equal weight, including a Review page that
@@ -28,7 +28,6 @@ const (
 	pageReview
 	pageIntune
 	pageInspect
-	pageCatalog
 	pageLog
 	pageCount
 )
@@ -45,7 +44,6 @@ var pageTitles = [pageCount]string{
 	"Review",
 	"Intune package",
 	"Inspect",
-	"Driver catalog",
 	"Action log",
 }
 
@@ -203,7 +201,6 @@ func (a *app) pageShown(p page) {
 const (
 	moreIntune = iota + 1
 	moreInspect
-	moreCatalog
 	moreLog
 	moreSavedSetups
 	moreAssociation
@@ -240,7 +237,6 @@ func (a *app) showMoreMenu() {
 	}
 	add(moreIntune, pageTitles[pageIntune], false)
 	add(moreInspect, pageTitles[pageInspect], false)
-	add(moreCatalog, pageTitles[pageCatalog], false)
 	add(moreLog, pageTitles[pageLog], false)
 	add(0, "", false)
 	add(moreSavedSetups, "Saved setups...", false)
@@ -258,8 +254,6 @@ func (a *app) showMoreMenu() {
 		a.goTo(pageIntune)
 	case moreInspect:
 		a.goTo(pageInspect)
-	case moreCatalog:
-		a.goTo(pageCatalog)
 	case moreLog:
 		a.goTo(pageLog)
 		a.onRefreshLog()

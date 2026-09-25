@@ -183,7 +183,7 @@ public sealed class AppFixture : IDisposable
     public static readonly string[] Pages = { "This PC", "Add a printer" };
 
     /// <summary>The destinations under the sidebar's More menu.</summary>
-    public static readonly string[] MorePages = { "Intune package", "Inspect", "Driver catalog", "Action log" };
+    public static readonly string[] MorePages = { "Intune package", "Inspect", "Action log" };
 
     /// <summary>The More button's caption, which is also its UIA name.</summary>
     public const string MoreButton = "More  ▾";
@@ -213,7 +213,6 @@ public sealed class AppFixture : IDisposable
             Review => "‹ Back",
             "Intune package" => "Build an Intune printer app...",
             "Inspect" => "inspect-target",
-            "Driver catalog" => "catalog-output",
             "Action log" => "log-output",
             _ => throw new ArgumentException("Unknown page", nameof(page)),
         };
@@ -269,6 +268,26 @@ public sealed class AppFixture : IDisposable
             .Select(menu => menu.FindFirstDescendant(cf => cf.ByControlType(FlaUI.Core.Definitions.ControlType.MenuItem).And(cf.ByName(name))))
             .FirstOrDefault(found => found != null)) != null, $"More menu item '{name}' not found.");
         return item!;
+    }
+
+    /// <summary>
+    /// Opens More, reports whether it lists the named item, and closes it again.
+    /// </summary>
+    public bool MoreMenuHas(string name)
+    {
+        var more = MainWindow.FindFirstDescendant(cf => cf.ByControlType(FlaUI.Core.Definitions.ControlType.Button).And(cf.ByName(MoreButton)))
+            ?? throw new InvalidOperationException("The More button was not found.");
+        MainWindow.SetForeground();
+        more.Click();
+        AutomationElement[] items = Array.Empty<AutomationElement>();
+        Wait(() => (items = Automation.GetDesktop()
+            .FindAllChildren(cf => cf.ByClassName("#32768"))
+            .SelectMany(menu => menu.FindAllDescendants(cf => cf.ByControlType(FlaUI.Core.Definitions.ControlType.MenuItem)))
+            .ToArray()).Length > 0, "The More menu did not open.");
+        var found = items.Any(item => item.Name == name);
+        FlaUI.Core.Input.Keyboard.Press(FlaUI.Core.WindowsAPI.VirtualKeyShort.ESCAPE);
+        Poll(() => !Automation.GetDesktop().FindAllChildren(cf => cf.ByClassName("#32768")).Any(), 2_000);
+        return found;
     }
 
     private static bool Poll(Func<bool> ready, int timeoutMs)

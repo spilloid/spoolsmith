@@ -22,6 +22,15 @@ rules:
 - Unchanged: exactly one explicit confirmation of the shown plan before any
   mutation, on every path, including files that arrive by drop, paste,
   association or hand-over.
+- **The driver catalog is on its way out.** The product is capturing a
+  printer that already works and replaying it; the catalog belongs to the
+  milestone-one identify-a-model-and-install-its-OEM-driver idea. The desktop
+  no longer offers it (Driver catalog page, "Use catalog identification",
+  the family override). On the CLI, `catalog probe`/`catalog families` and
+  target-based `install <ip>`/`--force-family` still work but print a stderr
+  "pending deprecation" notice; removal is tracked in issue #22. Don't build
+  new features on the catalog. `inspect` stays: it is the useful way to read
+  a `.ssb` or set without applying it.
 
 **Operator update, 2026-09-23:** ".ssb is the first-class printer
 import/export representation, and zip is the collective of such." This

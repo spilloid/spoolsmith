@@ -159,11 +159,15 @@ func run(ctx context.Context, args []string, input io.Reader, stdout, stderr io.
 		}
 		return encodeSuccess(stdout, stderr, "inspect", result)
 	case "catalog":
+		deprecationNotice(stderr, "catalog", "Copy a working printer with `copy` and `apply` instead.")
 		return runCatalog(ctx, args[1:], stdout, stderr, app)
 	case "install", "add", "configure":
 		options, err := parseInstallArgs(args[1:])
 		if err != nil {
 			return usageError(stdout, stderr, args[0], err)
+		}
+		if args[0] == "install" && options.Profile == nil {
+			deprecationNotice(stderr, "install <ip>", "Copy a working printer with `copy` and `apply`, or save one with `profile capture` and `add --profile`.")
 		}
 		if args[0] == "configure" {
 			if options.Profile == nil {
@@ -480,7 +484,6 @@ func printUsage(writer io.Writer) {
 	fmt.Fprintln(writer, "Find and save a printer")
 	fmt.Fprintln(writer, "  spoolsmith discover <IPv4-CIDR>            /24 through /32")
 	fmt.Fprintln(writer, "  spoolsmith inspect <target>")
-	fmt.Fprintln(writer, "  spoolsmith catalog probe <ip> | catalog families")
 	fmt.Fprintln(writer, "  spoolsmith profile export-all <folder> <set.zip> [--dry-run]")
 	fmt.Fprintln(writer, "  spoolsmith profile import-all <set.zip> <folder> [--dry-run]")
 	fmt.Fprintln(writer, "  spoolsmith profile capture <target> <file> --name <queue> --driver <installed-driver-name>")
@@ -491,7 +494,6 @@ func printUsage(writer io.Writer) {
 	fmt.Fprintln(writer, "  spoolsmith add|configure --profile <file> [--offline] [--dry-run] [--yes] [--json]")
 	fmt.Fprintln(writer, "  spoolsmith repoint <queue> <new-ip> [--dry-run] [--yes] [--non-interactive] [--json]")
 	fmt.Fprintln(writer, "  spoolsmith remove --profile <file> [--dry-run] [--json]")
-	fmt.Fprintln(writer, "  spoolsmith install <ip> [--force-family <id>] [--dry-run|--what-if] [--yes] [--non-interactive] [--json]")
 	fmt.Fprintln(writer, "  spoolsmith uninstall <printer-name> [--purge-driver] [--dry-run|--what-if] [--yes] [--non-interactive] [--json]")
 	fmt.Fprintln(writer, "")
 	fmt.Fprintln(writer, "Package a validated profile for Intune (local only; never contacts a tenant)")
@@ -504,6 +506,10 @@ func printUsage(writer io.Writer) {
 	fmt.Fprintln(writer, "  spoolsmith.exe it also creates the .intunewin (--content-prep-tool/--content-prep-output")
 	fmt.Fprintln(writer, "  override it; --no-content-prep skips it). Uploading and assigning the app in")
 	fmt.Fprintln(writer, "  Intune remains a manual step; this does not sign in to a tenant.")
+	fmt.Fprintln(writer, "")
+	fmt.Fprintln(writer, "Pending deprecation (removed in a future build; copy and apply replace them)")
+	fmt.Fprintln(writer, "  spoolsmith catalog probe <ip> | catalog families")
+	fmt.Fprintln(writer, "  spoolsmith install <ip> [--force-family <id>] [--dry-run|--what-if] [--yes] [--non-interactive] [--json]")
 	fmt.Fprintln(writer, "")
 	fmt.Fprintln(writer, "--dry-run/--what-if takes precedence over --yes and never prompts or mutates.")
 	fmt.Fprintln(writer, "--offline skips the live identity check; the plan says so before you confirm it.")
@@ -521,4 +527,17 @@ func executableDir() []string {
 func isTerminal(file *os.File) bool {
 	info, err := file.Stat()
 	return err == nil && info.Mode()&os.ModeCharDevice != 0
+}
+
+// pendingDeprecationNote is appended to the help of commands that belong to
+// the original catalog-driven design. SpoolSmith copies a printer that
+// already works instead of identifying a model and choosing its OEM driver;
+// these stay working until a future build removes them.
+const pendingDeprecationNote = "Pending deprecation: this catalog-driven command will be removed in a future build.\n" +
+	"Copy a working printer with `copy` and `apply` instead.\n"
+
+// deprecationNotice warns on stderr, leaving stdout (and any JSON on it)
+// unchanged.
+func deprecationNotice(stderr io.Writer, command, instead string) {
+	fmt.Fprintf(stderr, "Note: `spoolsmith %s` is pending deprecation and will be removed in a future build. %s\n", command, instead)
 }

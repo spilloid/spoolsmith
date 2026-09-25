@@ -9,7 +9,6 @@ import (
 	"os"
 	"strings"
 
-	"github.com/spilloid/spoolsmith/internal/catalog"
 	"github.com/spilloid/spoolsmith/internal/evidence"
 	"github.com/tailscale/walk"
 	. "github.com/tailscale/walk/declarative"
@@ -50,12 +49,6 @@ func main() {
 	}
 	a := newApp()
 	defer a.logger.Close()
-	a.familyLabels = []string{"Automatic identification"}
-	a.familyIDs = []string{""}
-	for _, family := range catalog.Families() {
-		a.familyLabels = append(a.familyLabels, family.ID+" ("+family.Manufacturer+")")
-		a.familyIDs = append(a.familyIDs, family.ID)
-	}
 	tagline := "Printers, ready to carry."
 	if isElevated() {
 		tagline = "Running as administrator"
@@ -89,7 +82,7 @@ func main() {
 				// width, and a capped item left sharing the spare space is centered
 				// in it -- which drew a grey strip beside the sidebar.
 				Composite{StretchFactor: 1000, Background: SolidColorBrush{Color: colorPage}, Layout: VBox{MarginsZero: true, SpacingZero: true}, Children: []Widget{
-					thisPCPage(a), addPage(a), sheetPage(a), intunePage(a), inspectPage(a), catalogPage(a), logPage(a),
+					thisPCPage(a), addPage(a), sheetPage(a), intunePage(a), inspectPage(a), logPage(a),
 				}},
 			}},
 		},
@@ -161,7 +154,7 @@ func applyStyle(a *app) {
 	if err != nil {
 		return
 	}
-	for _, out := range []*walk.TextEdit{a.inspectOut, a.catalogOut, a.logOut} {
+	for _, out := range []*walk.TextEdit{a.inspectOut, a.logOut} {
 		out.SetFont(monoFont)
 	}
 }
@@ -271,9 +264,6 @@ func addPage(a *app) Composite {
 			Label{AssignTo: &a.captureStatus, Text: "Saving checks the printer and keeps its settings for next time."},
 			Composite{Layout: row(), Children: []Widget{
 				PushButton{Text: "Back to discovery", OnClicked: func() { a.setupOpen = false; a.setupGroup.SetVisible(false); a.searchGroup.SetVisible(true) }},
-				PushButton{Text: "Use catalog identification instead...", OnClicked: func() {
-					a.startOperation(operation{Kind: opInstall, Target: strings.TrimSpace(a.captureTarget.Text())})
-				}},
 				HSpacer{}, PushButton{AssignTo: &a.captureBtn, Text: "Save and review", OnClicked: a.onCaptureProfile},
 			}},
 		}},
@@ -318,19 +308,6 @@ func inspectPage(a *app) Composite {
 			PushButton{AssignTo: &a.inspectBtn, Text: "Inspect", OnClicked: a.onInspect},
 		}},
 		TextEdit{AssignTo: &a.inspectOut, ReadOnly: true, VScroll: true, HScroll: true, Accessibility: name("inspect-output")},
-	)
-}
-
-func catalogPage(a *app) Composite {
-	return contentPage(a, pageCatalog,
-		heading("Driver catalog"),
-		Label{Text: "List the printer families SpoolSmith can identify, or probe one address to see how it matches."},
-		Composite{Layout: row(), Children: []Widget{
-			PushButton{AssignTo: &a.familiesBtn, Text: "List families", OnClicked: a.onFamilies},
-			Label{Text: "Printer IP:"}, LineEdit{AssignTo: &a.probeTarget, Accessibility: name("catalog-probe-target")},
-			PushButton{AssignTo: &a.probeBtn, Text: "Probe", OnClicked: a.onProbe},
-		}},
-		TextEdit{AssignTo: &a.catalogOut, ReadOnly: true, VScroll: true, HScroll: true, Accessibility: name("catalog-output")},
 	)
 }
 

@@ -14,7 +14,6 @@ import (
 
 	"github.com/spilloid/spoolsmith/internal/actionlog"
 	"github.com/spilloid/spoolsmith/internal/bundle"
-	"github.com/spilloid/spoolsmith/internal/catalog"
 	"github.com/spilloid/spoolsmith/internal/inspect"
 	"github.com/spilloid/spoolsmith/internal/install"
 	"github.com/spilloid/spoolsmith/internal/probe"
@@ -50,11 +49,6 @@ type app struct {
 	inspectBtn    *walk.PushButton
 	inspectOut    *walk.TextEdit
 
-	familiesBtn *walk.PushButton
-	probeTarget *walk.LineEdit
-	probeBtn    *walk.PushButton
-	catalogOut  *walk.TextEdit
-
 	captureTarget  *walk.LineEdit
 	captureFile    *walk.LineEdit
 	captureName    *walk.LineEdit
@@ -62,9 +56,6 @@ type app struct {
 	refreshDrivers *walk.PushButton
 	captureBtn     *walk.PushButton
 
-	forceFamilyCombo *walk.ComboBox
-	familyIDs        []string
-	familyLabels     []string
 	purgeDriverCheck *walk.CheckBox
 	dryRunOnlyCheck  *walk.CheckBox
 	previewBtn       *walk.PushButton
@@ -208,42 +199,6 @@ func (a *app) onInspect() {
 		a.mw.Synchronize(func() {
 			a.inspectBtn.SetEnabled(true)
 			a.inspectOut.SetText(text)
-		})
-	}()
-}
-
-// --- Catalog --------------------------------------------------------------
-
-func (a *app) onFamilies() {
-	start := time.Now()
-	families := catalog.Families()
-	a.log("gui", "catalog families", nil, "success", nil, start)
-	a.catalogOut.SetText(prettyJSON(families))
-}
-
-func (a *app) onProbe() {
-	target := strings.TrimSpace(a.probeTarget.Text())
-	if target == "" {
-		showErr(a.mw, "Catalog probe", fmt.Errorf("enter a target IP address"))
-		return
-	}
-	a.probeBtn.SetEnabled(false)
-	a.catalogOut.SetText("Probing...")
-	start := time.Now()
-	go func() {
-		result, err := probe.Collect(context.Background(), target)
-		status := "success"
-		var text string
-		if err != nil {
-			status = "error"
-			text = "Error: " + err.Error()
-		} else {
-			text = prettyJSON(result)
-		}
-		a.log("gui", "catalog probe", []string{target}, status, err, start)
-		a.mw.Synchronize(func() {
-			a.probeBtn.SetEnabled(true)
-			a.catalogOut.SetText(text)
 		})
 	}()
 }
@@ -575,7 +530,7 @@ func (a *app) onExecute() {
 
 func (a *app) setMutationBusy(busy bool) {
 	a.mutationBusy = busy
-	for _, control := range []walk.Widget{a.forceFamilyCombo, a.purgeDriverCheck, a.dryRunOnlyCheck, a.offlineCheck, a.updateCheck, a.previewBtn} {
+	for _, control := range []walk.Widget{a.purgeDriverCheck, a.dryRunOnlyCheck, a.offlineCheck, a.updateCheck, a.previewBtn} {
 		if control != nil {
 			control.SetEnabled(!busy)
 		}
@@ -586,7 +541,6 @@ func (a *app) setMutationBusy(busy bool) {
 
 func (a *app) bindMutationInputs() {
 	invalidate := func() { a.invalidateReview() }
-	a.forceFamilyCombo.CurrentIndexChanged().Attach(invalidate)
 	for _, checkbox := range []*walk.CheckBox{a.purgeDriverCheck, a.dryRunOnlyCheck, a.offlineCheck, a.updateCheck} {
 		checkbox.CheckedChanged().Attach(invalidate)
 	}

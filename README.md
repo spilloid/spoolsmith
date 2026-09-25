@@ -147,7 +147,7 @@ go build -ldflags="-H windowsgui" -o dist/spoolsmith-gui.exe ./cmd/spoolsmith-gu
 ```
 
 The sidebar holds the app's one job: **This PC** (take printers off this PC) and **Add a
-printer** (put them on). **Intune package**, **Inspect**, **Driver catalog**, **Action log**
+printer** (put them on). **Intune package**, **Inspect**, **Action log**
 and **Saved setups** are under **More** at the foot of the sidebar. The window opens at
 1060×720 and can shrink to 960×640.
 
@@ -180,9 +180,7 @@ ticket** puts a plain-text summary on the clipboard.
 
 **Add a printer** lists the printers found on the network the PC is connected to, scanned
 when the app starts. **Scan a different network or IP...** takes a subnet, or one address
-with **Use IP directly**. Choose a compatible installed driver and **Save and review**, or use
-**Use catalog identification instead...** to have SpoolSmith derive the name and driver
-itself from the catalog, ignoring whatever you typed. A printer set `.zip` opens a
+with **Use IP directly**. Choose a compatible installed driver and **Save and review**. A printer set `.zip` opens a
 **Printer set** list where you pick one printer at a time, and each goes through its own
 sheet and confirmation (the CLI's `bundle inspect` reads either without applying it).
 **More → Inspect** can also verify a bundle or set and show what it contains without
@@ -393,21 +391,16 @@ go build ./cmd/spoolsmith
 
 ## Usage
 
+> **Pending deprecation:** `catalog probe`, `catalog families` and catalog-driven
+> `install <ip>` (with `--force-family`) still work but will be removed in a future build.
+> They belong to the original identify-the-model-and-pick-its-OEM-driver design; copying a
+> printer that already works (`copy`, then `apply`) replaces them. Using them prints a
+> notice on stderr. The desktop no longer offers them.
+
 ```sh
 # Point it at a fixture file (for testing) or a real IP (live detection)
 spoolsmith inspect 192.168.1.50
 spoolsmith inspect fixtures/hp-laserjet-m404-synthetic.json
-
-# See the raw evidence a device returns, useful when adding catalog support for a new model
-spoolsmith catalog probe 192.168.1.50
-
-# List the printer families SpoolSmith currently recognizes
-spoolsmith catalog families
-
-# Install — shows a plan, asks for confirmation, then (and only then) mutates anything
-spoolsmith install 192.168.1.50
-spoolsmith install 192.168.1.50 --dry-run     # see the plan, touch nothing
-spoolsmith install 192.168.1.50 --force-family hp-laserjet-m4xx
 
 # Remove the named queue; retain ports and drivers still used by other queues
 spoolsmith uninstall "HP LaserJet Pro M404dn"
