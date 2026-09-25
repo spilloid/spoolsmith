@@ -69,7 +69,7 @@ reason; one that fails doesn't stop the others. Stopping the copy (Ctrl+C) saves
 an existing file is never replaced. `--note` is stored as the zip comment. Zipping `.ssb`
 files yourself (for example with Explorer's **Compress to ZIP file**) also makes a valid set.
 
-The desktop offers the same through **This PC → Copy all printers...**: a **Save set as**
+The desktop offers the same by selecting printers on **This PC** (Ctrl+A for all) and choosing **Copy N printers...**: a **Save set as**
 `.zip` name, **Include each printer's driver where possible** (on by default), progress, a
 stop control and a result for every printer. **Copy results** puts a plain-text report on
 the clipboard for your ticket.
@@ -146,30 +146,51 @@ For developers building the desktop from source:
 go build -ldflags="-H windowsgui" -o dist/spoolsmith-gui.exe ./cmd/spoolsmith-gui
 ```
 
-A sidebar on the left lists every page in the order the work happens: **This PC**,
-**Add a printer** and **Review and apply**, then a **Tools** group with **Intune
-package**, **Inspect**, **Driver catalog** and **Action log**. The window opens at
+The sidebar holds the app's one job: **This PC** (take printers off this PC) and **Add a
+printer** (put them on). **Intune package**, **Inspect**, **Driver catalog**, **Action log**
+and **Saved setups** are under **More** at the foot of the sidebar. The window opens at
 1060×720 and can shrink to 960×640.
 
-The app opens on **This PC**, showing Windows' installed printers. Select one to
-**Copy to a file**, **Change address**, or **Remove printer**. **Include the driver where
-possible** is on by default, as on the CLI. Exporting driver files requires administrator
-rights; without elevation, or when the export fails, the copy is saved with settings only
-and the result says why. Clear the checkbox for a settings-only copy.
+The app opens on **This PC**, a table of Windows' installed printers; ones SpoolSmith
+can't copy (such as Print to PDF) are greyed with their reason. Select printers and choose
+**Copy 1 printer...** or **Copy N printers...** (one printer saves a `.ssb`, several save one
+set `.zip`), or press **Ctrl+C** to put the printer files on the clipboard and paste them
+into a folder, share or chat. **Include the driver where possible** is on by default, as on
+the CLI. Exporting driver files requires administrator rights; without elevation, or when
+the export fails, the copy is saved with settings only and the result says why. With one
+printer selected, **Change address...** and **Remove printer...** appear.
 
-**Add a printer** combines network discovery and printer settings. Enter a subnet
-and **Scan**, or enter one address and choose **Use IP directly**. Choose a compatible
-installed driver and **Save and review**, or use **Use catalog identification instead...**
-to have SpoolSmith derive the name and driver itself from the catalog, ignoring whatever
-you typed. **Open a printer file...** opens a copied `.ssb`, or a printer set `.zip`: a set
-opens a **Printer set** list where you pick one printer at a time, and each goes through its
-own review and confirmation (the CLI's `bundle inspect` reads either without applying it); **More options** on the review screen
-offers offline setup and updating an existing queue. **Inspect** (under Tools in the
-sidebar) can also verify a bundle and show its complete manifest without contacting
-the printer. **Intune package → Build an Intune printer app...** packages a reviewed
-profile into a local, reviewable Win32 app bundle — see [Intune packaging](#intune-packaging).
+**To install a printer file, double-click it.** SpoolSmith offers once to open `.ssb`
+files when you double-click them (for your Windows account only; turn it off under
+**More**). You can also drop printer files or sets onto the window, paste them (**Ctrl+V**)
+after copying them in Explorer, pass one on the command line (`spoolsmith-gui.exe
+printer.ssb`), or use **Add a printer → Open a printer file...**. A second double-click while
+SpoolSmith is open goes to the window that's already open.
 
-**Open a saved setup** lists reusable profiles. Set up, update, remove, edit with a
+Every change opens the **apply sheet**: the printer's name, address and driver, where the
+file came from, anything to know first (settings only, printer not answering), and the
+steps it will take, prepared as soon as it opens. **Details** shows the full plan;
+**More options** offers offline setup, updating an existing queue and, for removals,
+removing the driver. The main button asks for the usual single confirmation of that plan.
+If SpoolSmith isn't running as administrator, the button reads **Install as
+administrator...** with the Windows shield: Windows asks for permission, SpoolSmith
+reopens elevated on the same printer, prepares the preview again and asks you to confirm
+it there. When it finishes, the sheet shows each step's result and **Copy notes for the
+ticket** puts a plain-text summary on the clipboard.
+
+**Add a printer** lists the printers found on the network the PC is connected to, scanned
+when the app starts. **Scan a different network or IP...** takes a subnet, or one address
+with **Use IP directly**. Choose a compatible installed driver and **Save and review**, or use
+**Use catalog identification instead...** to have SpoolSmith derive the name and driver
+itself from the catalog, ignoring whatever you typed. A printer set `.zip` opens a
+**Printer set** list where you pick one printer at a time, and each goes through its own
+sheet and confirmation (the CLI's `bundle inspect` reads either without applying it).
+**More → Inspect** can also verify a bundle or set and show what it contains without
+contacting the printer. **More → Intune package → Build an Intune printer app...**
+packages a reviewed profile into a local, reviewable Win32 app bundle — see [Intune
+packaging](#intune-packaging).
+
+**More → Saved setups** lists reusable profiles. Set up, update, remove, edit with a
 backup, or **Check status** against local Windows configuration. Status does not
 prove reachability or printing. **Open another folder** switches the profile library.
 The default library sits beside the executable; `SPOOLSMITH_PROFILES_DIR` can override it.
@@ -494,8 +515,8 @@ MIT — see [LICENSE](LICENSE).
 ## Offline provisioning (released)
 
 **Offline setup** is the one term for this everywhere in SpoolSmith — the CLI's
-`--offline` flag, and the desktop GUI's "Offline setup" checkboxes on the review
-screen and the Intune wizard all mean the same thing: skip contacting and
+`--offline` flag, and the desktop GUI's "Offline setup" checkboxes on the apply
+sheet and the Intune wizard all mean the same thing: skip contacting and
 identity-checking the printer, and use a saved profile's settings as-is.
 
 Saved printer files automatically fall back to offline provisioning if the printer
@@ -547,7 +568,7 @@ provisioning and adoption still require explicit choices.
 review, repeat without it to export; supply the reviewed `--binary-sha256` and
 `--output` when you need to fix those across separate invocations. For an
 interactive review and separate export confirmation, use `intune wizard` or
-the desktop GUI’s **Intune package** page → **Build an Intune printer app...**. The
+the desktop GUI’s **More → Intune package** → **Build an Intune printer app...**. The
 desktop wizard has two steps: **Package settings**, then **Review and export**, which
 only **Validate and preview package** reaches; optional metadata and policy sit under
 **Advanced settings**, and **Back to settings** discards the review. Both wizards

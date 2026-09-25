@@ -55,9 +55,6 @@ product hardening, with additional protocols as future scope.
 
 ## Known behavior to harden
 
-- **Desktop Inspect does not list a set's printers.** `bundle inspect <set.zip>`
-  does on the CLI; on the desktop, open the set from **Add a printer → Open a
-  printer file...** to see its printers.
 - **Drivers from another PC are trusted as that PC is.** Copies now carry drivers
   by default. Payload hashes detect corruption and edits; Windows' catalog
   signature check at staging is the real gate. `--settings-only` remains the
