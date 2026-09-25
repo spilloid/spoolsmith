@@ -30,3 +30,77 @@ jobs:
       - name: Build desktop automation tests
         if: runner.os == 'Windows'
         run: dotnet build test/gui/SpoolSmithGui.Tests
+
+  # The installer is checked on every change, from unsigned development builds:
+  # wixl builds it on Ubuntu, then Windows installs, upgrades, refuses a
+  # downgrade and uninstalls it. Release builds add signing on top of this; see
+  # .github/workflows/msi.yml.
+  msi-build:
+    name: MSI (build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24.x"
+      - name: Install msitools (wixl)
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends wixl msitools
+      - name: Build development payload
+        env:
+          GOOS: windows
+          GOARCH: amd64
+        run: |
+          mkdir -p payload
+          go build -trimpath -ldflags "-s -w" -o payload/spoolsmith.exe ./cmd/spoolsmith
+          go build -trimpath -ldflags "-s -w -H windowsgui" -o payload/spoolsmith-gui.exe ./cmd/spoolsmith-gui
+          cp README.md LICENSE payload/
+      # Two versions from the same payload, so Windows can test a major
+      # upgrade and a refused downgrade without publishing anything.
+      - name: Build and check MSIs
+        run: |
+          installer/build-msi.sh v0.0.1 payload out
+          installer/build-msi.sh v0.0.2 payload out
+          # A second build of the same version gets a new ProductCode; it
+          # must replace the first, not install beside it.
+          installer/build-msi.sh v0.0.2 payload out-rebuild
+      - name: Version mapping refuses what Windows Installer cannot order
+        run: |
+          test "$(installer/msi-version.sh v1.3.0)" = 1.3.0
+          test "$(installer/msi-version.sh v255.255.65535)" = 255.255.65535
+          for bad in 1.3.0 v1.3 v1.3.0-rc1 v256.0.0 v1.256.0 v1.0.65536 v01.2.3; do
+            if installer/msi-version.sh "$bad" 2>/dev/null; then echo "accepted $bad"; exit 1; fi
+          done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: msi-dev
+          path: |
+            out/*.msi
+            out-rebuild/*.msi
+            payload/
+
+  msi-lifecycle:
+    name: MSI (install, upgrade, uninstall)
+    needs: msi-build
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: msi-dev
+          path: msi-dev
+      - name: Install, upgrade, refuse downgrade, uninstall
+        shell: pwsh
+        run: |
+          ./scripts/test-msi.ps1 -Msi msi-dev/out/SpoolSmith-v0.0.2-x64.msi -Tag v0.0.2 `
+            -Payload msi-dev/payload -Lifecycle `
+            -UpgradeFrom msi-dev/out/SpoolSmith-v0.0.1-x64.msi -UpgradeFromTag v0.0.1
+      - name: A same-version rebuild replaces, not duplicates
+        shell: pwsh
+        run: |
+          ./scripts/test-msi.ps1 -Msi msi-dev/out-rebuild/SpoolSmith-v0.0.2-x64.msi -Tag v0.0.2 -Lifecycle `
+            -UpgradeFrom msi-dev/out/SpoolSmith-v0.0.2-x64.msi -UpgradeFromTag v0.0.2
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: msi-logs
+          path: ${{ runner.temp }}/spoolsmith-msi-logs
