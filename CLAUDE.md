@@ -310,7 +310,8 @@ site-update commit didn't add one either) before being caught and fixed in v0.7.
 
 Releases are Authenticode-signed by the release workflow, which fails rather than publishing
 unsigned binaries — see `docs/code-signing.md`. After a release publishes, download the actual
-asset and confirm `Get-AuthenticodeSignature` reports `Valid` on both EXEs. CI verifies what it
+assets and confirm `Get-AuthenticodeSignature` reports `Valid` on both EXEs and on
+`SpoolSmith-vX.Y.Z-x64.msi`, and that both `.sha256` sidecars match. CI verifies what it
 built; this verifies what users actually get.
 
 ## Commands

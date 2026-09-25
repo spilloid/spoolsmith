@@ -1,5 +1,10 @@
 # Intune packaging
 
+> **The SpoolSmith MSI is not involved.** A printer package carries its own copy of the
+> SpoolSmith CLI, pinned by hash, and runs that. Target PCs don't need SpoolSmith installed,
+> and installing, upgrading or removing the SpoolSmith MSI never changes what a printer
+> package runs. The MSI is for people who use SpoolSmith, not for the PCs receiving printers.
+
 `spoolsmith intune wizard`/`intune build` are supported: they export a reviewable
 Win32 app package — install/uninstall/detect scripts, a protected local deployment
 record, and the exact commands and detection rule to paste into Intune. This is,
@@ -9,7 +14,7 @@ Win32 app in Intune, uploading the package, and assigning it stay manual steps i
 the Intune admin center — see "Prepare and upload" and "Required and Company
 Portal" below. Tenant sign-in and automatic upload/assignment are a distinct,
 broader feature that isn't planned; see the [roadmap](roadmap.md). The desktop
-GUI offers the same wizard (sidebar → **Intune package** → "Build an Intune printer app..."), for
+GUI offers the same wizard (**More** → **Intune package** → "Build an Intune printer app..."), for
 anyone who'd rather not use the CLI — validated on real Windows hardware in
 [the UX-simplification record](validation/2026-09-18-gui-intune-ux-simplification.md)
 (building on [the original dialog's validation](validation/2026-09-17-gui-intune-wizard.md)).

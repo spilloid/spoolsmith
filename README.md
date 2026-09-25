@@ -363,19 +363,61 @@ single reviewed decision instead of a wizard.
 
 ## Install
 
-Grab the latest Windows build from [Releases](https://github.com/spilloid/spoolsmith/releases).
-The release ZIP has two standalone binaries, `spoolsmith.exe` (CLI) and `spoolsmith-gui.exe`
-(desktop app) — no installer, no dependencies, no need for both if you only want one.
+Every release on [Releases](https://github.com/spilloid/spoolsmith/releases) offers the
+same two signed programs, `spoolsmith.exe` (CLI) and `spoolsmith-gui.exe` (desktop app),
+two ways:
 
-Both binaries are Authenticode-signed. SpoolSmith runs elevated and writes to the driver store,
-so it's worth confirming you got what we published before running it — Windows can do this with
-nothing installed:
+| | Portable ZIP | MSI |
+|---|---|---|
+| File | `spoolsmith-vX.Y.Z-windows-amd64.zip` | `SpoolSmith-vX.Y.Z-x64.msi` |
+| Where it goes | any folder you choose; nothing is installed | `C:\Program Files\SpoolSmith\`, for every user |
+| Needs administrator to install | no | yes |
+| Start Menu | no | **SpoolSmith** shortcut to the desktop app |
+| Apps & Features / uninstall | delete the folder | yes, like any installed program |
+| Updates | replace the files | install the newer MSI; it replaces the older one |
+
+Both carry byte-identical, signed executables, and each has a `.sha256` sidecar. The MSI
+itself is signed too. Neither adds a service, a scheduled task, an auto-updater or a PATH
+entry; the `.ssb` file association is offered by the app, per user, either way.
+
+### MSI
+
+```powershell
+# Interactive
+msiexec /i SpoolSmith-v1.3.0-x64.msi
+
+# Silent, for deployment tools
+msiexec /i SpoolSmith-v1.3.0-x64.msi /qn /norestart /l*v "$env:TEMP\spoolsmith-install.log"
+
+# Silent uninstall (the ProductCode changes every version, so uninstall by file or by name)
+msiexec /x SpoolSmith-v1.3.0-x64.msi /qn /norestart
+Get-Package -Name SpoolSmith -ProviderName msi | Uninstall-Package   # without the file; Windows PowerShell 5.1
+```
+
+A newer MSI upgrades an older one in place; an older MSI refuses to install over a newer
+one (exit code 1603). For deployment tools (Intune Win32/LOB, Configuration Manager,
+GPO): detect by the product name **SpoolSmith** and `DisplayVersion` under
+`HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall`, or by the version of
+`C:\Program Files\SpoolSmith\spoolsmith.exe`; don't pin a ProductCode, which is new for
+every version. The UpgradeCode `{62631A50-5FE9-4696-B410-92BEAAE13C52}` is the same for
+every version. Details: [installer/README.md](installer/README.md).
+
+Printer packages made with **Intune package** / `intune build` are self-contained: each
+carries the SpoolSmith CLI it was reviewed with, pinned by hash, and does **not** need the
+MSI on the target PC.
+
+### Verify what you downloaded
+
+SpoolSmith runs elevated and writes to the driver store, so it's worth confirming you got
+what we published before running it — Windows can do this with nothing installed:
 
 ```powershell
 Get-AuthenticodeSignature .\spoolsmith.exe | Format-List Status, SignerCertificate
+Get-AuthenticodeSignature .\SpoolSmith-v1.3.0-x64.msi | Format-List Status, SignerCertificate
 
-# And the ZIP against its published .sha256 sidecar
+# And each download against its published .sha256 sidecar
 (Get-FileHash spoolsmith-*-windows-amd64.zip -Algorithm SHA256).Hash.ToLower()
+(Get-FileHash SpoolSmith-*-x64.msi -Algorithm SHA256).Hash.ToLower()
 ```
 
 `Status` must read `Valid`. Details, and how releases are signed, are in
