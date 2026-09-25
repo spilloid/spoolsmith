@@ -19,6 +19,9 @@ jobs:
         run: go build -o dist/spoolsmith-gui.exe ./cmd/spoolsmith-gui
       - name: Build CLI
         run: go build -o dist/spoolsmith.exe ./cmd/spoolsmith
+      - name: Set up demo printers for the screenshots
+        # A throwaway runner only; the script refuses to run anywhere else.
+        run: ./scripts/demo-printers.ps1
       - name: Exercise desktop and capture screens
         env:
           SPOOLSMITH_CAPTURE_SITE_SHOTS: '1'

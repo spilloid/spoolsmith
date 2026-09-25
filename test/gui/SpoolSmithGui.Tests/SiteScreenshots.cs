@@ -21,12 +21,16 @@ public sealed class SiteScreenshots
         Directory.CreateDirectory(DemoSetups);
         File.Copy(Path.Combine(repo, "examples", "intune", "accounting.ssb"), Path.Combine(DemoSetups, "accounting.ssb"), overwrite: true);
         File.Copy(Path.Combine(repo, "dist", "spoolsmith.exe"), DemoCli, overwrite: true);
+        SeedDemoLibrary();
         var images = Path.Combine(repo, "docs", "img");
         Directory.CreateDirectory(images);
         // First, in its own app: opening a printer file lands on the apply
         // sheet. It must close before the next launch, which would otherwise
         // hand its window over to this one.
-        CaptureApplySheet(Path.Combine(DemoSetups, "accounting.ssb"), images);
+        // The published sheet image is a curated capture of a printer file that
+        // carries its driver (see the v1.3 validation record); this run keeps its
+        // own for review, beside the other test captures.
+        CaptureApplySheet(Path.Combine(DemoSetups, "accounting.ssb"), Path.Combine(repo, "dist"));
         using var fixture = new AppFixture(profilesDirectory: DemoSetups);
         foreach (var (tab, file) in new[] {
             ("This PC", "gui-this-pc.png"),
@@ -40,6 +44,10 @@ public sealed class SiteScreenshots
                 // Show the inventory, not the "Reading this PC's printers..." state.
                 FunctionalTests.WaitUntil(() => FunctionalTests.FindButton(fixture.MainWindow, "Refresh").IsEnabled,
                     "Printer inventory did not finish loading.");
+                // Select every copyable printer, so the picture shows what Copy does.
+                fixture.MainWindow.SetForeground();
+                FunctionalTests.Find(fixture.MainWindow, "thispc-list").Focus();
+                FlaUI.Core.Input.Keyboard.TypeSimultaneously(FlaUI.Core.WindowsAPI.VirtualKeyShort.CONTROL, FlaUI.Core.WindowsAPI.VirtualKeyShort.KEY_A);
             }
             Thread.Sleep(500);
             fixture.MainWindow.CaptureToFile(Path.Combine(images, file));
@@ -50,6 +58,28 @@ public sealed class SiteScreenshots
         CaptureSavedSetups(fixture, images);
         CaptureCopyAllDialog(fixture, images);
         CaptureIntuneWizard(fixture, images);
+    }
+
+    /// <summary>
+    /// A small office's saved setups, so the library screenshot looks like one
+    /// in use. Settings-only files with illustrative addresses.
+    /// </summary>
+    private static void SeedDemoLibrary()
+    {
+        foreach (var (file, name, ip) in new[] {
+            ("front-desk.ssb", "Front Desk", "10.20.1.21"),
+            ("accounting-2nd-floor.ssb", "Accounting - 2nd Floor", "10.20.2.40"),
+            ("hr-laser.ssb", "HR Laser", "10.20.2.41"),
+            ("executive-suite-color.ssb", "Executive Suite Color", "10.20.3.15"),
+            ("conference-room-b.ssb", "Conference Room B", "10.20.3.52"),
+            ("legal-copier.ssb", "Legal Copier", "10.20.4.30"),
+            ("warehouse-labels.ssb", "Warehouse Labels", "10.20.9.12") })
+        {
+            var path = Path.Combine(DemoSetups, file);
+            if (File.Exists(path)) File.Delete(path);
+            FunctionalTests.WriteProfileBundle(path, "{\"version\": 1, \"target\": \"" + ip + "\", \"printer_name\": \"" + name +
+                "\", \"driver_name\": \"Microsoft PCL6 Class Driver\", \"evidence\": {\"ip\": \"" + ip + "\", \"http_title\": \"" + name + " (illustrative)\", \"provenance\": \"captured\"}}");
+        }
     }
 
     private static readonly string DemoRoot = Path.Combine(
