@@ -35,11 +35,12 @@ func TestReviewHandOverRoundTripsAndIsRevalidated(t *testing.T) {
 }
 
 func TestLaunchArgsCollectFilesAndIgnoreSwitches(t *testing.T) {
-	request, err := parseLaunchArgs([]string{"-Embedding", "a.ssb", "", `C:\sets\b.zip`})
+	abs := filepath.Join(t.TempDir(), "b.zip")
+	request, err := parseLaunchArgs([]string{"-Embedding", "a.ssb", "", abs})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(request.Files) != 2 || !filepath.IsAbs(request.Files[0]) || request.Files[1] != `C:\sets\b.zip` {
+	if len(request.Files) != 2 || !filepath.IsAbs(request.Files[0]) || request.Files[1] != abs {
 		t.Fatalf("files = %v", request.Files)
 	}
 }
