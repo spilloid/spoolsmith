@@ -117,6 +117,10 @@ func main() {
 	a.enableFileDrop()
 	a.listenForHandOver()
 	a.goTo(pageThisPC)
+	// The window sized itself while every page was still counted, which made
+	// it several screens tall. With only This PC showing, open at the
+	// intended size (in 96-DPI units; walk scales it for the display).
+	a.mw.SetSize(walk.Size{Width: 1060, Height: 720})
 	a.nav.SetFocus()
 	a.startNetworkDiscovery()
 	go cleanClipboardFolders()
