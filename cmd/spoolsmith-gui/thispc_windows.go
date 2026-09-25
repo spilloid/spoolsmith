@@ -116,10 +116,6 @@ func thisPCPage(a *app) Composite {
 }
 
 func (a *app) initializeThisPC() {
-	copyAction := walk.NewAction()
-	copyAction.SetShortcut(walk.Shortcut{Modifiers: walk.ModControl, Key: walk.KeyC})
-	copyAction.Triggered().Attach(a.onCopyToClipboard)
-	a.queueTable.ShortcutActions().Add(copyAction)
 	selectAll := walk.NewAction()
 	selectAll.SetShortcut(walk.Shortcut{Modifiers: walk.ModControl, Key: walk.KeyA})
 	selectAll.Triggered().Attach(a.selectAllCopyable)

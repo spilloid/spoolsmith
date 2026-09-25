@@ -57,3 +57,29 @@ public sealed class SheetTests : IDisposable
         _fixture.GoTo("Add a printer");
     }
 }
+
+/// <summary>
+/// Printer files copied in Explorer and pasted into the window open the same
+/// sheet as a double-click.
+/// </summary>
+public sealed class PasteTests : IDisposable
+{
+    private readonly AppFixture _fixture = new();
+
+    public void Dispose() => _fixture.Dispose();
+
+    [StaFact]
+    public void Pasting_a_printer_file_copied_in_Explorer_opens_the_apply_sheet()
+    {
+        var example = Path.Combine(AppFixture.FindRepoRoot(), "examples", "intune", "accounting.ssb");
+        // Explorer's Copy puts a file-drop list on the clipboard.
+        System.Windows.Forms.Clipboard.SetFileDropList(new System.Collections.Specialized.StringCollection { example });
+        _fixture.MainWindow.SetForeground();
+        FunctionalTests.WaitUntil(() => _fixture.MainWindow.Properties.HasKeyboardFocus.ValueOrDefault
+            || _fixture.MainWindow.FindAllDescendants().Any(e => e.Properties.HasKeyboardFocus.ValueOrDefault), "The window never took focus.");
+        FlaUI.Core.Input.Keyboard.TypeSimultaneously(FlaUI.Core.WindowsAPI.VirtualKeyShort.CONTROL, FlaUI.Core.WindowsAPI.VirtualKeyShort.KEY_V);
+        _fixture.GoTo(AppFixture.Review);
+        Assert.Contains(_fixture.MainWindow.FindAllDescendants(cf => cf.ByControlType(ControlType.Text)),
+            label => label.Name == "Example — Accounting Copier" && !label.IsOffscreen);
+    }
+}

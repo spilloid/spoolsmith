@@ -95,10 +95,35 @@ func (a *app) enableFileDrop() {
 		win.ChangeWindowMessageFilterEx(a.mw.Handle(), message, 1 /* MSGFLT_ALLOW */, nil)
 	}
 
+	// Ctrl+C on This PC copies the selected printers as files, wherever the
+	// focus is on that page; in a text box it copies text as usual.
+	copyFiles := walk.NewAction()
+	copyFiles.SetShortcut(walk.Shortcut{Modifiers: walk.ModControl, Key: walk.KeyC})
+	copyFiles.Triggered().Attach(a.onCopyShortcut)
+	a.mw.ShortcutActions().Add(copyFiles)
+
 	paste := walk.NewAction()
 	paste.SetShortcut(walk.Shortcut{Modifiers: walk.ModControl, Key: walk.KeyV})
 	paste.Triggered().Attach(a.onPaste)
 	a.mw.ShortcutActions().Add(paste)
+}
+
+// onCopyShortcut sends Ctrl+C to a focused text box, and otherwise copies
+// the printers selected on This PC.
+func (a *app) onCopyShortcut() {
+	if focus := win.GetFocus(); focus != 0 && isEditControl(focus) {
+		win.SendMessage(focus, win.WM_COPY, 0, 0)
+		return
+	}
+	if a.current == pageThisPC {
+		a.onCopyToClipboard()
+	}
+}
+
+func isEditControl(hwnd win.HWND) bool {
+	var class [32]uint16
+	n, _ := windows.GetClassName(windows.HWND(hwnd), &class[0], int32(len(class)))
+	return n > 0 && strings.EqualFold(windows.UTF16ToString(class[:n]), "Edit")
 }
 
 // onPaste opens printer files copied in Explorer. Anywhere else a paste
@@ -106,7 +131,7 @@ func (a *app) enableFileDrop() {
 func (a *app) onPaste() {
 	paths := clipboardFiles(a.mw.Handle())
 	if len(paths) == 0 {
-		if focus := win.GetFocus(); focus != 0 {
+		if focus := win.GetFocus(); focus != 0 && isEditControl(focus) {
 			win.SendMessage(focus, win.WM_PASTE, 0, 0)
 		}
 		return
