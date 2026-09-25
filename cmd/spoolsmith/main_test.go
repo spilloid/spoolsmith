@@ -23,8 +23,8 @@ func TestCommandOutputSeparation(t *testing.T) {
 		wantStderr string
 	}{
 		{name: "inspect", args: []string{"inspect", "../../fixtures/hp-laserjet-m404-synthetic.json"}},
-		{name: "catalog probe", args: []string{"catalog", "probe", "192.0.2.10"}},
-		{name: "catalog families", args: []string{"catalog", "families"}},
+		{name: "catalog probe", args: []string{"catalog", "probe", "192.0.2.10"}, wantStderr: "pending deprecation"},
+		{name: "catalog families", args: []string{"catalog", "families"}, wantStderr: "pending deprecation"},
 		{name: "install", args: []string{"install", "192.0.2.10", "--dry-run"}, wantStderr: "Install plan"},
 		{name: "uninstall", args: []string{"uninstall", "Test Printer", "--dry-run"}, wantStderr: "Uninstall plan"},
 	}
@@ -265,5 +265,30 @@ func assertValidJSON(t *testing.T, data []byte) {
 	var value any
 	if err := json.Unmarshal(data, &value); err != nil {
 		t.Fatalf("stdout is not valid JSON: %v; %q", err, data)
+	}
+}
+
+func TestCatalogDrivenCommandsArePendingDeprecation(t *testing.T) {
+	app := testApplication()
+	for _, args := range [][]string{
+		{"catalog", "families"},
+		{"install", "192.0.2.10", "--dry-run"},
+	} {
+		var stdout, stderr bytes.Buffer
+		run(context.Background(), args, strings.NewReader(""), &stdout, &stderr, app)
+		if !strings.Contains(stderr.String(), "pending deprecation") || strings.Contains(stdout.String(), "pending deprecation") {
+			t.Errorf("%v: notice must be on stderr only; stdout=%q stderr=%q", args, stdout.String(), stderr.String())
+		}
+	}
+	// Installing from a saved printer file is the capture path, not the catalog.
+	var stderr bytes.Buffer
+	run(context.Background(), []string{"install", "--profile", "missing.ssb", "--dry-run"}, strings.NewReader(""), &bytes.Buffer{}, &stderr, app)
+	if strings.Contains(stderr.String(), "pending deprecation") {
+		t.Errorf("install --profile was marked for deprecation: %q", stderr.String())
+	}
+	var help bytes.Buffer
+	printUsage(&help)
+	if !strings.Contains(help.String(), "Pending deprecation") {
+		t.Error("help does not list the pending deprecations")
 	}
 }

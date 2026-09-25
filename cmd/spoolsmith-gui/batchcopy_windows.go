@@ -11,14 +11,16 @@ import (
 	"time"
 
 	"github.com/spilloid/spoolsmith/internal/bundle"
+	"github.com/spilloid/spoolsmith/internal/install"
 	"github.com/tailscale/walk"
 	. "github.com/tailscale/walk/declarative"
 )
 
-// Bulk export is a file operation over the same CreateAll used by the CLI.
+// Copying several printers is a file operation over the same CreateAll the
+// CLI uses, limited to the printers selected on This PC.
 // Applying any of the resulting files still uses the existing reviewed plan.
-func (a *app) onCopyAllQueues() {
-	if a.queuesBusy || a.mutationBusy || len(a.queues) == 0 {
+func (a *app) onCopyQueues(selected []install.InstalledQueue) {
+	if a.queuesBusy || a.mutationBusy || len(selected) == 0 {
 		return
 	}
 	var dialog *walk.Dialog
@@ -30,6 +32,11 @@ func (a *app) onCopyAllQueues() {
 	var cancel context.CancelFunc
 	var running bool
 	var resultText string
+	names := make([]string, len(selected))
+	for i, queue := range selected {
+		names[i] = queue.PrinterName
+	}
+	title := "Copy " + countPrinters(len(selected))
 
 	stop := func() {
 		if running {
@@ -66,8 +73,8 @@ func (a *app) onCopyAllQueues() {
 		status.SetText("Reading this PC's current printers...")
 		detail.SetText("Each printer becomes one .ssb inside the set. A printer that fails is reported and the others are still saved.\r\n\r\nAn existing file will not be replaced.")
 		opts := bundle.AllOptions{
-			SetPath: setPath, SettingsOnly: !driverCheck.Checked(), Note: strings.TrimSpace(noteEdit.Text()),
-			CreatedBy: "SpoolSmith desktop", SourceHost: hostName(),
+			SetPath: setPath, SettingsOnly: !driverCheck.Checked(), Note: strings.TrimSpace(noteEdit.Text()), Only: names,
+			CreatedBy: "SpoolSmith desktop " + versionString(), SourceHost: hostName(),
 			Progress: func(queue, step string) {
 				a.mw.Synchronize(func() {
 					if ctx.Err() == nil {
@@ -116,10 +123,10 @@ func (a *app) onCopyAllQueues() {
 	}
 
 	err := (Dialog{
-		AssignTo: &dialog, Title: "Copy all printers", MinSize: Size{Width: 720, Height: 480},
+		AssignTo: &dialog, Title: title, MinSize: Size{Width: 720, Height: 480},
 		Size: Size{Width: 820, Height: 560}, Background: SolidColorBrush{Color: colorPage}, Layout: dialogLayout(), CancelButton: &closeBtn,
-		Children: dialogFrame("Copy all printers",
-			Label{Text: "Copy this PC's printers into one printer set (.zip), one .ssb per printer inside."},
+		Children: dialogFrame(title,
+			Label{Text: "Copy these printers into one printer set (.zip), one .ssb per printer inside."},
 			hint("Open the set on the other PC with Add a printer, or unzip it to get each printer's .ssb file."),
 			Composite{Layout: formGrid(3), Children: []Widget{
 				Label{Text: "Save set as:"},
@@ -136,7 +143,7 @@ func (a *app) onCopyAllQueues() {
 				LineEdit{AssignTo: &noteEdit, ColumnSpan: 2, CueBanner: "For example: front office PC replacement", Accessibility: name("copy-all-note")},
 			}},
 			CheckBox{AssignTo: &driverCheck, Text: driverLabel, Checked: true, Accessibility: name("copy-all-drivers")},
-			TextEdit{AssignTo: &detail, ReadOnly: true, VScroll: true, Text: bulkCopyInventoryText(a.queues), Accessibility: name("copy-all-details")},
+			TextEdit{AssignTo: &detail, ReadOnly: true, VScroll: true, Text: bulkCopyInventoryText(selected), Accessibility: name("copy-all-details")},
 			Label{AssignTo: &status, Text: "An existing file will not be replaced. Windows printer settings will not change."},
 			Composite{Layout: row(), Children: []Widget{
 				PushButton{AssignTo: &reportBtn, Text: "Copy results", Enabled: false, OnClicked: func() {
@@ -153,7 +160,7 @@ func (a *app) onCopyAllQueues() {
 		),
 	}).Create(a.mw)
 	if err != nil {
-		showErr(a.mw, "Copy all printers", err)
+		showErr(a.mw, title, err)
 		return
 	}
 	dialog.Closing().Attach(func(canceled *bool, _ walk.CloseReason) {

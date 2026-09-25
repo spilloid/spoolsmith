@@ -2,6 +2,36 @@
 
 ## Project Mission
 
+**Operator update, 2026-09-24 (v1.3 desktop):** the operator approved a
+desktop redesign around the one job -- take printers off this PC, put them on
+that one -- and explicitly asked for .ssb file association, drag-and-drop,
+file copy and file paste. See `docs/v1.3-gui-spec.md`. What changed in the
+rules:
+- **The desktop may relaunch itself elevated, only when the operator presses
+  a shield button.** This replaces "SpoolSmith does not self-elevate" for the
+  desktop only. It is never automatic, always goes through Windows' UAC
+  consent prompt (`ShellExecute` verb `runas`), and hands the new instance an
+  *operation to review* (`--review=`), never a plan, hash or approval: the
+  elevated instance previews again and asks for the one confirmation of the
+  plan it shows. The CLI still fails closed when not elevated.
+- The .ssb association is per-user (`HKCU\Software\Classes`), offered once
+  and removable from More; never silent, never machine-wide, never `.zip`.
+- A second launch forwards its files to the open window (`WM_COPYDATA`),
+  and the window accepts drops and hand-overs from unelevated windows
+  (`ChangeWindowMessageFilterEx`). Both can only open the review sheet.
+- Unchanged: exactly one explicit confirmation of the shown plan before any
+  mutation, on every path, including files that arrive by drop, paste,
+  association or hand-over.
+- **The driver catalog is on its way out.** The product is capturing a
+  printer that already works and replaying it; the catalog belongs to the
+  milestone-one identify-a-model-and-install-its-OEM-driver idea. The desktop
+  no longer offers it (Driver catalog page, "Use catalog identification",
+  the family override). On the CLI, `catalog probe`/`catalog families` and
+  target-based `install <ip>`/`--force-family` still work but print a stderr
+  "pending deprecation" notice; removal is tracked in issue #22. Don't build
+  new features on the catalog. `inspect` stays: it is the useful way to read
+  a `.ssb` or set without applying it.
+
 **Operator update, 2026-09-23:** ".ssb is the first-class printer
 import/export representation, and zip is the collective of such." This
 supersedes the set/driver bullets of the 2026-09-22 update below (those were
@@ -219,7 +249,9 @@ authorized for the two named families:
   `Add-PrinterDriver`/`pnputil` against Windows Update/inbox drivers.
 - Verification: Windows' own Authenticode signature check on the vendor EXE/MSI; `DriverPackage.SHA256`
   checked against the staged file as defense-in-depth when populated.
-- Elevation: SpoolSmith does not self-elevate; fails closed if not run as Administrator.
+- Elevation: the CLI does not self-elevate and fails closed if not run as Administrator. The
+  desktop may relaunch itself elevated only when the operator presses a shield button, through
+  the UAC consent prompt, and then previews and confirms again (operator update, 2026-09-24).
 - Approval: exactly one explicit confirmation of the full shown plan before any mutation, always.
 - Rollback: `uninstall` reverses exactly what `install` recorded.
 

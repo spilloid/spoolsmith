@@ -14,7 +14,6 @@ import (
 
 	"github.com/spilloid/spoolsmith/internal/actionlog"
 	"github.com/spilloid/spoolsmith/internal/bundle"
-	"github.com/spilloid/spoolsmith/internal/catalog"
 	"github.com/spilloid/spoolsmith/internal/inspect"
 	"github.com/spilloid/spoolsmith/internal/install"
 	"github.com/spilloid/spoolsmith/internal/probe"
@@ -36,8 +35,12 @@ type app struct {
 
 	discoverCIDR      *walk.LineEdit
 	discoverBtn       *walk.PushButton
-	discoverOut       *walk.TextEdit
-	discoverList      *walk.ListBox
+	discoverOut       *walk.Label
+	discoverTable     *walk.TableView
+	discoverModel     *discoveryTableModel
+	otherNetwork      *walk.Composite
+	otherNetworkBtn   *walk.PushButton
+	otherNetworkShown bool
 	discovered        []probe.Result
 	discoverCancel    context.CancelFunc
 	discoverCancelBtn *walk.PushButton
@@ -46,11 +49,6 @@ type app struct {
 	inspectBtn    *walk.PushButton
 	inspectOut    *walk.TextEdit
 
-	familiesBtn *walk.PushButton
-	probeTarget *walk.LineEdit
-	probeBtn    *walk.PushButton
-	catalogOut  *walk.TextEdit
-
 	captureTarget  *walk.LineEdit
 	captureFile    *walk.LineEdit
 	captureName    *walk.LineEdit
@@ -58,9 +56,6 @@ type app struct {
 	refreshDrivers *walk.PushButton
 	captureBtn     *walk.PushButton
 
-	forceFamilyCombo *walk.ComboBox
-	familyIDs        []string
-	familyLabels     []string
 	purgeDriverCheck *walk.CheckBox
 	dryRunOnlyCheck  *walk.CheckBox
 	previewBtn       *walk.PushButton
@@ -208,42 +203,6 @@ func (a *app) onInspect() {
 	}()
 }
 
-// --- Catalog --------------------------------------------------------------
-
-func (a *app) onFamilies() {
-	start := time.Now()
-	families := catalog.Families()
-	a.log("gui", "catalog families", nil, "success", nil, start)
-	a.catalogOut.SetText(prettyJSON(families))
-}
-
-func (a *app) onProbe() {
-	target := strings.TrimSpace(a.probeTarget.Text())
-	if target == "" {
-		showErr(a.mw, "Catalog probe", fmt.Errorf("enter a target IP address"))
-		return
-	}
-	a.probeBtn.SetEnabled(false)
-	a.catalogOut.SetText("Probing...")
-	start := time.Now()
-	go func() {
-		result, err := probe.Collect(context.Background(), target)
-		status := "success"
-		var text string
-		if err != nil {
-			status = "error"
-			text = "Error: " + err.Error()
-		} else {
-			text = prettyJSON(result)
-		}
-		a.log("gui", "catalog probe", []string{target}, status, err, start)
-		a.mw.Synchronize(func() {
-			a.probeBtn.SetEnabled(true)
-			a.catalogOut.SetText(text)
-		})
-	}()
-}
-
 // --- Install / uninstall ---------------------------------------------------
 //
 // Preview always forces DryRun=true: it calls the identical Workflow code the
@@ -267,24 +226,27 @@ func (a *app) resetPending() {
 }
 
 func (a *app) onPreview() {
-	if a.mutationBusy {
+	if a.mutationBusy || a.sheetDone {
 		return
 	}
 	op := a.currentOperation()
+	a.needsElevation = false
+	a.sheetOutcome = nil
 	if err := op.Validate(); err != nil {
 		a.resetPending()
-		a.planOut.SetText(err.Error())
+		a.setHint(err.Error())
+		a.renderSheet()
 		return
 	}
 	a.setMutationBusy(true)
-	a.previewBtn.SetEnabled(false)
 	a.resetPending()
-	if op.Offline {
-		a.planOut.SetText("Checking local configuration and preparing your preview. This may take a few seconds...")
+	if op.Offline || op.Kind == opRemove || op.Kind == opRepoint {
+		a.setHint("Checking this PC and preparing the steps. Nothing changes yet...")
 	} else {
-		a.planOut.SetText("Checking the printer and preparing your preview. This may take a few seconds...")
+		a.setHint("Checking the printer and preparing the steps. Nothing changes yet...")
 	}
-	a.reviewHint.SetText("Preparing your preview. No changes are being made.")
+	a.planOut.SetText("")
+	a.renderSheet()
 	dryRunOnly := a.dryRunOnlyCheck.Checked()
 
 	start := time.Now()
@@ -292,15 +254,10 @@ func (a *app) onPreview() {
 		var buf bytes.Buffer
 		outcome, args, err := a.previewOperation(op, &buf)
 		if err != nil {
-			a.finishPreview(string(op.Kind), args, start, err, buf.String())
+			a.finishPreview(op, args, start, err, nil, buf.String())
 			return
 		}
 		outcome.Operation = string(op.Kind)
-		a.mw.Synchronize(func() { a.previewJSON = prettyJSON(outcome) })
-		// outcome.Uncertain is already printed as "Note: ..." straight into buf
-		// by the shared Workflow code (see writeInstallPlan) -- reprinting it
-		// here as "Evidence: ..." used to show every reason twice, once under
-		// each label.
 		var outcomeErr error
 		if outcome.Status == "dry-run" && !dryRunOnly {
 			outcomeErr = a.stagePending(op, outcome)
@@ -308,14 +265,10 @@ func (a *app) onPreview() {
 		if outcome.Error != "" {
 			outcomeErr = fmt.Errorf("%s", outcome.Error)
 		}
-		a.finishPreview(string(op.Kind), args, start, outcomeErr, buf.String())
+		a.finishPreview(op, args, start, outcomeErr, &outcome, buf.String())
 	}()
 }
 
-// loadPrinterFile opens a printer file -- a bundle, always -- for a review or
-// execute step that installs or configures a queue. There is one on-disk
-// format now, so a chosen saved-printer file and an applied bundle behave
-// identically, embedded driver payload included.
 func loadPrinterFile(path string) (install.Profile, *install.BundleDriver, error) {
 	opened, err := bundle.Open(path)
 	if err != nil {
@@ -440,28 +393,46 @@ func (a *app) stagePending(op operation, outcome install.Outcome) error {
 	return nil
 }
 
-func (a *app) finishPreview(op string, args []string, start time.Time, err error, transcript string) {
-	status := "success"
-	if err != nil {
-		status = "error"
-	}
-	a.log("gui", op+" preview", args, status, err, start)
+func (a *app) finishPreview(op operation, args []string, start time.Time, err error, outcome *install.Outcome, transcript string) {
+	a.log("gui", string(op.Kind)+" preview", args, statusOf(err), err, start)
 	a.mw.Synchronize(func() {
 		a.setMutationBusy(false)
+		if a.previewStale {
+			// The options changed while this was prepared: its plan is not
+			// the one the operator is now asking about.
+			a.previewStale = false
+			a.resetPending()
+			a.onPreview()
+			return
+		}
+		a.sheetOutcome = outcome
+		if outcome != nil {
+			a.previewJSON = prettyJSON(*outcome)
+		}
 		text := lines(transcript)
-		if err != nil {
-			text = "Unable to continue\r\n" + friendlyOperationError(err.Error()) + "\r\n\r\n" + transcript
-			a.reviewHint.SetText("Resolve the issue below, then preview again.")
-		} else if a.dryRunOnlyCheck.Checked() {
-			a.reviewHint.SetText("Preview only is on. Turn it off and preview again to enable changes.")
-		} else if a.hasPending() {
-			a.reviewHint.SetText("Review the plan below, then use the button at the bottom right to confirm.")
-		} else {
-			a.reviewHint.SetText("Preview complete. No changes are needed.")
+		switch {
+		case outcome != nil && needsAdministrator(*outcome) && !isElevated():
+			// The plan is complete; only this process's rights are missing.
+			// Show it, and let the shield button hand it to an elevated copy
+			// that checks it again and asks for the usual confirmation.
+			a.needsElevation = true
+			a.setHint("Windows will ask for administrator permission. SpoolSmith then checks these steps again and asks you to confirm them.")
+		case err != nil:
+			text = "Unable to continue\r\n" + friendlyOperationError(err.Error()) + "\r\n\r\n" + text
+			a.setHint(friendlyOperationError(err.Error()))
+		case a.dryRunOnlyCheck.Checked():
+			a.setHint("Preview only is on. Turn it off under More options to apply these steps.")
+		case a.hasPending():
+			a.setHint("These are the steps. You confirm them once before anything changes.")
+		default:
+			a.setHint("Nothing needs to change.")
 		}
 		a.planOut.SetText(text)
 		a.planDetailsBtn.SetEnabled(a.previewJSON != "")
-		a.executeBtn.SetEnabled(a.hasPending())
+		a.renderSheet()
+		if a.executeBtn.Enabled() {
+			a.executeBtn.SetFocus()
+		}
 	})
 }
 
@@ -470,19 +441,32 @@ func (a *app) hasPending() bool {
 }
 
 func (a *app) onExecute() {
-	if a.mutationBusy || a.dryRunOnlyCheck.Checked() || !a.hasPending() {
+	if a.sheetDone {
+		a.closeSheet()
+		return
+	}
+	if a.mutationBusy || a.dryRunOnlyCheck.Checked() {
 		return
 	}
 	op := a.currentOperation()
-	if walk.MsgBox(a.mw, "Confirm: "+op.Title(), op.Summary()+"\n\nReview the plan below. Proceed with these changes?\n\n"+a.planOut.Text(), walk.MsgBoxYesNo|walk.MsgBoxDefButton2|walk.MsgBoxIconWarning) != 6 {
+	if !isElevated() {
+		if a.needsElevation || a.hasPending() {
+			a.relaunchElevated(op)
+		}
+		return
+	}
+	if !a.hasPending() || a.sheetOutcome == nil {
+		return
+	}
+	steps := checklistText(planChecklist(*a.sheetOutcome), "\n")
+	if walk.MsgBox(a.mw, "Confirm: "+op.Title(), op.Summary()+"\n\n"+steps+"\n\nThe full plan is under Details. Proceed with these changes?\n\n"+a.planOut.Text(), walk.MsgBoxYesNo|walk.MsgBoxDefButton2|walk.MsgBoxIconWarning) != 6 {
 		return
 	}
 	a.setMutationBusy(true)
 	a.mutationExecuting = true
 	pendingInstall, pendingUninstall, pendingRepoint := a.pendingInstall, a.pendingUninstall, a.pendingRepoint
 	a.executeBtn.SetEnabled(false)
-	a.previewBtn.SetEnabled(false)
-	a.reviewHint.SetText("Applying your confirmed changes. Please keep SpoolSmith open.")
+	a.setHint("Applying your confirmed changes. Please keep SpoolSmith open.")
 	start := time.Now()
 	go func() {
 		var buf bytes.Buffer
@@ -519,29 +503,34 @@ func (a *app) onExecute() {
 		a.mw.Synchronize(func() {
 			a.mutationExecuting = false
 			a.resetPending()
-			// Keep the shared result available for ticket notes, including partial
-			// failures, without retaining permission to execute the reviewed plan.
+			// Keep the shared result for ticket notes, including partial
+			// failures, without keeping permission to run the plan again.
+			a.sheetOutcome = &outcome
 			a.previewJSON = prettyJSON(outcome)
 			a.planDetailsBtn.SetEnabled(true)
+			a.sheetDone = true
 			a.setMutationBusy(false)
 			text := lines(buf.String())
 			if errText != "" {
 				text = "The operation could not finish.\r\n" + friendlyOperationError(errText) + "\r\n\r\n" + text
-				a.reviewHint.SetText("Check the result below before trying again.")
+				a.setHint("It didn't finish. The steps below show where it stopped and why.")
 			} else if status == "success" || status == "already-absent" {
-				a.reviewHint.SetText("Done. This PC now shows the change.")
-				// The inventory is stale the moment a change lands, and it is
-				// the screen the operator returns to.
+				a.setHint("Done.")
+				// The inventory is stale the moment a change lands, and This
+				// PC is where the operator goes next.
 				a.onRefreshQueues()
 			}
 			a.planOut.SetText(text)
+			a.copyNotesBtn.SetText("Copy notes for the ticket")
+			setShown(a.copyNotesBtn, true)
+			a.renderSheet()
 		})
 	}()
 }
 
 func (a *app) setMutationBusy(busy bool) {
 	a.mutationBusy = busy
-	for _, control := range []walk.Widget{a.forceFamilyCombo, a.purgeDriverCheck, a.dryRunOnlyCheck, a.offlineCheck, a.updateCheck, a.previewBtn} {
+	for _, control := range []walk.Widget{a.purgeDriverCheck, a.dryRunOnlyCheck, a.offlineCheck, a.updateCheck, a.previewBtn} {
 		if control != nil {
 			control.SetEnabled(!busy)
 		}
@@ -552,7 +541,6 @@ func (a *app) setMutationBusy(busy bool) {
 
 func (a *app) bindMutationInputs() {
 	invalidate := func() { a.invalidateReview() }
-	a.forceFamilyCombo.CurrentIndexChanged().Attach(invalidate)
 	for _, checkbox := range []*walk.CheckBox{a.purgeDriverCheck, a.dryRunOnlyCheck, a.offlineCheck, a.updateCheck} {
 		checkbox.CheckedChanged().Attach(invalidate)
 	}

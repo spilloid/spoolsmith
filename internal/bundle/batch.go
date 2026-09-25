@@ -22,6 +22,10 @@ type AllOptions struct {
 	CreatedBy    string
 	SourceHost   string
 	Progress     func(queueName, step string)
+	// Only limits the set to these queue names, in this PC's order. Empty
+	// means every queue. A name that is not installed stops the copy rather
+	// than being silently dropped.
+	Only []string
 }
 
 // AllResult reports every queue considered by CreateAll, including queues that
@@ -80,6 +84,11 @@ func CreateAll(ctx context.Context, env install.Environment, collect Collector, 
 	}
 	if len(queues) == 0 {
 		return result, errors.New("this PC has no printer queues installed")
+	}
+	if len(opts.Only) > 0 {
+		if queues, err = onlyQueues(queues, opts.Only); err != nil {
+			return result, err
+		}
 	}
 	result.Requested = len(queues)
 	result.Queues = make([]QueueResult, 0, len(queues))
@@ -222,4 +231,30 @@ func FileName(queueName string) string {
 		name = "printer-" + name
 	}
 	return name + ".ssb"
+}
+
+// onlyQueues keeps the named queues, in inventory order.
+func onlyQueues(queues []install.InstalledQueue, names []string) ([]install.InstalledQueue, error) {
+	wanted := make(map[string]bool, len(names))
+	for _, name := range names {
+		wanted[name] = true
+	}
+	kept := make([]install.InstalledQueue, 0, len(names))
+	for _, queue := range queues {
+		if wanted[queue.PrinterName] {
+			kept = append(kept, queue)
+			delete(wanted, queue.PrinterName)
+		}
+	}
+	var missing []string
+	for _, name := range names {
+		if wanted[name] {
+			missing = append(missing, name)
+			delete(wanted, name)
+		}
+	}
+	if len(missing) > 0 {
+		return nil, fmt.Errorf("copy: %s is no longer installed on this PC", strings.Join(missing, ", "))
+	}
+	return kept, nil
 }

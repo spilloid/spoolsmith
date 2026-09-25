@@ -376,3 +376,20 @@ func TestCreateAllAlreadyCanceledDoesNoWork(t *testing.T) {
 		t.Fatalf("canceled copy created its set: %v", err)
 	}
 }
+
+func TestCreateAllCopiesOnlyTheChosenQueues(t *testing.T) {
+	isolateTemp(t)
+	env := newBatchEnvironment(t, "Office", "PDF", "Warehouse")
+	setPath := filepath.Join(t.TempDir(), "chosen.zip")
+	result, err := CreateAll(context.Background(), env, batchCollect, AllOptions{SetPath: setPath, Only: []string{"Warehouse", "Office"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Requested != 2 || result.Written != 2 || result.Queues[0].Name != "Office" || result.Queues[1].Name != "Warehouse" {
+		t.Fatalf("result = %+v", result)
+	}
+	_, err = CreateAll(context.Background(), env, batchCollect, AllOptions{SetPath: filepath.Join(t.TempDir(), "x.zip"), Only: []string{"Gone"}})
+	if err == nil || !strings.Contains(err.Error(), "Gone is no longer installed") {
+		t.Fatalf("missing queue error = %v", err)
+	}
+}

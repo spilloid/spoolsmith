@@ -1,6 +1,6 @@
 # Remaining work for SpoolSmith
 
-Updated September 23, 2026. The v1.1.0 release makes `.ssb` the one printer file
+Updated September 24, 2026. v1.3.0 rebuilt the desktop around copying a printer off one PC and double-clicking it onto the next (see `docs/v1.3-gui-spec.md`). The v1.1.0 release makes `.ssb` the one printer file
 and a plain `.zip` of `.ssb` files the one multi-printer set (`copy --all`, `apply`,
 saved-setup export/import), includes drivers by default wherever they can be
 exported, adds automatic offline fallback, replaces the desktop's tab strips with
@@ -55,9 +55,6 @@ product hardening, with additional protocols as future scope.
 
 ## Known behavior to harden
 
-- **Desktop Inspect does not list a set's printers.** `bundle inspect <set.zip>`
-  does on the CLI; on the desktop, open the set from **Add a printer → Open a
-  printer file...** to see its printers.
 - **Drivers from another PC are trusted as that PC is.** Copies now carry drivers
   by default. Payload hashes detect corruption and edits; Windows' catalog
   signature check at staging is the real gate. `--settings-only` remains the

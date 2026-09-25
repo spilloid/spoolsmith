@@ -21,13 +21,16 @@ public sealed class SiteScreenshots
         Directory.CreateDirectory(DemoSetups);
         File.Copy(Path.Combine(repo, "examples", "intune", "accounting.ssb"), Path.Combine(DemoSetups, "accounting.ssb"), overwrite: true);
         File.Copy(Path.Combine(repo, "dist", "spoolsmith.exe"), DemoCli, overwrite: true);
-        using var fixture = new AppFixture(profilesDirectory: DemoSetups);
-        var images = Path.Combine(fixture.RepoRoot, "docs", "img");
+        var images = Path.Combine(repo, "docs", "img");
         Directory.CreateDirectory(images);
+        // First, in its own app: opening a printer file lands on the apply
+        // sheet. It must close before the next launch, which would otherwise
+        // hand its window over to this one.
+        CaptureApplySheet(Path.Combine(DemoSetups, "accounting.ssb"), images);
+        using var fixture = new AppFixture(profilesDirectory: DemoSetups);
         foreach (var (tab, file) in new[] {
             ("This PC", "gui-this-pc.png"),
             ("Add a printer", "gui-add-printer.png"),
-            ("Review and apply", "gui-review-and-apply.png"),
             ("Inspect", "gui-tools.png"),
             ("Intune package", "gui-intune-page.png") })
         {
@@ -80,26 +83,31 @@ public sealed class SiteScreenshots
     }
 
     /// <summary>
-    /// "Copy all printers..." opens a modal dialog from This PC, not a tab of
-    /// its own, so the loop above never sees it. Skips silently if this
-    /// machine has no printer queues at all (the button stays disabled) --
-    /// every real capture host is expected to have at least the built-in
-    /// Microsoft virtual printers, so this is a defensive no-op, not the
-    /// normal path.
+    /// Copying several printers opens a set dialog from This PC. The capture
+    /// selects every copyable printer; it skips silently on a machine with
+    /// fewer than two (a hosted runner usually has only Microsoft's virtual
+    /// printers, which SpoolSmith can't copy).
     /// </summary>
     private static void CaptureCopyAllDialog(AppFixture fixture, string images)
     {
         fixture.GoTo("This PC");
-        var copyAll = FunctionalTests.FindButton(fixture.MainWindow, "Copy all printers...");
         FunctionalTests.WaitUntil(() => FunctionalTests.FindButton(fixture.MainWindow, "Refresh").IsEnabled,
             "Printer inventory did not finish loading.");
-        if (!copyAll.IsEnabled) return;
-        copyAll.Invoke();
+        fixture.MainWindow.SetForeground();
+        FunctionalTests.Find(fixture.MainWindow, "thispc-list").Focus();
+        FlaUI.Core.Input.Keyboard.TypeSimultaneously(FlaUI.Core.WindowsAPI.VirtualKeyShort.CONTROL, FlaUI.Core.WindowsAPI.VirtualKeyShort.KEY_A);
+        Thread.Sleep(300);
+        var copy = fixture.MainWindow.FindAllDescendants(cf => cf.ByControlType(FlaUI.Core.Definitions.ControlType.Button))
+            .Select(b => b.AsButton())
+            .FirstOrDefault(b => !b.IsOffscreen && b.IsEnabled && b.Name.StartsWith("Copy ", StringComparison.Ordinal) && b.Name.EndsWith(" printers...", StringComparison.Ordinal));
+        if (copy == null) return;
+        var title = copy.Name.TrimEnd('.');
+        copy.Invoke();
         Window? dialog = null;
         FunctionalTests.WaitUntil(() => (dialog = fixture.MainWindow.ModalWindows
             .Concat(fixture.App.GetAllTopLevelWindows(fixture.Automation))
-            .FirstOrDefault(w => w.Title == "Copy all printers")) != null,
-            "Bulk copy did not open.");
+            .FirstOrDefault(w => w.Title == title)) != null,
+            "Copying the selection did not open.");
         try
         {
             FunctionalTests.SetText(FunctionalTests.Find(dialog!, "copy-all-file").AsTextBox(), Path.Combine(DemoRoot, "SpoolSmith-printers.zip"));
@@ -111,6 +119,22 @@ public sealed class SiteScreenshots
             FunctionalTests.FindButton(dialog!, "Cancel").Invoke();
             FunctionalTests.WaitUntil(() => fixture.MainWindow.IsEnabled, "Bulk copy did not close.");
         }
+    }
+
+    /// <summary>
+    /// The apply sheet as an operator sees it after double-clicking a printer
+    /// file: header, what the file carries, and the plan as steps, waiting
+    /// for the one confirmation.
+    /// </summary>
+    private static void CaptureApplySheet(string printerFile, string images)
+    {
+        using var fixture = new AppFixture(profilesDirectory: DemoSetups, args: printerFile);
+        fixture.GoTo(AppFixture.Review);
+        FunctionalTests.WaitUntil(() => fixture.MainWindow.FindAllDescendants(cf => cf.ByControlType(FlaUI.Core.Definitions.ControlType.Text))
+            .Any(label => label.Name.Contains("Create printer", StringComparison.Ordinal) && !label.IsOffscreen),
+            "The sheet never showed its steps.", 60_000);
+        Thread.Sleep(500);
+        fixture.MainWindow.CaptureToFile(Path.Combine(images, "gui-review-and-apply.png"));
     }
 
     /// <summary>
