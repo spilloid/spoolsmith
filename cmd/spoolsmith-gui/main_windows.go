@@ -99,6 +99,13 @@ func main() {
 	}
 	// Hide Walk's empty native toolbar.
 	a.mw.ToolBar().SetVisible(false)
+	// Controls declared hidden are shown anyway: walk skips hiding a control
+	// that already reports itself invisible, and before the window first
+	// appears every control does. Hide them for real.
+	for _, w := range []walk.Widget{a.offerBar, a.discoverCancelBtn, a.discoverUseBtn, a.discoverDetailsBtn, a.otherNetwork,
+		a.repointBtn, a.removeBtn, a.copyNotesBtn, a.sheetWarnings, a.advancedPanel, a.detailsPanel, a.setupGroup} {
+		setShown(w, false)
+	}
 	if err := a.buildNav(); err != nil {
 		log.Fatal(err)
 	}
