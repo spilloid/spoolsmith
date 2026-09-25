@@ -273,7 +273,7 @@ func (a *app) updateReviewControls() {
 	}
 	a.updateCheck.SetVisible(op.Kind == opApply)
 	a.updateCheck.SetEnabled(!busy)
-	for _, control := range []walk.Widget{a.forceFamilyCombo, a.purgeDriverCheck, a.dryRunOnlyCheck, a.advancedCheck} {
+	for _, control := range []walk.Widget{a.forceFamilyCombo, a.purgeDriverCheck, a.dryRunOnlyCheck} {
 		if control != nil {
 			control.SetEnabled(!busy && !a.sheetDone)
 		}
