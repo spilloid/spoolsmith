@@ -184,3 +184,14 @@ func TestNeedsAdministratorOnlyForACompletePlan(t *testing.T) {
 		t.Error("no plan, nothing to elevate for")
 	}
 }
+
+func TestWrapTextKeepsBreaksAndIndentation(t *testing.T) {
+	got := wrapText("short\n     a detail line that is long enough to wrap", 20)
+	want := "short\r\n     a detail line\r\n     that is long\r\n     enough to wrap"
+	if got != want {
+		t.Fatalf("wrapText = %q, want %q", got, want)
+	}
+	if wrapText("unbreakable-long-word", 5) != "unbreakable-long-word" {
+		t.Fatal("a word longer than the width was split")
+	}
+}

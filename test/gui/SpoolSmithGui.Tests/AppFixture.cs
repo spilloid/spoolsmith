@@ -1,6 +1,7 @@
 using System;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using FlaUI.Core;
 using FlaUI.Core.AutomationElements;
 using FlaUI.UIA2;
@@ -27,7 +28,7 @@ public sealed class AppFixture : IDisposable
     /// Screenshot capture opts back in, because scanning the network the PC is
     /// already on is the behaviour being shown.
     /// </summary>
-    public AppFixture(bool autoScan = false, string? profilesDirectory = null)
+    public AppFixture(bool autoScan = false, string? profilesDirectory = null, params string[] args)
     {
         RepoRoot = FindRepoRoot();
         var exePath = Path.Combine(RepoRoot, "dist", "spoolsmith-gui.exe");
@@ -66,6 +67,10 @@ public sealed class AppFixture : IDisposable
             startInfo.Environment["SPOOLSMITH_GUI_NO_AUTOSCAN"] = "1";
         }
         if (profilesDirectory != null) startInfo.Environment["SPOOLSMITH_PROFILES_DIR"] = profilesDirectory;
+        // The one-time ".ssb files open with SpoolSmith?" bar is per-user state;
+        // tests and screenshots keep it out of the way.
+        startInfo.Environment["SPOOLSMITH_GUI_NO_OFFER"] = "1";
+        foreach (var arg in args) startInfo.ArgumentList.Add(arg);
         App = Application.Launch(startInfo);
         Automation = new UIA2Automation();
         MainWindow = GetMainWindowWithRetry();
@@ -175,46 +180,111 @@ public sealed class AppFixture : IDisposable
     }
 
     /// <summary>The sidebar's pages, in order, as their list items are named.</summary>
-    public static readonly string[] Pages =
-        { "This PC", "Add a printer", "Review and apply", "Intune package", "Inspect", "Driver catalog", "Action log" };
+    public static readonly string[] Pages = { "This PC", "Add a printer" };
+
+    /// <summary>The destinations under the sidebar's More menu.</summary>
+    public static readonly string[] MorePages = { "Intune package", "Inspect", "Driver catalog", "Action log" };
+
+    /// <summary>The More button's caption, which is also its UIA name.</summary>
+    public const string MoreButton = "More  ▾";
 
     /// <summary>
-    /// Opens a page from the sidebar and waits until its content is visible.
+    /// "Review" is the apply sheet. It has no sidebar entry: it opens only
+    /// with something to apply, so it is reached by launching with a printer
+    /// file (see the args constructor parameter) or from another page.
+    /// </summary>
+    public const string Review = "Review";
+
+    /// <summary>
+    /// Opens a page the way an operator would -- the sidebar for the two main
+    /// pages, the More menu for the rest -- and waits until its content is
+    /// visible.
     ///
     /// The sidebar is an owner-drawn native list whose items keep their text,
-    /// so UIA exposes each one as a named ListItem. Uses a real click, like an
-    /// operator: the app navigates on the list's own selection notification.
+    /// so UIA exposes each one as a named ListItem. More opens a native popup
+    /// menu, which UIA exposes as a top-level Menu of MenuItems.
     /// </summary>
     public AutomationElement GoTo(string page)
     {
         var marker = page switch
         {
             "This PC" => "thispc-list",
-            "Add a printer" => "discover-cidr",
-            "Review and apply" => "mutate-output",
+            "Add a printer" => "discover-results",
+            Review => "‹ Back",
             "Intune package" => "Build an Intune printer app...",
             "Inspect" => "inspect-target",
             "Driver catalog" => "catalog-output",
             "Action log" => "log-output",
             _ => throw new ArgumentException("Unknown page", nameof(page)),
         };
-        var nav = MainWindow.FindFirstDescendant(cf => cf.ByName("navigation").And(cf.ByControlType(FlaUI.Core.Definitions.ControlType.List)))
-            ?? throw new InvalidOperationException("Sidebar navigation not found.");
-        var item = nav.FindFirstDescendant(cf => cf.ByControlType(FlaUI.Core.Definitions.ControlType.ListItem).And(cf.ByName(page)))
-            ?? throw new InvalidOperationException($"Sidebar item '{page}' not found.");
-        MainWindow.SetForeground();
-        item.Click();
-        var deadline = DateTime.UtcNow.AddSeconds(5);
-        while (DateTime.UtcNow < deadline)
+        Func<bool> shown = () =>
         {
             var content = MainWindow.FindFirstDescendant(cf => cf.ByName(marker));
-            if (content != null && !content.IsOffscreen) return item;
-            // Retry harmless navigation if a launch/focus transition consumed the click.
-            MainWindow.SetForeground();
-            item.Click();
+            return content != null && !content.IsOffscreen;
+        };
+        if (page == Review)
+        {
+            Wait(shown, "The apply sheet is not open.");
+            return MainWindow;
+        }
+        if (Array.IndexOf(Pages, page) >= 0)
+        {
+            var nav = MainWindow.FindFirstDescendant(cf => cf.ByName("navigation").And(cf.ByControlType(FlaUI.Core.Definitions.ControlType.List)))
+                ?? throw new InvalidOperationException("Sidebar navigation not found.");
+            var item = nav.FindFirstDescendant(cf => cf.ByControlType(FlaUI.Core.Definitions.ControlType.ListItem).And(cf.ByName(page)))
+                ?? throw new InvalidOperationException($"Sidebar item '{page}' not found.");
+            var deadline = DateTime.UtcNow.AddSeconds(5);
+            while (DateTime.UtcNow < deadline)
+            {
+                // Retry harmless navigation if a launch/focus transition consumed the click.
+                MainWindow.SetForeground();
+                item.Click();
+                if (Poll(shown, 1_000)) return item;
+            }
+            throw new TimeoutException($"Page '{page}' did not show its content after clicking.");
+        }
+        for (var attempt = 0; attempt < 3; attempt++)
+        {
+            var menuItem = OpenMoreMenuItem(page);
+            if (menuItem.Patterns.Invoke.IsSupported) menuItem.Patterns.Invoke.Pattern.Invoke();
+            else menuItem.Click();
+            if (Poll(shown, 3_000)) return menuItem;
+        }
+        throw new TimeoutException($"Page '{page}' did not open from More.");
+    }
+
+    /// <summary>
+    /// Opens the More menu and returns the named item. The menu is a separate
+    /// top-level window owned by the app, so it is found from the desktop.
+    /// </summary>
+    public AutomationElement OpenMoreMenuItem(string name)
+    {
+        var more = MainWindow.FindFirstDescendant(cf => cf.ByControlType(FlaUI.Core.Definitions.ControlType.Button).And(cf.ByName(MoreButton)))
+            ?? throw new InvalidOperationException("The More button was not found.");
+        MainWindow.SetForeground();
+        more.Click();
+        AutomationElement? item = null;
+        Wait(() => (item = Automation.GetDesktop()
+            .FindAllChildren(cf => cf.ByClassName("#32768"))
+            .Select(menu => menu.FindFirstDescendant(cf => cf.ByControlType(FlaUI.Core.Definitions.ControlType.MenuItem).And(cf.ByName(name))))
+            .FirstOrDefault(found => found != null)) != null, $"More menu item '{name}' not found.");
+        return item!;
+    }
+
+    private static bool Poll(Func<bool> ready, int timeoutMs)
+    {
+        var deadline = DateTime.UtcNow.AddMilliseconds(timeoutMs);
+        while (DateTime.UtcNow < deadline)
+        {
+            if (ready()) return true;
             System.Threading.Thread.Sleep(100);
         }
-        throw new TimeoutException($"Page '{page}' did not show its content after clicking.");
+        return false;
+    }
+
+    private static void Wait(Func<bool> ready, string failure, int timeoutMs = 15_000)
+    {
+        if (!Poll(ready, timeoutMs)) throw new TimeoutException(failure);
     }
 
     /// <summary>Absolute path to a file under the repo's fixtures/ directory.</summary>

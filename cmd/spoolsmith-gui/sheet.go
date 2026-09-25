@@ -346,3 +346,25 @@ func ticketNotes(version, host string, at time.Time, op operation, out install.O
 	fmt.Fprintf(&b, "Result: %s\n", result)
 	return b.String()
 }
+
+// wrapText breaks lines longer than width at spaces, keeping existing line
+// breaks and each line's indentation. The sheet's labels don't wrap on their
+// own (walk's wrapping label distorts the page layout), so long sentences are
+// wrapped here instead.
+func wrapText(text string, width int) string {
+	var out []string
+	for _, line := range strings.Split(strings.ReplaceAll(text, "\r\n", "\n"), "\n") {
+		indent := line[:len(line)-len(strings.TrimLeft(line, " "))]
+		for len([]rune(line)) > width {
+			runes := []rune(line)
+			cut := strings.LastIndex(string(runes[:width]), " ")
+			if cut <= len(indent) {
+				break
+			}
+			out = append(out, strings.TrimRight(line[:cut], " "))
+			line = indent + strings.TrimLeft(line[cut:], " ")
+		}
+		out = append(out, line)
+	}
+	return strings.Join(out, "\r\n")
+}

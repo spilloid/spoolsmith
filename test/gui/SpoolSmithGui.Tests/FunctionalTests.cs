@@ -37,31 +37,63 @@ public sealed class FunctionalTests : IDisposable
     {
         Assert.Equal("SpoolSmith", _fixture.MainWindow.Title);
         Assert.False(Find(_fixture.MainWindow, "thispc-list").IsOffscreen);
-        // The sidebar replaced the tab strips: every page is listed, and no tab
-        // control remains anywhere in the window.
+        // The sidebar is the app's one job -- This PC and Add a printer -- with
+        // everything occasional under More. There is no Review page to open
+        // empty, and no tab control anywhere in the window.
         var nav = Find(_fixture.MainWindow, "navigation");
         var items = nav.FindAllDescendants(cf => cf.ByControlType(ControlType.ListItem)).Select(i => i.Name).ToArray();
         Assert.Equal(AppFixture.Pages, items);
+        Assert.False(FindButton(_fixture.MainWindow, AppFixture.MoreButton).IsOffscreen);
         Assert.Empty(_fixture.MainWindow.FindAllDescendants(cf => cf.ByControlType(ControlType.Tab)));
+        Assert.DoesNotContain(_fixture.MainWindow.FindAllDescendants(cf => cf.ByControlType(ControlType.Text)),
+            label => label.Name.Contains("Run as administrator", StringComparison.Ordinal) && !label.IsOffscreen);
     }
 
     [StaFact]
-    public void Bulk_copy_shows_inventory_and_can_be_cancelled_without_exporting()
+    public void More_menu_reaches_every_occasional_page()
     {
-        var list = Find(_fixture.MainWindow, "thispc-list").AsListBox();
-        var copyAll = FindButton(_fixture.MainWindow, "Copy all printers...");
+        foreach (var page in AppFixture.MorePages)
+        {
+            _fixture.GoTo(page);
+        }
+        // And back: the sidebar still navigates after a More destination.
+        _fixture.GoTo("This PC");
+    }
+
+    [StaFact]
+    public void Copying_selected_printers_opens_a_set_dialog_and_can_be_cancelled()
+    {
         WaitUntil(() => FindButton(_fixture.MainWindow, "Refresh").IsEnabled,
             "Printer inventory did not finish loading.");
-        if (list.Items.Length == 0)
+        var nothingToCopy = _fixture.MainWindow.FindAllDescendants(cf => cf.ByControlType(ControlType.Button).And(cf.ByName("Select printers to copy")))
+            .FirstOrDefault(b => !b.IsOffscreen);
+        if (nothingToCopy != null)
         {
-            Assert.False(copyAll.IsEnabled);
+            // A runner with only Microsoft's virtual printers has nothing
+            // SpoolSmith can copy, and the button says what to do instead.
+            Assert.False(nothingToCopy.IsEnabled);
             return;
         }
-
-        copyAll.Invoke();
+        // Select every copyable printer the way an operator would.
+        var table = Find(_fixture.MainWindow, "thispc-list");
+        _fixture.MainWindow.SetForeground();
+        table.Focus();
+        FlaUI.Core.Input.Keyboard.TypeSimultaneously(FlaUI.Core.WindowsAPI.VirtualKeyShort.CONTROL, FlaUI.Core.WindowsAPI.VirtualKeyShort.KEY_A);
+        Button? copy = null;
+        WaitUntil(() => (copy = _fixture.MainWindow.FindAllDescendants(cf => cf.ByControlType(ControlType.Button))
+            .Select(b => b.AsButton())
+            .FirstOrDefault(b => !b.IsOffscreen && b.Name.StartsWith("Copy ", StringComparison.Ordinal) && b.Name.EndsWith(" printers...", StringComparison.Ordinal))) != null
+            || FindButton(_fixture.MainWindow, "Copy 1 printer...").IsEnabled, "The copy button did not count the selection.");
+        if (copy == null)
+        {
+            // Only one copyable printer here: the set dialog needs two.
+            return;
+        }
+        var title = copy.Name.TrimEnd('.');
+        copy.Invoke();
         Window? dialog = null;
         WaitUntil(() => (dialog = _fixture.MainWindow.ModalWindows.Concat(_fixture.App.GetAllTopLevelWindows(_fixture.Automation))
-            .FirstOrDefault(w => w.Title == "Copy all printers")) != null, "Bulk copy did not open.");
+            .FirstOrDefault(w => w.Title == title)) != null, "Copying the selection did not open.");
         var setFile = Path.Combine(_testDirectory, "cancelled-export.zip");
         SetText(Find(dialog!, "copy-all-file").AsTextBox(), setFile);
         Assert.Contains("will be skipped", Find(dialog!, "copy-all-details").AsTextBox().Text);
@@ -91,18 +123,19 @@ public sealed class FunctionalTests : IDisposable
         SetText(Find(_fixture.MainWindow, "discover-cidr").AsTextBox(), cidr);
         var scan = FindButton(_fixture.MainWindow, "Scan");
         scan.Invoke();
-        var output = Find(_fixture.MainWindow, "discover-output").AsTextBox();
-        // The results pane states the outcome in plain language; the raw
-        // scan JSON moved behind "Scan details", which must become available.
-        var text = WaitForText(output, t => t.Contains("after checking"), 150_000);
+        // The page states the outcome in plain language; the raw scan JSON
+        // is behind "Scan details", which appears once there is some.
+        string text = "";
+        WaitUntil(() => (text = VisibleText(t => t.Contains("after checking")) ?? "") != "",
+            "The scan never reported its outcome.", 150_000);
         Assert.Contains(cidr, text);
         Assert.True(scan.IsEnabled);
-        Assert.False(FindButton(_fixture.MainWindow, "Cancel scan").IsEnabled);
-        Assert.True(FindButton(_fixture.MainWindow, "Scan details").IsEnabled);
+        Assert.True(IsHidden("Stop scan"));
+        Assert.False(FindButton(_fixture.MainWindow, "Scan details").IsOffscreen);
         if (!string.IsNullOrWhiteSpace(expectedIP))
         {
-            var list = Find(_fixture.MainWindow, "discover-results").AsListBox();
-            Assert.Contains(list.Items, item => item.Text.Contains(expectedIP));
+            var table = Find(_fixture.MainWindow, "discover-results");
+            Assert.Contains(table.FindAllDescendants(), cell => (cell.Name ?? "").Contains(expectedIP));
         }
     }
 
@@ -148,14 +181,6 @@ public sealed class FunctionalTests : IDisposable
     }
 
     [StaFact]
-    public void Empty_review_cannot_enable_execution()
-    {
-        _fixture.GoTo("Review and apply");
-        Assert.False(FindButton(_fixture.MainWindow, "Apply").IsEnabled);
-        Assert.False(FindButton(_fixture.MainWindow, "Preview changes").IsEnabled);
-    }
-
-    [StaFact]
     public void Direct_IP_opens_settings_on_the_same_page()
     {
         _fixture.GoTo("Add a printer");
@@ -172,12 +197,37 @@ public sealed class FunctionalTests : IDisposable
     {
         _fixture.GoTo("Add a printer");
         Assert.True(IsHidden("capture-target"));
-        _fixture.GoTo("Review and apply");
+        CreateSavedPrinter();
+        var dialog = OpenSavedSetups();
+        FindButton(dialog, "Set up this printer").Invoke();
+        _fixture.GoTo(AppFixture.Review);
         Assert.True(IsHidden("Preview only (never apply)"));
+        Assert.True(IsHidden("mutate-output"));
         Find(_fixture.MainWindow, "More options").AsCheckBox().Click();
         WaitUntil(() => !IsHidden("Preview only (never apply)"), "More options did not open.");
+        // Only options that apply to setting up a saved printer are shown.
         Assert.True(IsHidden("Also remove the driver, if nothing else uses it"));
-        Assert.True(IsHidden("Offline setup — the printer will not be contacted or checked"));
+        Assert.False(IsHidden("Offline setup — the printer will not be contacted or checked"));
+        Find(_fixture.MainWindow, "Details").AsCheckBox().Click();
+        WaitUntil(() => !IsHidden("mutate-output"), "Details did not open.");
+    }
+
+    /// <summary>The first visible label whose text matches, or null.</summary>
+    private string? VisibleText(Func<string, bool> match)
+    {
+        return _fixture.MainWindow.FindAllDescendants(cf => cf.ByControlType(ControlType.Text))
+            .Where(label => !label.IsOffscreen)
+            .Select(label => label.Name ?? string.Empty)
+            .FirstOrDefault(match);
+    }
+
+    /// <summary>The visible button whose caption starts with a verb.</summary>
+    private Button? PrimaryButton(string verb)
+    {
+        return _fixture.MainWindow.FindAllDescendants(cf => cf.ByControlType(ControlType.Button))
+            .Where(button => !button.IsOffscreen)
+            .Select(button => button.AsButton())
+            .FirstOrDefault(button => button.Name == verb || button.Name == verb + " as administrator...");
     }
 
     private bool IsHidden(string accessibleName)
@@ -239,23 +289,26 @@ public sealed class FunctionalTests : IDisposable
         using var writer = new StreamWriter(archive.CreateEntry("manifest.json").Open());
         writer.Write(manifestJson);
     }
-
     [StaTheory]
-    [InlineData("Set up this printer", "Add printer")]
-    [InlineData("Update to match", "Update printer")]
-    [InlineData("Remove printer from this PC...", "Remove printer")]
-    public void Saved_setup_hands_the_named_operation_to_review(string action, string applyCaption)
+    [InlineData("Set up this printer", "Install")]
+    [InlineData("Update to match", "Update")]
+    [InlineData("Remove printer from this PC...", "Remove")]
+    public void Saved_setup_opens_the_apply_sheet_for_the_named_operation(string action, string verb)
     {
         CreateSavedPrinter();
         var dialog = OpenSavedSetups();
         Assert.Contains("Test office printer", Find(dialog, "saved-detail").AsTextBox().Text);
         FindButton(dialog, action).Invoke();
-        try { WaitUntil(() => !IsHidden("mutate-output"), "Review did not open."); }
+        try { _fixture.GoTo(AppFixture.Review); }
         catch { _fixture.MainWindow.CaptureToFile(Path.Combine(_fixture.RepoRoot,"dist","review-handoff-failure.png")); throw; }
-        Assert.Contains(_fixture.MainWindow.FindAllDescendants(cf => cf.ByControlType(ControlType.Text)),
-            label => label.Name.Contains("Test office printer", StringComparison.Ordinal) && !label.IsOffscreen);
-        Assert.False(FindButton(_fixture.MainWindow, applyCaption).IsEnabled);
-        Assert.True(FindButton(_fixture.MainWindow, "Preview changes").IsEnabled);
+        Assert.NotNull(VisibleText(t => t.Contains("Test office printer", StringComparison.Ordinal)));
+        // The sheet names what its main button does, and carries the UAC
+        // shield wording when this process cannot apply it itself. The
+        // preview runs on its own; nothing here confirms it.
+        WaitUntil(() => PrimaryButton(verb) != null, $"The sheet's main button is not '{verb}'.");
+        // Back returns to where the sheet was opened from.
+        FindButton(_fixture.MainWindow, "‹ Back").Invoke();
+        WaitUntil(() => IsHidden("‹ Back"), "Back did not close the sheet.");
     }
 
     [StaFact]
@@ -264,15 +317,24 @@ public sealed class FunctionalTests : IDisposable
         CreateSavedPrinter();
         var dialog = OpenSavedSetups();
         FindButton(dialog, "Set up this printer").Invoke();
-        WaitUntil(() => !IsHidden("mutate-output"), "Review did not open.");
+        _fixture.GoTo(AppFixture.Review);
+        Find(_fixture.MainWindow, "Details").AsCheckBox().Click();
         Find(_fixture.MainWindow, "More options").AsCheckBox().Click();
+        // Changing an option prepares the preview again on its own.
         Find(_fixture.MainWindow, "Offline setup — the printer will not be contacted or checked").AsCheckBox().Click();
-        FindButton(_fixture.MainWindow, "Preview changes").Invoke();
         var output = Find(_fixture.MainWindow, "mutate-output").AsTextBox();
-        WaitForText(output, t => t.Contains("Unable to continue"), 60_000);
-        Assert.Contains("driver", output.Text, StringComparison.OrdinalIgnoreCase);
-        Assert.False(FindButton(_fixture.MainWindow, "Add printer").IsEnabled);
-        Assert.True(FindButton(_fixture.MainWindow, "Full plan details").IsEnabled);
+        var text = WaitForText(output, t => t.Contains("Unable to continue") || t.Contains("Install plan"), 60_000);
+        if (!text.Contains("Unable to continue"))
+        {
+            // Not elevated: the complete plan is shown and only the shield
+            // button can continue, by relaunching as administrator.
+            Assert.NotNull(PrimaryButton("Install"));
+            Assert.True(PrimaryButton("Install")!.Name.EndsWith("as administrator...", StringComparison.Ordinal));
+            return;
+        }
+        Assert.Contains("driver", text, StringComparison.OrdinalIgnoreCase);
+        Assert.False(PrimaryButton("Install")!.IsEnabled);
+        Assert.True(FindButton(_fixture.MainWindow, "Full plan and result").IsEnabled);
     }
 
     private Window OpenIntuneWizard()

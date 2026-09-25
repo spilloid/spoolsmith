@@ -349,7 +349,7 @@ func (a *app) relaunchElevated(op operation) {
 	// the elevated process has started.
 	if err := windows.ShellExecute(windows.Handle(a.mw.Handle()), verb, file, params, dir, windows.SW_SHOWNORMAL); err != nil {
 		if errors.Is(err, windows.ERROR_CANCELLED) {
-			a.reviewHint.SetText("Administrator permission wasn't given, so nothing changed. Use the shield button to try again.")
+			a.setHint("Administrator permission wasn't given, so nothing changed. Use the shield button to try again.")
 			return
 		}
 		showErr(a.mw, "Continue as administrator", err)

@@ -128,6 +128,9 @@ func (a *app) goTo(p page) {
 			return
 		}
 	} else if a.nav.CurrentIndex() != -1 {
+		// walk does not pass -1 on to the native list, which would keep the
+		// old item selected -- and clicking it would then do nothing.
+		a.nav.SendMessage(win.LB_SETCURSEL, ^uintptr(0), 0)
 		a.nav.SetCurrentIndex(-1)
 		a.nav.Invalidate()
 	}

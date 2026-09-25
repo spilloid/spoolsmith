@@ -16,7 +16,7 @@ import (
 )
 
 func pagePadding() VBox {
-	return VBox{Margins: Margins{Left: 20, Top: 14, Right: 20, Bottom: 14}, Spacing: 8}
+	return VBox{Margins: Margins{Left: 20, Top: 14, Right: 20, Bottom: 14}, Spacing: 8, Alignment: AlignHNearVNear}
 }
 func row() HBox                 { return HBox{Spacing: 6, MarginsZero: true} }
 func formGrid(columns int) Grid { return Grid{Columns: columns, Spacing: 6} }
@@ -85,7 +85,10 @@ func main() {
 					MinSize: Size{Width: 190}, MaxSize: Size{Width: 190},
 					Layout: VBox{Margins: Margins{Top: 10, Bottom: 10}, Spacing: 6}},
 				Composite{Background: SolidColorBrush{Color: colorDivider}, MinSize: Size{Width: 1}, MaxSize: Size{Width: 1}},
-				Composite{Background: SolidColorBrush{Color: colorPage}, Layout: VBox{MarginsZero: true, SpacingZero: true}, Children: []Widget{
+				// The content takes all spare width. The sidebar is capped at its
+				// width, and a capped item left sharing the spare space is centered
+				// in it -- which drew a grey strip beside the sidebar.
+				Composite{StretchFactor: 1000, Background: SolidColorBrush{Color: colorPage}, Layout: VBox{MarginsZero: true, SpacingZero: true}, Children: []Widget{
 					thisPCPage(a), addPage(a), sheetPage(a), intunePage(a), inspectPage(a), catalogPage(a), logPage(a),
 				}},
 			}},

@@ -279,16 +279,16 @@ func (a *app) onPreview() {
 	a.sheetOutcome = nil
 	if err := op.Validate(); err != nil {
 		a.resetPending()
-		a.reviewHint.SetText(err.Error())
+		a.setHint(err.Error())
 		a.renderSheet()
 		return
 	}
 	a.setMutationBusy(true)
 	a.resetPending()
 	if op.Offline || op.Kind == opRemove || op.Kind == opRepoint {
-		a.reviewHint.SetText("Checking this PC and preparing the steps. Nothing changes yet...")
+		a.setHint("Checking this PC and preparing the steps. Nothing changes yet...")
 	} else {
-		a.reviewHint.SetText("Checking the printer and preparing the steps. Nothing changes yet...")
+		a.setHint("Checking the printer and preparing the steps. Nothing changes yet...")
 	}
 	a.planOut.SetText("")
 	a.renderSheet()
@@ -453,16 +453,16 @@ func (a *app) finishPreview(op operation, args []string, start time.Time, err er
 			// Show it, and let the shield button hand it to an elevated copy
 			// that checks it again and asks for the usual confirmation.
 			a.needsElevation = true
-			a.reviewHint.SetText("Windows will ask for administrator permission. SpoolSmith then checks these steps again and asks you to confirm them.")
+			a.setHint("Windows will ask for administrator permission. SpoolSmith then checks these steps again and asks you to confirm them.")
 		case err != nil:
 			text = "Unable to continue\r\n" + friendlyOperationError(err.Error()) + "\r\n\r\n" + text
-			a.reviewHint.SetText(friendlyOperationError(err.Error()))
+			a.setHint(friendlyOperationError(err.Error()))
 		case a.dryRunOnlyCheck.Checked():
-			a.reviewHint.SetText("Preview only is on. Turn it off under More options to apply these steps.")
+			a.setHint("Preview only is on. Turn it off under More options to apply these steps.")
 		case a.hasPending():
-			a.reviewHint.SetText("These are the steps. You confirm them once before anything changes.")
+			a.setHint("These are the steps. You confirm them once before anything changes.")
 		default:
-			a.reviewHint.SetText("Nothing needs to change.")
+			a.setHint("Nothing needs to change.")
 		}
 		a.planOut.SetText(text)
 		a.planDetailsBtn.SetEnabled(a.previewJSON != "")
@@ -503,7 +503,7 @@ func (a *app) onExecute() {
 	a.mutationExecuting = true
 	pendingInstall, pendingUninstall, pendingRepoint := a.pendingInstall, a.pendingUninstall, a.pendingRepoint
 	a.executeBtn.SetEnabled(false)
-	a.reviewHint.SetText("Applying your confirmed changes. Please keep SpoolSmith open.")
+	a.setHint("Applying your confirmed changes. Please keep SpoolSmith open.")
 	start := time.Now()
 	go func() {
 		var buf bytes.Buffer
@@ -550,9 +550,9 @@ func (a *app) onExecute() {
 			text := lines(buf.String())
 			if errText != "" {
 				text = "The operation could not finish.\r\n" + friendlyOperationError(errText) + "\r\n\r\n" + text
-				a.reviewHint.SetText("It didn't finish. The steps below show where it stopped and why.")
+				a.setHint("It didn't finish. The steps below show where it stopped and why.")
 			} else if status == "success" || status == "already-absent" {
-				a.reviewHint.SetText("Done.")
+				a.setHint("Done.")
 				// The inventory is stale the moment a change lands, and This
 				// PC is where the operator goes next.
 				a.onRefreshQueues()

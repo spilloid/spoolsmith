@@ -30,9 +30,9 @@ type reviewUI struct {
 	sheetTitle     *walk.Label
 	sheetSubtitle  *walk.Label
 	sheetSource    *walk.Label
-	sheetWarnings  *walk.TextLabel
-	sheetSteps     *walk.TextLabel
-	reviewHint     *walk.TextLabel
+	sheetWarnings  *walk.Label
+	sheetSteps     *walk.Label
+	reviewHint     *walk.Label
 	networkStatus  *walk.Label
 	planDetailsBtn *walk.PushButton
 	copyNotesBtn   *walk.PushButton
@@ -72,10 +72,12 @@ func sheetPage(a *app) Composite {
 		Label{AssignTo: &a.sheetTitle, Text: "Printer", Font: Font{Family: "Segoe UI", PointSize: 18, Bold: true}, TextColor: colorBrand},
 		Label{AssignTo: &a.sheetSubtitle, Text: " ", Font: Font{Family: "Segoe UI", PointSize: 11}},
 		Label{AssignTo: &a.sheetSource, Text: " ", TextColor: colorHint},
-		TextLabel{AssignTo: &a.sheetWarnings, MinSize: Size{Width: 420}, Text: " ", TextColor: colorWarning, Visible: false},
+		Label{AssignTo: &a.sheetWarnings, Text: " ", TextColor: colorWarning, Visible: false},
 		Composite{Background: SolidColorBrush{Color: colorSurface}, Layout: VBox{Margins: Margins{Left: 14, Top: 12, Right: 14, Bottom: 12}, Spacing: 8}, Children: []Widget{
-			TextLabel{AssignTo: &a.reviewHint, MinSize: Size{Width: 420}, Text: "Preparing...", TextColor: colorHint, Background: SolidColorBrush{Color: colorSurface}},
-			TextLabel{AssignTo: &a.sheetSteps, MinSize: Size{Width: 420}, Text: " ", Font: Font{Family: "Segoe UI", PointSize: 11}, Background: SolidColorBrush{Color: colorSurface}},
+			Label{AssignTo: &a.reviewHint, Text: "Preparing...", TextColor: colorHint, Background: SolidColorBrush{Color: colorSurface}},
+			Label{AssignTo: &a.sheetSteps, Text: " ", Font: Font{Family: "Segoe UI", PointSize: 11}, Background: SolidColorBrush{Color: colorSurface}},
+			// Stretches the box to the page width.
+			HSpacer{},
 		}},
 		Composite{AssignTo: &a.advancedPanel, Visible: false, Layout: VBox{MarginsZero: true, Spacing: 8}, Children: []Widget{
 			CheckBox{AssignTo: &a.updateCheck, Text: "Update an existing queue to match this printer file"},
@@ -227,10 +229,10 @@ func (a *app) renderSheet() {
 	a.sheetSource.SetText(shownOr(header.Source, " "))
 	setShown(a.sheetSource, header.Source != "")
 	warnings := sheetWarnings(outcome, a.sheetManifest)
-	a.sheetWarnings.SetText(shownOr(strings.Join(warnings, "\r\n"), " "))
+	a.sheetWarnings.SetText(shownOr(wrapText(strings.Join(warnings, "\n"), sheetWrap), " "))
 	setShown(a.sheetWarnings, len(warnings) > 0)
 	steps := checklistText(planChecklist(outcome), "\r\n")
-	a.sheetSteps.SetText(shownOr(steps, " "))
+	a.sheetSteps.SetText(shownOr(wrapText(steps, sheetWrap), " "))
 	setShown(a.sheetSteps, steps != "")
 	a.updateReviewControls()
 }
@@ -384,3 +386,12 @@ func friendlyErrorLead(message string) (string, bool) {
 		return "", false
 	}
 }
+
+// setHint is the one line of guidance above the steps.
+func (a *app) setHint(text string) {
+	a.reviewHint.SetText(wrapText(text, sheetWrap))
+}
+
+// sheetWrap is how many characters a sheet line holds at the window's
+// minimum width.
+const sheetWrap = 96

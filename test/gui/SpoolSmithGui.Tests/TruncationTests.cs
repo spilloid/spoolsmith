@@ -18,7 +18,7 @@ namespace SpoolSmithGui.Tests;
 /// </summary>
 public sealed class TruncationTests : IDisposable
 {
-    private readonly AppFixture _fixture = new();
+    private AppFixture _fixture = null!;
 
     private static readonly ControlType[] TextBearingTypes =
     {
@@ -34,19 +34,19 @@ public sealed class TruncationTests : IDisposable
         "Drop Down Button", "Thumb", "Minimize", "Maximize", "Restore", "Close",
     };
 
-    public void Dispose() => _fixture.Dispose();
+    public void Dispose() => _fixture?.Dispose();
 
     public static IEnumerable<object[]> Tabs
     {
         get
         {
-            foreach (var tab in AppFixture.Pages)
+            foreach (var tab in AppFixture.Pages.Concat(AppFixture.MorePages).Append(AppFixture.Review))
             {
                 yield return new object[] { tab, false, false };
                 yield return new object[] { tab, true, false };
             }
-            yield return new object[] { "Review and apply", false, true };
-            yield return new object[] { "Review and apply", true, true };
+            yield return new object[] { AppFixture.Review, false, true };
+            yield return new object[] { AppFixture.Review, true, true };
         }
     }
 
@@ -54,6 +54,11 @@ public sealed class TruncationTests : IDisposable
     [MemberData(nameof(Tabs))]
     public void Visible_captions_fit_the_window(string tabTitle, bool minimumSize, bool advanced)
     {
+        // The sheet only exists with something to apply, so it is reached by
+        // opening a printer file, as Explorer does.
+        _fixture = tabTitle == AppFixture.Review
+            ? new AppFixture(args: System.IO.Path.Combine(AppFixture.FindRepoRoot(), "examples", "intune", "accounting.ssb"))
+            : new AppFixture();
         if (minimumSize)
         {
             var hwnd = _fixture.MainWindow.Properties.NativeWindowHandle.Value;
