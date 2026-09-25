@@ -78,7 +78,7 @@ public sealed class SiteScreenshots
             var path = Path.Combine(DemoSetups, file);
             if (File.Exists(path)) File.Delete(path);
             FunctionalTests.WriteProfileBundle(path, "{\"version\": 1, \"target\": \"" + ip + "\", \"printer_name\": \"" + name +
-                "\", \"driver_name\": \"Microsoft PCL6 Class Driver\", \"evidence\": {\"ip\": \"" + ip + "\", \"provenance\": \"captured\"}}");
+                "\", \"driver_name\": \"Microsoft PCL6 Class Driver\", \"evidence\": {\"ip\": \"" + ip + "\", \"http_title\": \"" + name + " (illustrative)\", \"provenance\": \"captured\"}}");
         }
     }
 
