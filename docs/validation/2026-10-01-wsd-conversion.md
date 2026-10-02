@@ -134,3 +134,11 @@ the adjacent corporate-strategy decision log; no board vote is asserted.
   full GUI run. The direct-IP screenshot was inspected.
 - No release was published or independent review claimed. Clean-target driver
   provisioning, cross-PC use, and physical printing remain unverified.
+## Final v1.4.0 release checks
+
+Final v1.4.0 CLI/GUI builds passed. Two further full GUI runs passed 33/34,
+exposing a transient preview wait and an immediate Details text-control lookup.
+Named-control lookups now use a bounded five-second rendering wait, matching
+the existing button helper. The subsequent complete suite passed 34/34 against
+the final binaries (3m38s), with unchanged content assertions. Earlier failures
+remain recorded above; no physical printing or clean-target coverage is claimed.
