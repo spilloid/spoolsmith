@@ -70,6 +70,10 @@ const (
 // as a numbered step whose full text is in Details.
 func classifyCommand(command string) stepKind {
 	switch {
+	case strings.Contains(command, "Add-Printer -Name"):
+		// The IPP creation command also contains Remove-Printer for guarded
+		// rollback if verification fails. Its primary action is adding a queue.
+		return stepQueue
 	case strings.Contains(command, "Remove-Printer -InputObject"):
 		return stepRemoveQueue
 	case strings.Contains(command, "Retained shared port"):
@@ -80,7 +84,7 @@ func classifyCommand(command string) stepKind {
 		return stepDriver
 	case strings.Contains(command, "Add-PrinterPort -Name"):
 		return stepPort
-	case strings.Contains(command, "Add-Printer -Name"):
+	case strings.Contains(command, "Updated USB printer driver"):
 		return stepQueue
 	}
 	return stepUnknown
@@ -97,6 +101,10 @@ func stepSentence(plan install.Plan, kind stepKind, index int) string {
 		return "Create port " + plan.IPAddress
 	case stepQueue:
 		switch {
+		case plan.USB:
+			return "Use driver " + plan.DriverName + " for USB printer " + quoted(plan.PrinterName)
+		case plan.IPP:
+			return "Add or verify IPP printer " + quoted(plan.PrinterName) + " at " + plan.IPPURL
 		case plan.PreviousPortName != "":
 			return "Point " + quoted(plan.PrinterName) + " at " + plan.IPAddress + " (the old port is kept)"
 		case plan.UpdateExisting:
@@ -116,7 +124,7 @@ func stepSentence(plan install.Plan, kind stepKind, index int) string {
 // unchangedOutput reports a step that ran and found nothing to do. These are
 // the exact status words the plan's commands print.
 func unchangedOutput(output string) bool {
-	for _, marker := range []string{"Unchanged ", "already absent", "Retained ", "Driver publisher already trusted"} {
+	for _, marker := range []string{"Unchanged ", "already absent", "Retained ", "USB printer already uses", "Driver publisher already trusted"} {
 		if strings.Contains(output, marker) {
 			// A driver step that found its publisher already trusted can still
 			// have staged the driver; only "Unchanged driver" is a no-op.
@@ -150,6 +158,9 @@ func planChecklist(out install.Outcome) []checklistLine {
 	}
 	plan := *out.Plan
 	lines := make([]checklistLine, 0, len(plan.Commands)+1)
+	if plan.USBOffline && len(plan.Commands) == 0 && out.Preflight != nil && out.Preflight.DriverPresent {
+		return []checklistLine{{Text: "Driver " + plan.DriverName + " is already installed; no USB queue is changed", State: stepUnchanged}}
+	}
 	for i, command := range plan.Commands {
 		kind := classifyCommand(command)
 		line := checklistLine{Text: stepSentence(plan, kind, i), State: stepPending}
@@ -237,6 +248,12 @@ func headerFor(op operation, plan *install.Plan, manifest *bundle.Manifest) shee
 	if plan != nil {
 		h.Title = shownOr(plan.PrinterName, h.Title)
 		address = shownOr(plan.IPAddress, address)
+		if plan.USB {
+			address = "USB"
+			if !plan.USBOffline {
+				address += " · " + plan.PortName
+			}
+		}
 		driver = shownOr(plan.DriverName, driver)
 	}
 	if address == "" {
@@ -256,8 +273,18 @@ func headerFor(op operation, plan *install.Plan, manifest *bundle.Manifest) shee
 func sheetWarnings(out install.Outcome, manifest *bundle.Manifest) []string {
 	var warnings []string
 	if manifest != nil {
+		if manifest.Profile.PortType == "usb" {
+			if out.Plan != nil && out.Plan.USBOffline {
+				warnings = append(warnings, "The driver can be prepared without the printer connected. Connect it later, then apply this file again to map its Windows USB queue.")
+			} else {
+				warnings = append(warnings, "SpoolSmith uses an existing Windows USB queue; confirm the queue and port in the plan because the physical model cannot be verified here.")
+			}
+		}
+		if note := manifest.Profile.Evidence.ProvenanceNote; strings.Contains(note, "Windows port uses hostname") || strings.Contains(note, "Windows WSD port") {
+			warnings = append(warnings, note)
+		}
 		if manifest.Profile.Evidence.Provenance != "" && manifest.Profile.Evidence.Provenance != "captured" {
-			warnings = append(warnings, bundle.UnconfirmedIdentityNotice)
+			warnings = append(warnings, bundle.IdentityNotice(manifest.Profile))
 		}
 		if manifest.Driver == nil && manifest.Profile.DriverPackage == nil {
 			warnings = append(warnings, "Settings only: this file has no driver, so this PC must already have "+shownOr(manifest.Profile.DriverName, "the driver")+".")

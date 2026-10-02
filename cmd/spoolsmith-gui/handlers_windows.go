@@ -322,6 +322,7 @@ func (a *app) previewOperation(op operation, buf *bytes.Buffer) (install.Outcome
 			ForceFamily:    op.ForceFamily,
 			UpdateExisting: op.Kind == opConfigure || (op.Kind == opApply && op.UpdateExisting),
 			Offline:        op.Offline,
+			USBQueue:       op.USBQueue,
 			Compact:        true,
 		}
 		var args []string
@@ -372,7 +373,7 @@ func (a *app) stagePending(op operation, outcome install.Outcome) error {
 		options := install.RepointOptions{PrinterName: op.PrinterName, NewAddress: op.NewAddress, Compact: true, ExpectedPlan: outcome.Plan}
 		a.mw.Synchronize(func() { a.pendingRepoint = &options })
 	default:
-		options := install.InstallOptions{ForceFamily: op.ForceFamily, UpdateExisting: op.Kind == opConfigure || (op.Kind == opApply && op.UpdateExisting), Offline: op.Offline, Compact: true, ExpectedPlan: outcome.Plan}
+		options := install.InstallOptions{ForceFamily: op.ForceFamily, UpdateExisting: op.Kind == opConfigure || (op.Kind == opApply && op.UpdateExisting), Offline: op.Offline, USBQueue: op.USBQueue, Compact: true, ExpectedPlan: outcome.Plan}
 		switch {
 		case op.Kind == opApply || op.ProfilePath != "":
 			path := op.BundlePath

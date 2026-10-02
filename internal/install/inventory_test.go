@@ -38,8 +38,17 @@ func TestCopyBlockedReasonMatchesWhatCloneWouldDo(t *testing.T) {
 		{
 			name:     "host name rather than an address",
 			queue:    InstalledQueue{PortName: "IP_printer.local", HostAddress: "printer.local", PortNumber: 9100, Protocol: 1, PortKnown: true},
-			copyable: false,
-			want:     "host name rather than a literal IP",
+			copyable: true,
+		},
+		{
+			name:     "USB printer",
+			queue:    InstalledQueue{PortName: "USB001", PortKnown: true},
+			copyable: true,
+		},
+		{
+			name:     "WSD printer",
+			queue:    InstalledQueue{PortName: "WSD-1234", PortKnown: true},
+			copyable: true,
 		},
 		{
 			name:     "not a TCP/IP port at all",
@@ -76,7 +85,7 @@ func TestListingAgreesWithCloneQueue(t *testing.T) {
 		{PortName: "RAW9100-192.0.2.10", HostAddress: "192.0.2.10", PortNumber: 9100, Protocol: 1},
 		{PortName: "IP_192.0.2.10", HostAddress: "192.0.2.10", PortNumber: 515, Protocol: 2},
 		{PortName: "IP_192.0.2.10", HostAddress: "192.0.2.10", PortNumber: 9101, Protocol: 1},
-		{PortName: "IP_printer.local", HostAddress: "printer.local", PortNumber: 9100, Protocol: 1},
+		{PortName: "IP_localhost", HostAddress: "localhost", PortNumber: 9100, Protocol: 1},
 		{PortName: "PORTPROMPT:", PortNumber: 9100, Protocol: 1},
 	}
 	for _, port := range ports {

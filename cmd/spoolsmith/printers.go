@@ -88,6 +88,9 @@ func writeQueueTable(writer io.Writer, queues []install.InstalledQueue) {
 			marker = "! "
 		}
 		fmt.Fprintf(writer, "%s%2d. %-*s  %s  [%s]\n", marker, index+1, width, queue.PrinterName, target, queue.DriverName)
+		if warning := queue.CopyWarning(); warning != "" {
+			fmt.Fprintf(writer, "     Note: %s\n", warning)
+		}
 	}
 	blocked := 0
 	for _, queue := range queues {

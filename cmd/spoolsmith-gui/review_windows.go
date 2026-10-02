@@ -31,6 +31,8 @@ type reviewUI struct {
 	sheetSubtitle  *walk.Label
 	sheetSource    *walk.Label
 	sheetWarnings  *walk.Label
+	usbQueueRow    *walk.Composite
+	usbQueueLabel  *walk.Label
 	sheetSteps     *walk.Label
 	reviewHint     *walk.Label
 	networkStatus  *walk.Label
@@ -78,6 +80,11 @@ func sheetPage(a *app) Composite {
 		Label{AssignTo: &a.sheetSubtitle, Text: " ", Font: Font{Family: "Segoe UI", PointSize: 11}},
 		Label{AssignTo: &a.sheetSource, Text: " ", TextColor: colorHint},
 		Label{AssignTo: &a.sheetWarnings, Text: " ", TextColor: colorWarning, Visible: false},
+		Composite{AssignTo: &a.usbQueueRow, Visible: false, Layout: row(), Children: []Widget{
+			Label{AssignTo: &a.usbQueueLabel, Text: "Windows USB queue: saved name"},
+			PushButton{Text: "Choose USB queue...", OnClicked: a.onChooseUSBQueue},
+			HSpacer{},
+		}},
 		Composite{Background: SolidColorBrush{Color: colorSurface}, Layout: VBox{Margins: Margins{Left: 14, Top: 12, Right: 14, Bottom: 12}, Spacing: 8}, Children: []Widget{
 			Label{AssignTo: &a.reviewHint, Text: "Preparing...", TextColor: colorHint, Background: SolidColorBrush{Color: colorSurface}},
 			Label{AssignTo: &a.sheetSteps, Text: " ", Font: Font{Family: "Segoe UI", PointSize: 11}, Background: SolidColorBrush{Color: colorSurface}},
@@ -229,6 +236,13 @@ func (a *app) renderSheet() {
 	warnings := sheetWarnings(outcome, a.sheetManifest)
 	a.sheetWarnings.SetText(shownOr(wrapText(strings.Join(warnings, "\n"), sheetWrap), " "))
 	setShown(a.sheetWarnings, len(warnings) > 0)
+	if a.usbQueueLabel != nil {
+		label := "Windows USB queue: match saved name"
+		if op.USBQueue != "" {
+			label = "Windows USB queue: " + op.USBQueue
+		}
+		a.usbQueueLabel.SetText(label)
+	}
 	steps := checklistText(planChecklist(outcome), "\r\n")
 	a.sheetSteps.SetText(shownOr(wrapText(steps, sheetWrap), " "))
 	setShown(a.sheetSteps, steps != "")
@@ -257,7 +271,10 @@ func (a *app) updateReviewControls() {
 		a.offlineCheck.SetVisible(offlineApplies)
 		a.offlineCheck.SetEnabled(offlineApplies && !busy)
 	}
-	a.updateCheck.SetVisible(op.Kind == opApply)
+	if a.usbQueueRow != nil {
+		setShown(a.usbQueueRow, a.sheetManifest != nil && a.sheetManifest.Profile.PortType == "usb" && !a.sheetDone)
+	}
+	a.updateCheck.SetVisible(op.Kind == opApply && (a.sheetManifest == nil || a.sheetManifest.Profile.PortType != "usb"))
 	a.updateCheck.SetEnabled(!busy)
 	for _, control := range []walk.Widget{a.purgeDriverCheck, a.dryRunOnlyCheck} {
 		if control != nil {
@@ -268,6 +285,12 @@ func (a *app) updateReviewControls() {
 		a.previewBtn.SetEnabled(!busy && op.Kind != "" && !a.sheetDone)
 	}
 	caption := primaryCaption(op, isElevated())
+	if a.sheetOutcome != nil && a.sheetOutcome.Plan != nil && a.sheetOutcome.Plan.USBOffline {
+		caption = "Prepare driver"
+		if !isElevated() {
+			caption += " as administrator..."
+		}
+	}
 	shield := !isElevated()
 	switch {
 	case a.sheetDone:

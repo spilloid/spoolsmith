@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"regexp"
 	"strings"
 )
 
@@ -20,6 +21,7 @@ type InstalledQueue struct {
 	PrinterName string `json:"printer_name"`
 	DriverName  string `json:"driver_name"`
 	PortName    string `json:"port_name"`
+	Monitor     string `json:"monitor,omitempty"`
 	// HostAddress, PortNumber and Protocol are the port's settings, and are
 	// zero when PortKnown is false.
 	HostAddress string `json:"host_address,omitempty"`
@@ -45,6 +47,7 @@ func (q InstalledQueue) CopyBlockedReason() string {
 	}
 	return copyBlockedReason(PortConfiguration{
 		PortName:    q.PortName,
+		Monitor:     q.Monitor,
 		HostAddress: q.HostAddress,
 		PortNumber:  q.PortNumber,
 		Protocol:    q.Protocol,
@@ -54,6 +57,28 @@ func (q InstalledQueue) CopyBlockedReason() string {
 // Copyable reports whether `spoolsmith copy` could reproduce this queue.
 func (q InstalledQueue) Copyable() bool { return q.CopyBlockedReason() == "" }
 
+// IsUSB reports a current queue on a standard Windows USB printer port.
+func (q InstalledQueue) IsUSB() bool {
+	return q.PortKnown && isUSBConfiguration(PortConfiguration{PortName: q.PortName, Monitor: q.Monitor, HostAddress: q.HostAddress, PortNumber: q.PortNumber, Protocol: q.Protocol})
+}
+
+// CopyWarning flags a copyable queue whose destination mapping needs review.
+func (q InstalledQueue) CopyWarning() string {
+	if !q.Copyable() {
+		return ""
+	}
+	if q.IsUSB() {
+		return "USB: prepare its driver now; connect it later and apply again to map the Windows USB queue"
+	}
+	if isWSDConfiguration(PortConfiguration{PortName: q.PortName, Monitor: q.Monitor}) {
+		return "WSD: copy verifies the device's IP and chooses an IPP or RAW IP connection for its driver"
+	}
+	if address := strings.TrimSpace(q.HostAddress); address != "" && net.ParseIP(address) == nil {
+		return fmt.Sprintf("hostname %q will be resolved and saved as an IP address when copied", address)
+	}
+	return ""
+}
+
 // copyBlockedReason is the single rule for whether SpoolSmith can faithfully
 // reproduce a queue somewhere else.
 //
@@ -61,6 +86,12 @@ func (q InstalledQueue) Copyable() bool { return q.CopyBlockedReason() == "" }
 // listing can never advertise a queue as copyable that the copy path would
 // then refuse — or hide one it would have accepted.
 func copyBlockedReason(port PortConfiguration) string {
+	if isUSBConfiguration(port) {
+		return ""
+	}
+	if isWSDConfiguration(port) {
+		return ""
+	}
 	if port.Protocol != 0 && port.Protocol != 1 {
 		return fmt.Sprintf("it uses port %q with protocol %d (not RAW); SpoolSmith only maps RAW TCP queues, so copying it would produce a different queue", port.PortName, port.Protocol)
 	}
@@ -71,10 +102,30 @@ func copyBlockedReason(port PortConfiguration) string {
 	if address == "" {
 		return fmt.Sprintf("its port %q reports no printer host address; this is not a standard TCP/IP port SpoolSmith can reproduce", port.PortName)
 	}
-	if net.ParseIP(address) == nil {
-		return fmt.Sprintf("its port %q points at %q, which is a host name rather than a literal IP address; recreate the queue against the printer's IP, or capture a profile directly with `profile capture`", port.PortName, address)
+	// A hostname on an otherwise standard RAW port can be resolved when the
+	// queue is copied. The copied profile records the resolved IP and warns
+	// that DHCP/DNS changes can make that snapshot stale.
+	if net.ParseIP(address) == nil && (strings.ContainsAny(address, " \\/:@") || strings.HasPrefix(address, ".") || strings.HasSuffix(address, ".")) {
+		return fmt.Sprintf("its port %q has an invalid printer hostname %q", port.PortName, address)
 	}
 	return ""
+}
+
+var usbPortPattern = regexp.MustCompile(`(?i)^USB[0-9]+$`)
+
+func isUSBPort(name string) bool { return usbPortPattern.MatchString(strings.TrimSpace(name)) }
+
+func isUSBConfiguration(port PortConfiguration) bool {
+	monitor := strings.TrimSpace(port.Monitor)
+	return isUSBPort(port.PortName) && (monitor == "" || strings.EqualFold(monitor, "USB Monitor")) && strings.TrimSpace(port.HostAddress) == "" && port.PortNumber == 0 && port.Protocol == 0
+}
+
+func isWSDConfiguration(port PortConfiguration) bool {
+	monitor := strings.TrimSpace(port.Monitor)
+	if monitor != "" {
+		return strings.EqualFold(monitor, "WSD Port Monitor") || strings.EqualFold(monitor, "WSD Port")
+	}
+	return strings.HasPrefix(strings.ToUpper(strings.TrimSpace(port.PortName)), "WSD-")
 }
 
 // protocolName renders Windows' own port protocol encoding.
@@ -122,8 +173,9 @@ $items = @();
 foreach ($printer in @(Get-Printer -ErrorAction Stop)) {
   $name = [string]$printer.PortName;
   $port = $null; if ($name -and $ports.ContainsKey($name)) { $port = $ports[$name] };
-  $address = ''; $number = 0; $protocol = 0;
+  $address = ''; $number = 0; $protocol = 0; $monitor = '';
   if ($port -ne $null) {
+    $monitor = [string]$port.PortMonitor;
     $address = [string]$port.PrinterHostAddress;
     if ($port.PortNumber -ne $null) { $number = [int]$port.PortNumber };
     if ($port.Protocol -ne $null) { $protocol = [int]$port.Protocol };
@@ -132,6 +184,7 @@ foreach ($printer in @(Get-Printer -ErrorAction Stop)) {
     printer_name=[string]$printer.Name;
     driver_name=[string]$printer.DriverName;
     port_name=$name;
+    monitor=$monitor;
     host_address=$address;
     port_number=$number;
     protocol=$protocol;

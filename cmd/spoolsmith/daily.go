@@ -64,6 +64,14 @@ func runProfile(ctx context.Context, args []string, stdout, stderr io.Writer, ap
 	seen := map[string]bool{}
 	for i := 3; i < len(args); i += 2 {
 		flag := args[i]
+		if flag == "--windows-driver" {
+			if seen[flag] {
+				return usageError(stdout, stderr, "profile", errors.New("duplicate --windows-driver"))
+			}
+			seen[flag] = true
+			i--
+			continue
+		}
 		if (flag != "--name" && flag != "--driver") || seen[flag] || i+1 >= len(args) || strings.TrimSpace(args[i+1]) == "" {
 			return usageError(stdout, stderr, "profile", fmt.Errorf("invalid or duplicate profile option %q", flag))
 		}
@@ -74,8 +82,19 @@ func runProfile(ctx context.Context, args []string, stdout, stderr io.Writer, ap
 			p.DriverName = args[i+1]
 		}
 	}
-	if !seen["--name"] || !seen["--driver"] {
-		return usageError(stdout, stderr, "profile", errors.New("--name and --driver are required"))
+	if !seen["--name"] || seen["--driver"] == seen["--windows-driver"] {
+		return usageError(stdout, stderr, "profile", errors.New("--name and exactly one of --driver or --windows-driver are required"))
+	}
+	if seen["--windows-driver"] {
+		p, err := install.CaptureWindowsIPPProfile(ctx, args[1], p.PrinterName)
+		if err != nil {
+			return commandError(stdout, stderr, "profile", err, 1)
+		}
+		if err := bundle.SaveProfile(args[2], p); err != nil {
+			return commandError(stdout, stderr, "profile", err, 1)
+		}
+		fmt.Fprintln(stderr, "Saved verified IPP setup. Windows will select its inbox driver when you review and apply this file.")
+		return encodeSuccess(stdout, stderr, "profile", p)
 	}
 	result, err := app.collect(ctx, args[1])
 	if err != nil {

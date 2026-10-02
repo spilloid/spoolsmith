@@ -90,6 +90,51 @@ func TestCreateDegradesToOfflineWhenSourcePrinterUnreachable(t *testing.T) {
 	}
 }
 
+func TestCreateUSBFileCarriesDriverWithoutNetworkProbe(t *testing.T) {
+	isolateTemp(t)
+	env := newBatchEnvironment(t, "Front Desk")
+	env.queues[0].PortName = "USB001"
+	env.queues[0].HostAddress = ""
+	env.queues[0].PortNumber = 0
+	env.queues[0].Protocol = 0
+	path := filepath.Join(t.TempDir(), FileNameForQueue(env.queues[0]))
+	probes := 0
+	result, err := Create(context.Background(), env, func(context.Context, string) (probe.Result, error) {
+		probes++
+		return probe.Result{}, errors.New("network should not be probed")
+	}, CreateOptions{QueueName: "Front Desk", Path: path})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if probes != 0 || result.Manifest.Profile.PortType != "usb" || result.Manifest.Profile.SourcePort != "USB001" || result.Manifest.Driver == nil {
+		t.Fatalf("USB copy = %+v; probes = %d", result, probes)
+	}
+	if filepath.Base(path) != "Front-Desk.usb.ssb" {
+		t.Fatalf("USB filename = %q", path)
+	}
+	opened, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer opened.Close()
+	if err := opened.Verify(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestCreateHostnamePortWarnsAndSavesResolvedIP(t *testing.T) {
+	env := newBatchEnvironment(t, "Front Desk")
+	env.queues[0].HostAddress = "localhost"
+	path := filepath.Join(t.TempDir(), "front-desk.ssb")
+	result, err := Create(context.Background(), env, batchCollect, CreateOptions{QueueName: "Front Desk", Path: path, SettingsOnly: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Manifest.Profile.Target == "localhost" || !strings.Contains(result.Warning, "localhost") || !strings.Contains(result.Manifest.Profile.Evidence.ProvenanceNote, "localhost") {
+		t.Fatalf("hostname copy = %+v", result)
+	}
+}
+
 // TestCreateStillFailsOnCancellation guards the offline fallback above: a
 // canceled copy must never be reported as a degraded success.
 func TestCreateStillFailsOnCancellation(t *testing.T) {

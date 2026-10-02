@@ -11,9 +11,10 @@ import (
 	"strings"
 )
 
-// PortConfiguration is an installed standard TCP/IP port as Windows reports it.
+// PortConfiguration is an installed port as Windows reports it.
 type PortConfiguration struct {
 	PortName    string `json:"port_name"`
+	Monitor     string `json:"monitor,omitempty"`
 	HostAddress string `json:"host_address"`
 	PortNumber  int    `json:"port_number"`
 	// Protocol is Windows' own encoding: 1 is RAW, 2 is LPR.
@@ -38,6 +39,20 @@ type portLookupEnvironment interface {
 	LookupPort(ctx context.Context, portName string) (PortConfiguration, error)
 }
 
+// WSDResolution ties an installed WSD port's device identity to a live IP.
+type WSDResolution struct {
+	IP                string `json:"ip"`
+	DeviceID          string `json:"device_id"`
+	ServiceID         string `json:"service_id,omitempty"`
+	IPPURL            string `json:"ipp_url,omitempty"`
+	DriverName        string `json:"driver_name,omitempty"`
+	DriverSourceQueue string `json:"driver_source_queue,omitempty"`
+}
+
+type wsdResolveEnvironment interface {
+	ResolveWSDPort(ctx context.Context, portName, driverName string) (WSDResolution, error)
+}
+
 type driverExportEnvironment interface {
 	ExportDriver(ctx context.Context, driverName, destDir string) (DriverExport, error)
 }
@@ -48,19 +63,25 @@ var ErrPortNotFound = errors.New("install: printer port not found")
 // ClonedQueue is one installed queue read back off this machine, in the terms
 // SpoolSmith needs to reproduce it somewhere else.
 type ClonedQueue struct {
-	PrinterName string `json:"printer_name"`
-	DriverName  string `json:"driver_name"`
-	PortName    string `json:"port_name"`
-	HostAddress string `json:"host_address"`
+	PrinterName       string `json:"printer_name"`
+	DriverName        string `json:"driver_name"`
+	PortName          string `json:"port_name"`
+	HostAddress       string `json:"host_address"`
+	SourceHostname    string `json:"source_hostname,omitempty"`
+	SourceWSDPort     string `json:"source_wsd_port,omitempty"`
+	SourceWSDDeviceID string `json:"source_wsd_device_id,omitempty"`
+	SourceDriverName  string `json:"source_driver_name,omitempty"`
+	SourceDriverQueue string `json:"source_driver_queue,omitempty"`
+	IPPURL            string `json:"ipp_url,omitempty"`
+	USB               bool   `json:"usb,omitempty"`
 }
 
 // CloneQueue reads an installed queue and its port, and reports the target
 // address SpoolSmith would need to recreate it.
 //
-// It fails closed on any queue SpoolSmith could not faithfully reproduce —
-// a non-RAW protocol, a port that is not 9100, or a port whose address is a
-// name rather than a literal IP — rather than emitting a bundle that would
-// quietly build a different queue on the next machine.
+// It accepts a standard USB port, a RAW 9100 network port, or a WSD queue whose
+// device identity and IP print transport can be verified. Network hostnames are
+// resolved to an IP snapshot and reported to the caller for a warning.
 func CloneQueue(ctx context.Context, env Environment, printerName string) (ClonedQueue, error) {
 	configuration, err := LookupPrinter(ctx, env, printerName)
 	if err != nil {
@@ -77,13 +98,68 @@ func CloneQueue(ctx context.Context, env Environment, printerName string) (Clone
 	if reason := copyBlockedReason(port); reason != "" {
 		return ClonedQueue{}, fmt.Errorf("copy: queue %q cannot be copied because %s", printerName, reason)
 	}
+	if isUSBConfiguration(port) {
+		return ClonedQueue{PrinterName: configuration.PrinterName, DriverName: configuration.DriverName, PortName: configuration.PortName, USB: true}, nil
+	}
+	if isWSDConfiguration(port) {
+		resolver, ok := env.(wsdResolveEnvironment)
+		if !ok {
+			return ClonedQueue{}, errors.New("copy: this platform cannot resolve WSD printer ports")
+		}
+		resolved, resolveErr := resolver.ResolveWSDPort(ctx, configuration.PortName, configuration.DriverName)
+		if resolveErr != nil {
+			return ClonedQueue{}, fmt.Errorf("copy: resolve WSD port %q: %w", configuration.PortName, resolveErr)
+		}
+		address := net.ParseIP(strings.TrimSpace(resolved.IP))
+		if address == nil {
+			return ClonedQueue{}, fmt.Errorf("copy: WSD port %q did not resolve to a literal IP address", configuration.PortName)
+		}
+		driver := resolved.DriverName
+		if driver == "" {
+			driver = configuration.DriverName
+		}
+		if err := validatePlanValue("WSD destination driver", driver); err != nil {
+			return ClonedQueue{}, err
+		}
+		if isIPPClassDriver(driver) && resolved.IPPURL == "" {
+			return ClonedQueue{}, fmt.Errorf("copy: WSD port %q uses the Microsoft IPP Class Driver but no IPP endpoint was verified", configuration.PortName)
+		}
+		return ClonedQueue{PrinterName: configuration.PrinterName, DriverName: driver, PortName: configuration.PortName, HostAddress: address.String(), SourceWSDPort: configuration.PortName, SourceWSDDeviceID: resolved.DeviceID, SourceDriverName: configuration.DriverName, SourceDriverQueue: resolved.DriverSourceQueue, IPPURL: resolved.IPPURL}, nil
+	}
 	address := net.ParseIP(strings.TrimSpace(port.HostAddress))
+	hostname := ""
+	if address == nil {
+		hostname = strings.TrimSpace(port.HostAddress)
+		resolved, resolveErr := net.DefaultResolver.LookupIPAddr(ctx, hostname)
+		if resolveErr != nil {
+			return ClonedQueue{}, fmt.Errorf("copy: resolve printer hostname %q: %w", hostname, resolveErr)
+		}
+		// Prefer IPv4 because printer RAW ports and local networks commonly use
+		// it. A resolved IPv6 address is still valid when no IPv4 exists.
+		for _, candidate := range resolved {
+			if candidate.IP.To4() != nil {
+				address = candidate.IP
+				break
+			}
+			if address == nil && candidate.IP.To16() != nil && candidate.Zone == "" {
+				address = candidate.IP
+			}
+		}
+		if address == nil {
+			return ClonedQueue{}, fmt.Errorf("copy: printer hostname %q resolved to no usable IP address", hostname)
+		}
+	}
 	return ClonedQueue{
-		PrinterName: configuration.PrinterName,
-		DriverName:  configuration.DriverName,
-		PortName:    configuration.PortName,
-		HostAddress: address.String(),
+		PrinterName:    configuration.PrinterName,
+		DriverName:     configuration.DriverName,
+		PortName:       configuration.PortName,
+		HostAddress:    address.String(),
+		SourceHostname: hostname,
 	}, nil
+}
+
+func isIPPClassDriver(driverName string) bool {
+	return strings.EqualFold(strings.TrimSpace(driverName), "Microsoft IPP Class Driver")
 }
 
 // ExportDriver copies the named registered driver's files into destDir.
@@ -104,7 +180,7 @@ func lookupPortCommand(portName string) (string, error) {
 	}
 	command := "$ports = @(Get-PrinterPort -ErrorAction Stop | Where-Object { $_.Name -eq " + powerShellString(portName) + " }); " +
 		"if ($ports.Count -eq 0) { 'null' } elseif ($ports.Count -ne 1) { throw 'Multiple matching ports' } else { $port = $ports[0]; " +
-		"[PSCustomObject]@{port_name=$port.Name;host_address=[string]$port.PrinterHostAddress;port_number=[int]$port.PortNumber;protocol=[int]$port.Protocol} | ConvertTo-Json -Compress }"
+		"[PSCustomObject]@{port_name=$port.Name;monitor=[string]$port.PortMonitor;host_address=[string]$port.PrinterHostAddress;port_number=[int]$port.PortNumber;protocol=[int]$port.Protocol} | ConvertTo-Json -Compress }"
 	return powerShellCommand(command), nil
 }
 

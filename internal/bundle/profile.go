@@ -17,6 +17,15 @@ import (
 // instead of each surface phrasing the same fact its own way.
 const UnconfirmedIdentityNotice = "The printer did not answer, so its identity was not confirmed. Applying it will run offline; check the printer once it is reachable."
 
+// IdentityNotice uses USB-specific wording because a USB copy intentionally
+// does not perform the network identity probe used by TCP printer copies.
+func IdentityNotice(profile install.Profile) string {
+	if profile.PortType == "usb" {
+		return "USB identity was not checked during copy. The driver can be prepared offline; after connecting the printer, confirm its Windows USB queue and print a test page."
+	}
+	return UnconfirmedIdentityNotice
+}
+
 // SaveProfile writes a standalone profile as a bundle carrying no driver
 // payload -- the file `profile capture` produces. It never overwrites an
 // existing file: an operator's captured setup is inventory, and silently

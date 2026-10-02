@@ -142,7 +142,7 @@ func CreateAll(ctx context.Context, env install.Environment, collect Collector, 
 			result.Queues = append(result.Queues, outcome)
 			continue
 		}
-		name := uniqueMemberName(FileName(queue.PrinterName), reserved)
+		name := uniqueMemberName(FileNameForQueue(queue), reserved)
 		path := filepath.Join(work, name)
 		created, err := Create(ctx, env, collect, CreateOptions{
 			QueueName: queue.PrinterName, Path: path, SettingsOnly: opts.SettingsOnly,
@@ -170,8 +170,11 @@ func CreateAll(ctx context.Context, env install.Environment, collect Collector, 
 		if created.DriverNotIncluded != "" {
 			reasons = append(reasons, "Driver not included: "+created.DriverNotIncluded+".")
 		}
+		if created.Warning != "" {
+			reasons = append(reasons, "Warning: "+created.Warning+".")
+		}
 		if created.Manifest.Profile.Evidence.Provenance != "captured" {
-			reasons = append(reasons, UnconfirmedIdentityNotice)
+			reasons = append(reasons, IdentityNotice(created.Manifest.Profile))
 		}
 		outcome.Reason = strings.Join(reasons, " ")
 		result.Written++
@@ -198,8 +201,15 @@ func CreateAll(ctx context.Context, env install.Environment, collect Collector, 
 func uniqueMemberName(name string, reserved map[string]bool) string {
 	candidate := name
 	stem := strings.TrimSuffix(name, filepath.Ext(name))
+	if strings.HasSuffix(strings.ToLower(stem), ".usb") {
+		stem = stem[:len(stem)-len(".usb")]
+	}
 	for n := 2; reserved[strings.ToLower(candidate)]; n++ {
-		candidate = stem + "-" + strconv.Itoa(n) + filepath.Ext(name)
+		if strings.HasSuffix(strings.ToLower(name), ".usb.ssb") {
+			candidate = stem + "-" + strconv.Itoa(n) + ".usb.ssb"
+		} else {
+			candidate = stem + "-" + strconv.Itoa(n) + filepath.Ext(name)
+		}
 	}
 	reserved[strings.ToLower(candidate)] = true
 	return candidate
@@ -231,6 +241,15 @@ func FileName(queueName string) string {
 		name = "printer-" + name
 	}
 	return name + ".ssb"
+}
+
+// FileNameForQueue marks USB copies while retaining the .ssb extension.
+func FileNameForQueue(queue install.InstalledQueue) string {
+	name := FileName(queue.PrinterName)
+	if queue.IsUSB() {
+		return strings.TrimSuffix(name, ".ssb") + ".usb.ssb"
+	}
+	return name
 }
 
 // onlyQueues keeps the named queues, in inventory order.

@@ -274,7 +274,7 @@ func (a *app) openPrinterSetup(e evidence.Evidence) {
 	// field's change handler, so arriving from discovery never lands with an
 	// empty save path.
 	a.suggestCaptureFile(e.IP)
-	a.captureStatus.SetText("Printer: " + printerIdentity(e) + ". Choose its compatible Windows driver, then save and review.")
+	a.captureStatus.SetText("Printer: " + printerIdentity(e) + ". Choose Windows automatic (IPP) or a compatible installed driver, then save and review.")
 	a.searchGroup.SetVisible(false)
 	a.setupGroup.SetVisible(true)
 	a.goTo(pageAdd)
@@ -336,7 +336,7 @@ func (a *app) onDrivers() {
 			}
 			a.driversLoaded = true
 			selected := a.captureDriver.Text()
-			a.captureDriver.SetModel(names)
+			a.captureDriver.SetModel(append([]string{install.WindowsDriverChoice}, names...))
 			a.captureDriver.SetCurrentIndex(-1)
 			a.captureDriver.SetText(selected)
 			// Typing an exact Windows driver name is the step operators get
@@ -349,14 +349,17 @@ func (a *app) onDrivers() {
 				if suggestion = suggestDriver(names, a.setupEvidence); suggestion != "" {
 					a.captureDriver.SetText(suggestion)
 				}
+				if suggestion == "" {
+					a.captureDriver.SetText(install.WindowsDriverChoice)
+				}
 			}
 			switch {
 			case len(names) == 0:
-				a.driverStatus.SetText("No printer drivers are installed. Install the driver for your printer, then choose Refresh drivers.")
+				a.driverStatus.SetText("Windows automatic setup checks IPP support and uses the inbox driver. No OEM driver is required.")
 			case suggestion != "":
 				a.driverStatus.SetText("Suggested a driver from the detected model. Change it if this is not the right one.")
 			default:
-				a.driverStatus.SetText(fmt.Sprintf("%d installed drivers available. Choose the driver that supports your printer model.", len(names)))
+				a.driverStatus.SetText(fmt.Sprintf("Windows automatic checks IPP support; %d installed drivers are also available.", len(names)))
 			}
 		})
 	}()
@@ -433,7 +436,7 @@ func (a *app) reviewBundle(path string) {
 		BundlePath:  path,
 		PrinterName: opened.Manifest.Profile.PrinterName,
 		Target:      opened.Manifest.Profile.Target,
-		Offline:     opened.Manifest.Profile.Evidence.Provenance != "captured",
+		Offline:     opened.Manifest.Profile.PortType != "usb" && opened.Manifest.Profile.Evidence.Provenance != "captured",
 	})
 }
 
@@ -486,10 +489,17 @@ func (a *app) onCaptureProfile() {
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
-		result, finalErr := probe.Collect(ctx, ip.String())
+		var p install.Profile
+		var finalErr error
+		if driver == install.WindowsDriverChoice {
+			p, finalErr = install.CaptureWindowsIPPProfile(ctx, ip.String(), name)
+		} else {
+			var result probe.Result
+			result, finalErr = probe.Collect(ctx, ip.String())
+			p = install.Profile{Version: 1, Target: result.Evidence.IP, Evidence: result.Evidence, PrinterName: name, DriverName: driver}
+		}
 		savingFailed := false
 		if finalErr == nil {
-			p := install.Profile{Version: 1, Target: result.Evidence.IP, Evidence: result.Evidence, PrinterName: name, DriverName: driver}
 			if finalErr = bundle.SaveProfile(file, p); finalErr != nil {
 				savingFailed = true
 			}

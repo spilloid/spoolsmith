@@ -129,10 +129,31 @@ sight unseen. A fingerprint names one printer's plan, so with a multi-printer se
 
 ### Queues that cannot be copied
 
-`printers` marks these with `!` and states why. SpoolSmith only reproduces RAW TCP 9100 queues
-pointed at a literal IP address, because anything else would quietly build a different queue on
-the next PC. An LPR queue, a non-9100 port, a port naming a host rather than an address, and
-"Microsoft Print to PDF" are all refused rather than approximated.
+`printers` marks these with `!` and states why. SpoolSmith copies RAW TCP 9100 queues
+pointed at an IP address or resolvable hostname; a hostname is saved as a current IP
+snapshot with a warning. USB queues can be copied into `.usb.ssb` files. Applying one
+can prepare its driver before the printer is connected; apply it again after Windows
+creates a USB queue to review the mapping. A different queue name needs explicit selection
+in the desktop review or `--usb-queue <name>`. WSD queues can be copied when their device ID
+and IP endpoint can be verified. It prefers RAW TCP/IP with the source driver or an
+unambiguous existing RAW driver mapping at that IP. If the source uses Microsoft's IPP
+Class Driver and no usable RAW mapping is known, it saves a verified IPP endpoint instead. LPR, non-9100,
+and virtual ports cannot be mapped by this workflow.
+
+### Windows automatic setup by IP (v1.4)
+
+For an IPP-capable printer, select **Windows automatic (IPP)** in the desktop
+driver picker, or preview setup from the CLI:
+
+```powershell
+spoolsmith add 192.168.1.50 --windows-driver --name "Office printer" --dry-run
+spoolsmith profile capture 192.168.1.50 office.ssb --name "Office printer" --windows-driver
+```
+
+SpoolSmith verifies the IPP endpoint and model before offering a reviewed setup
+with Microsoft's inbox IPP class driver. Windows manages driver installation;
+this path does not acquire arbitrary OEM drivers. Printers requiring an OEM RAW
+driver can use the existing installed-driver selection.
 
 ## Native Windows GUI
 
@@ -469,11 +490,12 @@ Read this before pointing SpoolSmith at a printer you actually depend on:
   configured profile to map them.
 - **Automatic driver naming is verified only for the Brother HL-L2315D.** Other models
   need a profile with an explicitly selected, compatible Windows driver.
-- **Profiles map a driver to a RAW TCP 9100 queue.** The reviewed Brother local-archive
+- **Most profiles map a driver to a RAW TCP 9100 queue.** The reviewed Brother local-archive
   recipe and copied bundles with driver payloads can stage a missing driver. Otherwise,
   the compatible driver must already be registered.
-  IPP-only drivers/printers and LPR-only printers require different queue strategies;
-  the current install plan uses the Windows standard TCP/IP port with its RAW default.
+  WSD copies prefer a known RAW driver mapping at the verified IP; Microsoft's IPP
+  Class Driver uses a verified IPP endpoint when no usable RAW mapping is available.
+  LPR-only printers still require a different queue strategy.
 - **CLI discovery requires an explicit IPv4 CIDR** (`/24` through `/32`). The desktop
   can derive the local subnet or accept a single IP. Discovery does not automatically
   cross VLANs or implement multicast discovery. Candidates are not certified printers.
@@ -489,6 +511,9 @@ Read this before pointing SpoolSmith at a printer you actually depend on:
   (only its preview was run), and physical printing through a bundle-staged driver.
   The absent-driver target above was simulated on the same PC, not a second machine.
   See the [copy validation record](docs/validation/2026-09-15-copy-workflow.md).
+  A separate [WSD to IPP validation record](docs/validation/2026-10-01-wsd-conversion.md)
+  covers live WSD identity and IPP endpoint verification, bundle import preview,
+  and elevated IPP creation/reapplication/status/cleanup after source preparation.
 - **`uninstall --purge-driver` can retain a driver that is actually unused.** Windows removes a
   queue asynchronously, so the in-use check that guards driver removal can still see the queue
   that was just deleted and keep the driver. Observed on real hardware. Removing such a driver

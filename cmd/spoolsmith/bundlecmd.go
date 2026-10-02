@@ -117,6 +117,14 @@ func runClone(ctx context.Context, args []string, input io.Reader, stdout, stder
 	}
 	if outPath == "" {
 		outPath = defaultBundleName(queueName)
+		if queues, listErr := install.ListPrinters(ctx, app.environment); listErr == nil {
+			for _, queue := range queues {
+				if queue.PrinterName == queueName {
+					outPath = bundle.FileNameForQueue(queue)
+					break
+				}
+			}
+		}
 		fmt.Fprintf(stderr, "Writing to %s\n", outPath)
 	}
 
@@ -133,6 +141,9 @@ func runClone(ctx context.Context, args []string, input io.Reader, stdout, stder
 		return commandError(stdout, stderr, "copy", err, int(install.ExitGeneralError))
 	}
 	manifest := created.Manifest
+	if created.Warning != "" {
+		fmt.Fprintf(stderr, "Warning: %s.\n", created.Warning)
+	}
 
 	fmt.Fprintf(stderr, "Wrote %s. Apply it on another machine with: spoolsmith apply %s --dry-run\n", outPath, filepath.Base(outPath))
 	if manifest.Driver != nil {
@@ -141,7 +152,7 @@ func runClone(ctx context.Context, args []string, input io.Reader, stdout, stder
 		fmt.Fprintf(stderr, "Driver not included: %s.\n", created.DriverNotIncluded)
 	}
 	if manifest.Profile.Evidence.Provenance != "captured" {
-		fmt.Fprintln(stderr, bundle.UnconfirmedIdentityNotice)
+		fmt.Fprintln(stderr, bundle.IdentityNotice(manifest.Profile))
 	}
 	return encodeSuccess(stdout, stderr, "copy", manifest)
 }
@@ -217,6 +228,12 @@ func runApply(ctx context.Context, args []string, input io.Reader, stdout, stder
 			options.UpdateExisting = true
 		case "--offline":
 			options.Offline = true
+		case "--usb-queue":
+			if options.USBQueue != "" || index+1 >= len(args) || strings.TrimSpace(args[index+1]) == "" || strings.HasPrefix(args[index+1], "-") {
+				return usageError(stdout, stderr, "apply", errors.New("--usb-queue requires one Windows USB printer queue name"))
+			}
+			index++
+			options.USBQueue = args[index]
 		case "--plan-hash":
 			if index+1 >= len(args) || strings.TrimSpace(args[index+1]) == "" {
 				return usageError(stdout, stderr, "apply", errors.New("--plan-hash requires the reviewed plan's fingerprint"))
@@ -345,6 +362,9 @@ func runApplySet(ctx context.Context, path, only string, options install.Install
 	if options.ConfirmPlanHash != "" && len(members) > 1 {
 		return usageError(stdout, stderr, "apply", errors.New("--plan-hash names one reviewed plan; with a printer set, also choose that printer with --member <name>"))
 	}
+	if options.USBQueue != "" && len(members) > 1 {
+		return usageError(stdout, stderr, "apply", errors.New("--usb-queue names one destination printer; with a printer set, also choose its file with --member <name>"))
+	}
 
 	fmt.Fprintf(stderr, "Printer set %s holds %d printer files:\n", filepath.Base(path), len(set.Members))
 	if set.Note != "" {
@@ -465,14 +485,24 @@ func runBundle(args []string, stdout, stderr io.Writer) int {
 	if m.Note != "" {
 		fmt.Fprintf(stderr, "  Note: %s\n", m.Note)
 	}
-	fmt.Fprintf(stderr, "  Queue: %s\n  Target: %s (RAW TCP 9100)\n  Driver: %s\n", m.Profile.PrinterName, m.Profile.Target, m.Profile.DriverName)
+	if m.Profile.PortType == "usb" {
+		fmt.Fprintf(stderr, "  Source queue: %s\n  Source port: %s (USB; destination port is discovered locally)\n  Driver: %s\n", m.Profile.PrinterName, m.Profile.SourcePort, m.Profile.DriverName)
+	} else if m.Profile.PortType == "ipp" {
+		fmt.Fprintf(stderr, "  Queue: %s\n  Target: %s (IPP at %s)\n  Driver: %s\n", m.Profile.PrinterName, m.Profile.Target, m.Profile.IPPURL, m.Profile.DriverName)
+	} else {
+		fmt.Fprintf(stderr, "  Queue: %s\n  Target: %s (RAW TCP 9100)\n  Driver: %s\n", m.Profile.PrinterName, m.Profile.Target, m.Profile.DriverName)
+	}
 	if m.Profile.Evidence.Provenance == "captured" {
 		fmt.Fprintln(stderr, "  Identity: confirmed against the printer when copied.")
 	} else {
-		fmt.Fprintf(stderr, "  Identity: unconfirmed — %s. Applying it runs offline.\n", shown(m.Profile.Evidence.ProvenanceNote))
+		fmt.Fprintf(stderr, "  Identity: unconfirmed — %s.\n", shown(m.Profile.Evidence.ProvenanceNote))
 	}
 	if m.Driver == nil {
-		fmt.Fprintln(stderr, "  Driver payload: none — the target machine must already have this driver registered.")
+		if m.Profile.PortType == "ipp" {
+			fmt.Fprintln(stderr, "  Driver payload: none — Windows installs its inbox IPP Class Driver during directed discovery.")
+		} else {
+			fmt.Fprintln(stderr, "  Driver payload: none — the target machine must already have this driver registered.")
+		}
 	} else {
 		fmt.Fprintf(stderr, "  Driver payload: %d files, %d bytes, INF %s (from %s)\n", len(m.Driver.Files), m.TotalPayloadBytes(), m.Driver.INF, shown(m.Driver.ExportedFrom))
 		fmt.Fprintln(stderr, "  All payload files match the manifest's hashes.")
@@ -484,6 +514,7 @@ func runBundle(args []string, stdout, stderr io.Writer) int {
 // setInspectMember describes one member of a printer set.
 type setInspectMember struct {
 	Member            string `json:"member"`
+	PortType          string `json:"port_type,omitempty"`
 	PrinterName       string `json:"printer_name,omitempty"`
 	Target            string `json:"target,omitempty"`
 	DriverName        string `json:"driver_name,omitempty"`
@@ -529,6 +560,10 @@ func inspectSet(path string, stdout, stderr io.Writer) int {
 			if err == nil {
 				m := opened.Manifest
 				entry.PrinterName, entry.Target, entry.DriverName = m.Profile.PrinterName, m.Profile.Target, m.Profile.DriverName
+				entry.PortType = m.Profile.PortType
+				if entry.PortType == "usb" {
+					entry.Target = "USB printer"
+				}
 				entry.DriverEmbedded = m.Driver != nil
 				entry.DriverBytes = m.TotalPayloadBytes()
 				entry.IdentityConfirmed = m.Profile.Evidence.Provenance == "captured"
@@ -547,7 +582,11 @@ func inspectSet(path string, stdout, stderr io.Writer) int {
 			}
 			identity := ""
 			if !entry.IdentityConfirmed {
-				identity = " [identity unconfirmed; applies offline]"
+				if entry.PortType == "usb" {
+					identity = " [USB identity unconfirmed; review local queue]"
+				} else {
+					identity = " [identity unconfirmed; applies offline]"
+				}
 			}
 			fmt.Fprintf(stderr, "  - %s: %s at %s\n      Driver: %s -- %s%s\n", name, entry.PrinterName, entry.Target, entry.DriverName, driver, identity)
 		}

@@ -159,7 +159,7 @@ func (a *app) onCopyToClipboard() {
 			a.mw.Synchronize(func() {
 				setLabel(a.queueStatus, fmt.Sprintf("Copying %s (%d of %d)...", name, i+1, len(queues)))
 			})
-			path := filepath.Join(folder, uniqueClipboardName(written, bundleFileName(name)))
+			path := filepath.Join(folder, uniqueClipboardName(written, bundle.FileNameForQueue(queue)))
 			_, err := bundle.Create(context.Background(), a.env, a.collector(), bundle.CreateOptions{
 				QueueName: name, Path: path, CreatedBy: "SpoolSmith desktop " + versionString(), SourceHost: hostName(),
 			})
@@ -195,6 +195,10 @@ func (a *app) onCopyToClipboard() {
 
 func uniqueClipboardName(taken []string, name string) string {
 	stem, ext := strings.TrimSuffix(name, filepath.Ext(name)), filepath.Ext(name)
+	if strings.HasSuffix(strings.ToLower(name), ".usb.ssb") {
+		stem = strings.TrimSuffix(stem, ".usb")
+		ext = ".usb.ssb"
+	}
 	candidate := name
 	for n := 2; ; n++ {
 		clash := false

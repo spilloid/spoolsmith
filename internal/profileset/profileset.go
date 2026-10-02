@@ -124,6 +124,9 @@ func describeMember(path, name string) (ProfilePreview, string, error) {
 		File: name, PrinterName: profile.PrinterName, Target: profile.Target, DriverName: profile.DriverName,
 		Driver: opened.Manifest.Driver != nil,
 	}
+	if profile.PortType == "usb" {
+		preview.Target = "USB printer"
+	}
 	if profile.DriverPackage != nil {
 		preview.Archive = profile.DriverPackage.Archive
 	}

@@ -17,6 +17,7 @@ type Evidence struct {
 	HTTPTitle       string `json:"http_title,omitempty"`
 	HTTPModelString string `json:"http_model_string,omitempty"`
 	PJLID           string `json:"pjl_id,omitempty"`
+	IPPModel        string `json:"ipp_model,omitempty"`
 	OpenPorts       []int  `json:"open_ports,omitempty"`
 	MACVendor       string `json:"mac_vendor,omitempty"`
 	Hostname        string `json:"hostname,omitempty"`

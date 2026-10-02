@@ -60,10 +60,40 @@ Printers installed on this PC (2)
 This reads Windows' own `Get-Printer` and `Get-PrinterPort` and changes nothing. It needs no
 elevation.
 
-A queue marked `!` is one SpoolSmith will not reproduce, and the reason is always stated. The
-rule is narrow on purpose: only a RAW TCP 9100 queue pointed at a literal IP address can be
-rebuilt elsewhere and be confident it is the same queue. LPR queues, non-9100 ports, ports
-naming a host instead of an address, and virtual printers are refused rather than approximated.
+A queue marked `!` is one SpoolSmith cannot copy, and the reason is stated. RAW TCP 9100
+queues with an IP address or hostname can be copied. A hostname is resolved when copying;
+the file stores the resulting IP address and warns that a later DNS or DHCP change may make
+the address stale. An unresolvable hostname fails the copy. LPR queues and non-9100 TCP ports
+remain unsupported.
+
+Printer queues on a standard Windows `USB001`/`USB002` style port can also be copied,
+including their driver when Windows permits export.
+Their default filename ends in `.usb.ssb`. On the destination, a file carrying its driver
+can be applied before the printer is connected: SpoolSmith stages and registers the driver,
+with no queue change. If Windows already has a USB queue with the saved printer name, applying the file
+shows that queue and its local USB port for review and updates its driver. If the queue has
+a different name, choose it in the desktop review or pass `--usb-queue "Windows queue name"`
+to `spoolsmith apply`; SpoolSmith verifies that it still uses a USB port before changing it.
+You can choose **Offline setup** or pass `--offline` to prepare only the driver, even when
+another USB printer is installed. After connecting the printer and letting Windows create
+its queue, apply the same file again to review the mapping. A different queue is never
+selected automatically.
+It does not reuse the source PC's USB port number. Check a test page after mapping.
+
+WSD queues can be copied when SpoolSmith can verify the installed port's device ID at a
+current IP address. It checks Windows' WSD device location with a live device response, or
+uses WS-Discovery when that location cannot be verified. WSD queues prefer a RAW TCP/IP
+mapping. If the source uses Microsoft's IPP Class Driver, SpoolSmith first looks for an
+existing RAW 9100 queue at that exact IP with an unambiguous compatible driver mapping;
+that driver's files can then travel in the bundle. It does not guess from unrelated OEM
+drivers installed on the PC. When no usable RAW mapping is known, a matching IPP endpoint
+is the fallback for the IPP Class Driver. Other WSD drivers require reachable RAW 9100.
+The file stores a literal IP address and warns that it is a snapshot. An offline
+printer or one without a verified supported endpoint cannot be converted by this workflow.
+For RAW conversions, a reachable port confirms transport availability but does not prove
+the copied driver will print correctly; check a test page after applying.
+The IPP lookup currently checks common printer paths on TCP 631. An IPPS-only printer or
+one using another path is reported as unresolved rather than assigned a guessed URL.
 
 `--json` gives the same listing machine-readably; `--copyable` drops the ones you cannot use.
 
@@ -103,6 +133,11 @@ A settings-only bundle carries the mapping only, and `apply` fails on a target P
 the driver — telling you so rather than installing something else. Some drivers cannot be
 exported at all: an inbox or Windows Update driver has no driver-store package to copy, and the
 target machine will need to obtain it the same way this one did.
+
+For a WSD copy that falls back to Microsoft's IPP Class Driver, SpoolSmith saves the verified IPP URL
+and leaves the inbox driver out of the file. Windows selects that driver when it adds the
+printer by IPP on the destination. The destination needs an IPP-capable Windows version and
+must reach the printer when creating a new queue.
 
 `--settings-only` always leaves the driver out, for example when the destination should use a
 driver you install and manage yourself. `--include-driver` from earlier releases is accepted as
