@@ -239,6 +239,9 @@ func (a *app) checkSavedStatus(owner walk.Form, path string) {
 		return
 	}
 	text := "This PC matches the saved queue, driver and RAW TCP 9100 settings."
+	if p.PortType == "ipp" {
+		text = "This PC matches the saved IPP queue, driver and endpoint."
+	}
 	if !status.Compliant {
 		text = "This PC differs from the saved setup:\r\n\r\n" + strings.Join(status.Mismatches, "\r\n")
 	}

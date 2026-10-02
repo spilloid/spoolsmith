@@ -21,7 +21,7 @@ func bulkCopyInventoryText(queues []install.InstalledQueue) string {
 		if reason := q.CopyBlockedReason(); reason != "" {
 			fmt.Fprintf(&text, "Skip: %s\r\n  %s\r\n\r\n", q.PrinterName, reason)
 		} else {
-			fmt.Fprintf(&text, "%s -> %s\r\n  %s | %s\r\n\r\n", q.PrinterName, bundle.FileName(q.PrinterName), q.HostAddress, q.DriverName)
+			fmt.Fprintf(&text, "%s -> %s\r\n  %s | %s\r\n\r\n", q.PrinterName, bundle.FileNameForQueue(q), q.HostAddress, q.DriverName)
 		}
 	}
 	return text.String()

@@ -250,7 +250,7 @@ func (a *app) updateQueueActions() {
 	}
 	a.copyBtn.SetEnabled(ready && len(copyable) > 0)
 	queue, single := a.selectedQueue()
-	setShown(a.repointBtn, single && queue.Copyable())
+	setShown(a.repointBtn, single && queue.Copyable() && strings.TrimSpace(queue.HostAddress) != "")
 	setShown(a.removeBtn, single)
 	a.repointBtn.SetEnabled(ready)
 	a.removeBtn.SetEnabled(ready)
@@ -273,6 +273,9 @@ func selectionDetail(selected []install.InstalledQueue, elevated bool) string {
 		}
 		if q.Shared {
 			facts = append(facts, "shared with other computers")
+		}
+		if warning := q.CopyWarning(); warning != "" {
+			facts = append(facts, warning)
 		}
 		line := strings.Join(facts, " · ")
 		if !elevated {
@@ -317,7 +320,7 @@ func (a *app) onCopyQueue(queue install.InstalledQueue) {
 	var copyButton, cancelButton *walk.PushButton
 	var running bool
 
-	suggested := filepath.Join(defaultCopyDirectory(), bundleFileName(queue.PrinterName))
+	suggested := filepath.Join(defaultCopyDirectory(), bundle.FileNameForQueue(queue))
 	driverLabel := "Include the driver where possible, so the other PC does not need it already"
 	if !isElevated() {
 		driverLabel = "Include the driver where possible (needs administrator; otherwise settings only)"
@@ -411,8 +414,13 @@ func (a *app) onCopyQueue(queue install.InstalledQueue) {
 func copySuccessMessage(path string, manifest bundle.Manifest, driverNotIncluded string) string {
 	text := fmt.Sprintf("Saved %s\r\n\r\nPrinter: %s\r\nAddress: %s\r\nDriver: %s\r\n\r\n",
 		path, manifest.Profile.PrinterName, manifest.Profile.Target, manifest.Profile.DriverName)
+	if manifest.Profile.PortType == "usb" {
+		text = fmt.Sprintf("Saved %s\r\n\r\nUSB printer: %s\r\nSource port: %s\r\nDriver: %s\r\n\r\nYou can prepare the driver on the other PC before connecting the printer. Apply this file again after Windows creates its USB queue to review the mapping.\r\n\r\n", path, manifest.Profile.PrinterName, manifest.Profile.SourcePort, manifest.Profile.DriverName)
+	} else if strings.Contains(manifest.Profile.Evidence.ProvenanceNote, "Windows port uses hostname") || strings.Contains(manifest.Profile.Evidence.ProvenanceNote, "Windows WSD port") {
+		text += "Warning: " + manifest.Profile.Evidence.ProvenanceNote + "\r\n\r\n"
+	}
 	if manifest.Profile.Evidence.Provenance != "captured" {
-		text += bundle.UnconfirmedIdentityNotice + "\r\n\r\n"
+		text += bundle.IdentityNotice(manifest.Profile) + "\r\n\r\n"
 	}
 	if manifest.Driver == nil {
 		text += "The driver was not included, so the other PC must already have this driver installed.\r\n"
@@ -428,7 +436,7 @@ func copySuccessMessage(path string, manifest bundle.Manifest, driverNotIncluded
 
 func (a *app) onRepointQueue() {
 	queue, ok := a.selectedQueue()
-	if !ok || !queue.Copyable() {
+	if !ok || !queue.Copyable() || strings.TrimSpace(queue.HostAddress) == "" {
 		return
 	}
 	var dialog *walk.Dialog

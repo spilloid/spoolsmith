@@ -140,9 +140,13 @@ func extractSet(path string) ([]setEntry, string, error) {
 			driver = "driver included"
 		}
 		opened.Close()
+		target := profile.Target
+		if profile.PortType == "usb" {
+			target = "USB printer"
+		}
 		entries = append(entries, setEntry{
 			path:  extracted,
-			label: fmt.Sprintf("%s  ·  %s  ·  %s", profile.PrinterName, profile.Target, driver),
+			label: fmt.Sprintf("%s  ·  %s  ·  %s", profile.PrinterName, target, driver),
 		})
 	}
 	return entries, set.Note, nil

@@ -29,20 +29,25 @@ type Environment interface {
 
 // Plan is the complete, reviewable set of commands for one operation.
 type Plan struct {
-	PreviousPortName string                `json:"previous_port_name,omitempty"`
-	IPAddress        string                `json:"ip_address,omitempty"`
-	PrinterName      string                `json:"printer_name"`
-	PortName         string                `json:"port_name"`
-	DriverName       string                `json:"driver_name,omitempty"`
-	Family           catalog.Family        `json:"family,omitempty"`
-	Driver           catalog.DriverPackage `json:"driver,omitempty"`
-	Commands         []string              `json:"commands"`
-	ForcedOverride   bool                  `json:"forced_override"`
-	UpdateExisting   bool                  `json:"update_existing"`
-	Offline          bool                  `json:"offline,omitempty"`
-	DriverPackage    *PackageSelection     `json:"driver_package,omitempty"`
-	BundleDriver     *BundleDriver         `json:"bundle_driver,omitempty"`
-	PublisherTrust   *PublisherTrust       `json:"publisher_trust,omitempty"`
+	USB               bool                  `json:"usb,omitempty"`
+	USBOffline        bool                  `json:"usb_offline,omitempty"`
+	IPP               bool                  `json:"ipp,omitempty"`
+	IPPURL            string                `json:"ipp_url,omitempty"`
+	SourcePrinterName string                `json:"source_printer_name,omitempty"`
+	PreviousPortName  string                `json:"previous_port_name,omitempty"`
+	IPAddress         string                `json:"ip_address,omitempty"`
+	PrinterName       string                `json:"printer_name"`
+	PortName          string                `json:"port_name"`
+	DriverName        string                `json:"driver_name,omitempty"`
+	Family            catalog.Family        `json:"family,omitempty"`
+	Driver            catalog.DriverPackage `json:"driver,omitempty"`
+	Commands          []string              `json:"commands"`
+	ForcedOverride    bool                  `json:"forced_override"`
+	UpdateExisting    bool                  `json:"update_existing"`
+	Offline           bool                  `json:"offline,omitempty"`
+	DriverPackage     *PackageSelection     `json:"driver_package,omitempty"`
+	BundleDriver      *BundleDriver         `json:"bundle_driver,omitempty"`
+	PublisherTrust    *PublisherTrust       `json:"publisher_trust,omitempty"`
 }
 
 // Result records the plan and every command attempted.
@@ -160,6 +165,22 @@ func Preflight(ctx context.Context, env Environment, plan Plan) (PreflightResult
 	result.Elevated = elevated
 	if !elevated {
 		return result, ErrNotElevated
+	}
+	if plan.IPP {
+		// Add-Printer -IppURL performs directed discovery and asks Windows to
+		// select its inbox IPP class driver. On a clean machine that driver may
+		// not be registered until this operation, so the normal driver-presence
+		// gate does not apply. The generated command checks the resulting queue.
+		if plan.DriverName != "Microsoft IPP Class Driver" {
+			return result, errors.New("install: IPP plan requires Microsoft IPP Class Driver")
+		}
+		if err := validateIPPURL(plan.IPPURL, plan.IPAddress); err != nil {
+			return result, err
+		}
+		if plan.DriverPackage != nil || plan.BundleDriver != nil {
+			return result, errors.New("install: IPP class driver is selected by Windows and cannot use a bundled or vendor driver package")
+		}
+		return result, nil
 	}
 	present, err := env.DriverPresent(ctx, plan.DriverName)
 	result.DriverChecked = true

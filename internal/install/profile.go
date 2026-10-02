@@ -4,7 +4,9 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/url"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/spilloid/spoolsmith/internal/catalog"
@@ -24,7 +26,10 @@ import (
 // along.
 type Profile struct {
 	Version       int               `json:"version"`
+	PortType      string            `json:"port_type,omitempty"`
+	SourcePort    string            `json:"source_port,omitempty"`
 	Target        string            `json:"target"`
+	IPPURL        string            `json:"ipp_url,omitempty"`
 	PrinterName   string            `json:"printer_name"`
 	DriverName    string            `json:"driver_name"`
 	Evidence      evidence.Evidence `json:"evidence"`
@@ -42,8 +47,28 @@ func (p Profile) Validate() error {
 	if p.Version != 1 {
 		return errors.New("profile: unsupported version (expected 1)")
 	}
-	if net.ParseIP(p.Target) == nil {
+	if p.PortType != "" && p.PortType != "usb" && p.PortType != "ipp" {
+		return errors.New("profile: unsupported port type")
+	}
+	if p.PortType == "usb" {
+		if p.Target != "" || p.IPPURL != "" || !isUSBPort(p.SourcePort) {
+			return errors.New("profile: USB copies require a USB source port and no IP target")
+		}
+	} else if net.ParseIP(p.Target) == nil {
 		return errors.New("profile: target must be a literal IP address")
+	}
+	if p.PortType == "ipp" {
+		if p.DriverName != "Microsoft IPP Class Driver" {
+			return errors.New("profile: IPP copies require Microsoft IPP Class Driver")
+		}
+		if p.DriverPackage != nil {
+			return errors.New("profile: IPP copies cannot specify a vendor driver package")
+		}
+		if err := validateIPPURL(p.IPPURL, p.Target); err != nil {
+			return err
+		}
+	} else if p.IPPURL != "" {
+		return errors.New("profile: ipp_url requires port_type ipp")
 	}
 	for _, value := range []struct{ name, text string }{{"printer name", p.PrinterName}, {"driver name", p.DriverName}} {
 		if strings.TrimSpace(value.text) == "" {
@@ -56,7 +81,7 @@ func (p Profile) Validate() error {
 	switch p.Evidence.Provenance {
 	case "captured":
 		if !p.hasCapturedIdentity() {
-			return errors.New("profile: HTTP, PJL, or SNMP identity is required; capture again when the printer is awake")
+			return errors.New("profile: HTTP, PJL, SNMP, or IPP identity is required; capture again when the printer is awake")
 		}
 	case "unconfirmed":
 		// The source printer never answered when this profile was captured
@@ -68,6 +93,35 @@ func (p Profile) Validate() error {
 		}
 	default:
 		return errors.New("profile: captured or unconfirmed evidence is required")
+	}
+	return nil
+}
+
+// validateIPPURL requires a complete URL whose host is the saved literal IP.
+// This prevents a profile from silently resolving a hostname or addressing a
+// different printer than the one whose identity was captured.
+func validateIPPURL(value, target string) error {
+	if err := validatePlanValue("IPP URL", value); err != nil {
+		return err
+	}
+	u, err := url.Parse(value)
+	if err != nil || u == nil || u.Opaque != "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
+		return errors.New("profile: ipp_url must be an IPP endpoint URL without credentials, query, or fragment")
+	}
+	switch strings.ToLower(u.Scheme) {
+	case "ipp", "ipps", "http", "https":
+	default:
+		return errors.New("profile: ipp_url must use ipp, ipps, http, or https")
+	}
+	ip := net.ParseIP(u.Hostname())
+	if ip == nil || !ip.Equal(net.ParseIP(target)) || u.Path == "" || !strings.HasPrefix(u.Path, "/") {
+		return errors.New("profile: ipp_url must name an endpoint at the target literal IP address")
+	}
+	if port := u.Port(); port != "" {
+		n, err := strconv.Atoi(port)
+		if err != nil || n < 1 || n > 65535 {
+			return errors.New("profile: ipp_url has an invalid port number")
+		}
 	}
 	return nil
 }
@@ -96,7 +150,7 @@ func (p *Profile) ResolvePackagePath(profilePath string) error {
 // straight to its offline fallback instead of probing for a comparison that
 // can never succeed.
 func (p Profile) hasCapturedIdentity() bool {
-	return strings.TrimSpace(p.Evidence.HTTPTitle) != "" || strings.TrimSpace(p.Evidence.PJLID) != "" || strings.TrimSpace(p.Evidence.SNMPSysDescr) != ""
+	return strings.TrimSpace(p.Evidence.HTTPTitle) != "" || strings.TrimSpace(p.Evidence.PJLID) != "" || strings.TrimSpace(p.Evidence.SNMPSysDescr) != "" || strings.TrimSpace(p.Evidence.IPPModel) != ""
 }
 
 func (p Profile) resolution(current evidence.Evidence) (catalog.ResolutionResult, error) {
@@ -104,9 +158,9 @@ func (p Profile) resolution(current evidence.Evidence) (catalog.ResolutionResult
 		return catalog.ResolutionResult{}, err
 	}
 	matched := false
-	hasModelSource := strings.TrimSpace(p.Evidence.HTTPTitle) != "" || strings.TrimSpace(p.Evidence.PJLID) != ""
-	for index, pair := range [][2]string{{p.Evidence.HTTPTitle, current.HTTPTitle}, {p.Evidence.PJLID, current.PJLID}, {p.Evidence.SNMPSysDescr, current.SNMPSysDescr}} {
-		field := []string{"HTTP title", "PJL identity", "SNMP description"}[index]
+	hasModelSource := strings.TrimSpace(p.Evidence.HTTPTitle) != "" || strings.TrimSpace(p.Evidence.PJLID) != "" || strings.TrimSpace(p.Evidence.IPPModel) != ""
+	for index, pair := range [][2]string{{p.Evidence.HTTPTitle, current.HTTPTitle}, {p.Evidence.PJLID, current.PJLID}, {p.Evidence.SNMPSysDescr, current.SNMPSysDescr}, {p.Evidence.IPPModel, current.IPPModel}} {
+		field := []string{"HTTP title", "PJL identity", "SNMP description", "IPP model"}[index]
 		if strings.TrimSpace(pair[0]) == "" {
 			continue
 		}
@@ -116,7 +170,7 @@ func (p Profile) resolution(current evidence.Evidence) (catalog.ResolutionResult
 		if strings.TrimSpace(pair[0]) != strings.TrimSpace(pair[1]) {
 			return catalog.ResolutionResult{}, fmt.Errorf("profile: %s changed: saved %q, observed %q; verify the device and recapture if appropriate", field, pair[0], pair[1])
 		}
-		if index < 2 || !hasModelSource {
+		if index != 2 || !hasModelSource {
 			matched = true
 		}
 	}
@@ -130,5 +184,8 @@ func (p Profile) resolution(current evidence.Evidence) (catalog.ResolutionResult
 func (p Profile) selectedResolution() catalog.ResolutionResult {
 	family := catalog.Family{ID: "operator-profile", Manufacturer: "Operator selected"}
 	driver := catalog.DriverPackage{FamilyID: family.ID, Name: p.DriverName, WindowsDriverName: p.DriverName, Source: "Operator-selected installed Windows driver", Strategy: "existing-windows-driver"}
+	if p.PortType == "ipp" {
+		driver.Source, driver.Strategy = "Windows inbox Microsoft IPP Class Driver", "windows-ipp-discovery"
+	}
 	return catalog.ResolutionResult{NormalizedModel: p.PrinterName, Family: &family, Driver: &driver, Confidence: 0, Uncertain: []string{"driver compatibility is operator-selected; captured identity is not device authentication"}}
 }

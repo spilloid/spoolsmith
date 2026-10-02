@@ -5,6 +5,9 @@ import "fmt"
 // These guards execute again at mutation time. Inventory failures are fatal;
 // absence is determined by filtering a successful enumeration, never by hiding errors.
 func installCommands(plan Plan) []string {
+	if plan.IPP {
+		return installIPPCommands(plan)
+	}
 	name, port, driver, ip := powerShellString(plan.PrinterName), powerShellString(plan.PortName), powerShellString(plan.DriverName), powerShellString(plan.IPAddress)
 	queue := "$printer = @(Get-Printer -ErrorAction Stop | Where-Object { $_.Name -eq " + name + " }); "
 	portQuery := "$port = @(Get-PrinterPort -ErrorAction Stop | Where-Object { $_.Name -eq " + port + " }); "
@@ -21,6 +24,35 @@ func installCommands(plan Plan) []string {
 	}
 	second += " else { 'Unchanged printer' }"
 	return []string{powerShellCommand(first), powerShellCommand(second)}
+}
+
+// Add-Printer's IppURL parameter performs directed discovery and chooses the
+// driver and port itself. An existing queue is never repointed implicitly:
+// only a queue whose IPP monitor and full endpoint are visible and match the
+// reviewed profile is reused. After creation we apply the same checks to the
+// Windows-selected driver and port before reporting success.
+func installIPPCommands(plan Plan) []string {
+	name, driver, endpoint := powerShellString(plan.PrinterName), powerShellString(plan.DriverName), powerShellString(plan.IPPURL)
+	inner := "$printer = @(Get-Printer -ErrorAction Stop | Where-Object { $_.Name -eq " + name + " }); " +
+		"if ($printer.Count -gt 1) { throw 'Multiple matching printers' }; " +
+		"if ($printer.Count -eq 0) { Add-Printer -Name " + name + " -IppURL " + endpoint + " -ErrorAction Stop; $created = $true; $printer = @(Get-Printer -ErrorAction Stop | Where-Object { $_.Name -eq " + name + " }) }; " +
+		"if ($printer.Count -ne 1) { throw 'Expected IPP printer is missing after directed discovery' }; " +
+		"if ($printer[0].DriverName -ne " + driver + ") { throw 'Windows selected a different driver for the IPP printer; review the queue' }; " +
+		"$port = @(Get-PrinterPort -ErrorAction Stop | Where-Object { $_.Name -eq $printer[0].PortName }); " +
+		"if ($port.Count -ne 1) { throw 'Expected IPP printer port is missing' }; " +
+		"$connection = Get-SpoolSmithIPPConnection $printer[0] $port[0]; if (-not $connection.Verified) { throw 'Printer is not on a verified IPP port' }; " +
+		"if ((Get-SpoolSmithIPPKey $connection.Endpoint) -cne (Get-SpoolSmithIPPKey " + endpoint + ")) { throw 'IPP port endpoint differs from the reviewed URL or Windows does not expose it' }; " +
+		"if ($created) { 'Created IPP printer' } else { 'Unchanged IPP printer' }"
+	// Only a queue this command created may be rolled back. In particular, an
+	// existing conflicting queue is never removed. Report cleanup errors with
+	// the original post-create verification failure so an operator can inspect
+	// any partial state.
+	command := ippConnectionFunctions + "$created = $false; try { " + inner + " } catch { $failure = $_.Exception.Message; " +
+		"if ($created) { try { $cleanup = @(Get-Printer -ErrorAction Stop | Where-Object { $_.Name -eq " + name + " }); " +
+		"if ($cleanup.Count -gt 1) { throw 'multiple matching queues after failed IPP creation' }; " +
+		"if ($cleanup.Count -eq 1) { Remove-Printer -InputObject $cleanup[0] -ErrorAction Stop; $cleanupNote = 'newly created IPP queue removed' } else { $cleanupNote = 'newly created IPP queue already absent' } " +
+		"} catch { throw ($failure + '; cleanup failed: ' + $_.Exception.Message) }; throw ($failure + '; ' + $cleanupNote) }; throw }"
+	return []string{powerShellCommand(command)}
 }
 
 func uninstallCommands(plan Plan, purgeDriver bool) []string {

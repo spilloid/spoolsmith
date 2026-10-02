@@ -40,6 +40,7 @@ type CreateOptions struct {
 // CreateResult reports what was written.
 type CreateResult struct {
 	Manifest Manifest
+	Warning  string
 	// ExportDir is the retained driver-export working directory, empty when no
 	// driver was carried.
 	ExportDir string
@@ -119,14 +120,25 @@ func Create(ctx context.Context, env install.Environment, collect Collector, opt
 	if err := ctx.Err(); err != nil {
 		return CreateResult{}, err
 	}
+	if cloned.IPPURL != "" {
+		// The Microsoft IPP Class Driver is selected by Windows when it adds the
+		// directed IPP printer. Its inbox files are not a transferable vendor
+		// driver package, so there is no useful export to attempt here.
+		tryDriver = false
+		cannotExport = "Windows selects its inbox IPP Class Driver during directed discovery"
+	}
 
 	// The printer's own evidence is captured here, not copied from the queue,
 	// so applying the bundle elsewhere still checks it is talking to the same
 	// device rather than trusting the file.
-	report(fmt.Sprintf("Checking the printer at %s...", cloned.HostAddress))
-	probed, confirmed, err := collectIdentity(ctx, collect, cloned.HostAddress, report)
-	if err != nil {
-		return CreateResult{}, err
+	var probed probe.Result
+	confirmed := false
+	if !cloned.USB {
+		report(fmt.Sprintf("Checking the printer at %s...", cloned.HostAddress))
+		probed, confirmed, err = collectIdentity(ctx, collect, cloned.HostAddress, report)
+		if err != nil {
+			return CreateResult{}, err
+		}
 	}
 	if err := ctx.Err(); err != nil {
 		return CreateResult{}, err
@@ -139,6 +151,16 @@ func Create(ctx context.Context, env install.Environment, collect Collector, opt
 		DriverName:  cloned.DriverName,
 		Evidence:    probed.Evidence,
 	}
+	if cloned.USB {
+		profile.PortType = "usb"
+		profile.SourcePort = cloned.PortName
+		profile.Evidence.Provenance = "unconfirmed"
+		profile.Evidence.ProvenanceNote = "USB identity cannot be confirmed from a network probe; connect the printer on the destination before applying"
+	}
+	if cloned.IPPURL != "" {
+		profile.PortType = "ipp"
+		profile.IPPURL = cloned.IPPURL
+	}
 	if !confirmed {
 		// The printer wouldn't answer -- still worth writing a bundle from
 		// what Windows already knows about this queue, rather than sending
@@ -147,7 +169,9 @@ func Create(ctx context.Context, env install.Environment, collect Collector, opt
 		// of a degraded copy line up on the same guarantee: nothing here was
 		// ever confirmed against the real device.
 		profile.Evidence.Provenance = "unconfirmed"
-		profile.Evidence.ProvenanceNote = fmt.Sprintf("the printer at %s did not answer during copy; identity was never confirmed", cloned.HostAddress)
+		if !cloned.USB {
+			profile.Evidence.ProvenanceNote = fmt.Sprintf("the printer at %s did not answer during copy; identity was never confirmed", cloned.HostAddress)
+		}
 	}
 	if err := profile.Validate(); err != nil {
 		return CreateResult{}, err
@@ -162,7 +186,33 @@ func Create(ctx context.Context, env install.Environment, collect Collector, opt
 	}
 
 	result := CreateResult{}
+	if cloned.USB {
+		result.Warning = "USB printer file: the driver can be prepared before the printer is connected; apply the file again after Windows detects the USB queue to review the mapping"
+		report("Warning: " + result.Warning)
+	}
+	if cloned.SourceHostname != "" {
+		result.Warning = fmt.Sprintf("Windows port uses hostname %q; this copy maps it to %s. Check the address before applying if DNS or DHCP changes", cloned.SourceHostname, cloned.HostAddress)
+		profile.Evidence.ProvenanceNote = strings.TrimSpace(strings.Join([]string{profile.Evidence.ProvenanceNote, result.Warning}, " "))
+		manifest.Profile = profile
+		report("Warning: " + result.Warning)
+	}
+	if cloned.SourceWSDPort != "" {
+		if cloned.IPPURL != "" {
+			result.Warning = fmt.Sprintf("Windows WSD port %q (device %s) was verified at %s with IPP endpoint %s; this file installs an IPP printer at that address, so confirm it if the printer moves and check a test page after applying", cloned.SourceWSDPort, cloned.SourceWSDDeviceID, cloned.HostAddress, cloned.IPPURL)
+		} else {
+			result.Warning = fmt.Sprintf("Windows WSD port %q (device %s) was verified at %s and RAW TCP 9100 was available; this file installs an IP port, so confirm the address if the printer moves and check a test page because an open RAW port does not prove driver compatibility", cloned.SourceWSDPort, cloned.SourceWSDDeviceID, cloned.HostAddress)
+		}
+		if cloned.SourceDriverQueue != "" {
+			result.Warning += fmt.Sprintf(". Driver %q comes from this printer's existing RAW mapping %q; the WSD source used %q", cloned.DriverName, cloned.SourceDriverQueue, cloned.SourceDriverName)
+		}
+		profile.Evidence.ProvenanceNote = strings.TrimSpace(strings.Join([]string{profile.Evidence.ProvenanceNote, result.Warning}, " "))
+		manifest.Profile = profile
+		report("Warning: " + result.Warning)
+	}
 	needsDriver := func(why string) string {
+		if cloned.IPPURL != "" {
+			return fmt.Sprintf("%s; Windows must support IPP directed discovery and select %q on the other PC", why, cloned.DriverName)
+		}
 		return fmt.Sprintf("%s; the other PC must already have %q installed", why, cloned.DriverName)
 	}
 	notIncluded := func(why string) {

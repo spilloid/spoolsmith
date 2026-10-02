@@ -603,8 +603,12 @@ public sealed class FunctionalTests : IDisposable
 
     internal static AutomationElement Find(AutomationElement root, string accessibleName)
     {
-        return root.FindFirstDescendant(cf => cf.ByName(accessibleName))
-            ?? throw new InvalidOperationException($"No control with accessible name \"{accessibleName}\" was found.");
+        // Native controls can appear in UI Automation after the page itself.
+        // Use the same bounded rendering wait as button lookups.
+        AutomationElement? element = null;
+        WaitUntil(() => (element = root.FindFirstDescendant(cf => cf.ByName(accessibleName))) != null,
+            $"No control with accessible name \"{accessibleName}\" was found.", 5_000);
+        return element!;
     }
 
     /// <summary>

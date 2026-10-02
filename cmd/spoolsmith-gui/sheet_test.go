@@ -33,7 +33,8 @@ func TestClassifyCommandKeepsPortAndQueueApart(t *testing.T) {
 		cmdDriver: stepDriver, cmdPort: stepPort, cmdQueue: stepQueue,
 		cmdRmQ: stepRemoveQueue, cmdRmPort: stepRemovePort, cmdRmDrv: stepRemoveDriver,
 		`Add-PrinterDriver -Name "D"`: stepDriver,
-		`Get-Something`:               stepUnknown,
+		`Add-Printer -Name "IPP" -IppURL "ipp://192.0.2.10/ipp/print"; if ($created) { Remove-Printer -InputObject $cleanup[0] }`: stepQueue,
+		`Get-Something`: stepUnknown,
 	}
 	for command, want := range cases {
 		if got := classifyCommand(command); got != want {

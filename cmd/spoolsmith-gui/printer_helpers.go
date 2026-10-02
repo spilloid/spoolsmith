@@ -55,6 +55,9 @@ func suggestedProfileFile(dir, target string) string {
 }
 
 func profileSummary(p install.Profile, path string) string {
+	if p.PortType == "usb" {
+		return fmt.Sprintf("%s\r\n\r\nUSB printer (source port %s)\r\nDriver: %s\r\nSaved file: %s\r\n\r\nPrepare the driver now, or connect the printer and review its Windows USB queue.", p.PrinterName, p.SourcePort, p.DriverName, path)
+	}
 	text := fmt.Sprintf("%s\r\n\r\nIP address: %s\r\nDriver: %s\r\nDetected printer: %s\r\nSaved file: %s", p.PrinterName, p.Target, p.DriverName, printerIdentity(p.Evidence), path)
 	if p.DriverPackage != nil {
 		text += "\r\nDriver package: " + p.DriverPackage.ID

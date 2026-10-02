@@ -39,6 +39,9 @@ type operation struct {
 	Target      string
 	// NewAddress is the destination for a repoint.
 	NewAddress string
+	// USBQueue names the destination's existing USB printer when its name
+	// differs from the name saved in a USB printer file.
+	USBQueue string
 	// Offline skips the live identity check, and must be visible wherever the
 	// operation is described.
 	Offline        bool
@@ -98,6 +101,9 @@ func (o operation) Summary() string {
 	}
 	if o.Kind == opApply && o.UpdateExisting {
 		text += " An existing queue will be updated to match the file."
+	}
+	if o.USBQueue != "" {
+		text += " Map it to Windows USB queue " + quoted(o.USBQueue) + "."
 	}
 	if o.Offline {
 		text += " The printer will not be contacted, so its identity cannot be checked."
@@ -160,6 +166,9 @@ func (o operation) normalized() operation {
 	if o.Kind != opApply {
 		o.UpdateExisting = false
 		o.BundlePath = ""
+	}
+	if o.Kind != opApply && o.Kind != opInstall && o.Kind != opConfigure {
+		o.USBQueue = ""
 	}
 	if o.ProfilePath != "" {
 		// A profile supplies the family, so a catalog override is meaningless.

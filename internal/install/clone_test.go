@@ -3,6 +3,7 @@ package install
 import (
 	"context"
 	"io"
+	"net"
 	"strings"
 	"testing"
 
@@ -18,6 +19,12 @@ type cloneFakeEnvironment struct {
 	portErr   error
 	export    DriverExport
 	exportErr error
+	wsd       WSDResolution
+	wsdErr    error
+}
+
+func (f *cloneFakeEnvironment) ResolveWSDPort(context.Context, string, string) (WSDResolution, error) {
+	return f.wsd, f.wsdErr
 }
 
 func (f *cloneFakeEnvironment) LookupPort(context.Context, string) (PortConfiguration, error) {
@@ -60,9 +67,9 @@ func TestCloneQueueFailsClosedOnQueuesItCannotReproduce(t *testing.T) {
 			want: "only maps the RAW 9100 default",
 		},
 		{
-			name: "host name rather than address",
-			port: PortConfiguration{PortName: "IP_printer.local", HostAddress: "printer.local", PortNumber: 9100, Protocol: 1},
-			want: "host name rather than a literal IP",
+			name: "unresolved hostname",
+			port: PortConfiguration{PortName: "IP_printer.invalid", HostAddress: "printer.invalid", PortNumber: 9100, Protocol: 1},
+			want: "resolve printer hostname",
 		},
 		{
 			name: "no host address",
@@ -77,6 +84,28 @@ func TestCloneQueueFailsClosedOnQueuesItCannotReproduce(t *testing.T) {
 				t.Fatalf("CloneQueue() = %v, want an error containing %q", err, tt.want)
 			}
 		})
+	}
+}
+
+func TestCloneQueueConvertsHostnameAndKeepsSource(t *testing.T) {
+	cloned, err := CloneQueue(context.Background(), cloneEnv(PortConfiguration{PortName: "IP_localhost", HostAddress: "localhost", PortNumber: 9100, Protocol: 1}), "Test Printer")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if net.ParseIP(cloned.HostAddress) == nil || cloned.SourceHostname != "localhost" {
+		t.Fatalf("CloneQueue() = %#v", cloned)
+	}
+}
+
+func TestCloneQueueUSB(t *testing.T) {
+	env := cloneEnv(PortConfiguration{PortName: "USB001"})
+	env.configuration.PortName = "USB001"
+	cloned, err := CloneQueue(context.Background(), env, "Test Printer")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cloned.USB || cloned.PortName != "USB001" || cloned.HostAddress != "" {
+		t.Fatalf("CloneQueue() = %#v", cloned)
 	}
 }
 

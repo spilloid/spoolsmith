@@ -166,7 +166,7 @@ func run(ctx context.Context, args []string, input io.Reader, stdout, stderr io.
 		if err != nil {
 			return usageError(stdout, stderr, args[0], err)
 		}
-		if args[0] == "install" && options.Profile == nil {
+		if args[0] == "install" && options.Profile == nil && !options.WindowsDriver {
 			deprecationNotice(stderr, "install <ip>", "Copy a working printer with `copy` and `apply`, or save one with `profile capture` and `add --profile`.")
 		}
 		if args[0] == "configure" {
@@ -236,7 +236,7 @@ func parseInstallArgs(args []string) (install.InstallOptions, error) {
 	for index := 0; index < len(args); index++ {
 		arg := args[index]
 		switch arg {
-		case "--yes", "--json", "--non-interactive", "--dry-run", "--what-if", "--offline":
+		case "--yes", "--json", "--non-interactive", "--dry-run", "--what-if", "--offline", "--windows-driver":
 			key := arg
 			if arg == "--what-if" {
 				key = "--dry-run"
@@ -246,6 +246,8 @@ func parseInstallArgs(args []string) (install.InstallOptions, error) {
 			}
 			seen[key] = true
 			switch key {
+			case "--windows-driver":
+				options.WindowsDriver = true
 			case "--offline":
 				options.Offline = true
 			case "--yes":
@@ -258,6 +260,13 @@ func parseInstallArgs(args []string) (install.InstallOptions, error) {
 			case "--dry-run":
 				options.DryRun = true
 			}
+		case "--name":
+			if seen[arg] || index+1 >= len(args) || strings.TrimSpace(args[index+1]) == "" || strings.HasPrefix(args[index+1], "-") {
+				return options, errors.New("--name requires one queue name")
+			}
+			seen[arg] = true
+			index++
+			options.PrinterName = args[index]
 		case "--profile":
 			if seen[arg] || index+1 >= len(args) || strings.HasPrefix(args[index+1], "-") {
 				return options, errors.New("--profile requires one file")
@@ -270,6 +279,13 @@ func parseInstallArgs(args []string) (install.InstallOptions, error) {
 			}
 			options.Profile = &p
 			options.BundleDriver = driver
+		case "--usb-queue":
+			if seen[arg] || index+1 >= len(args) || strings.TrimSpace(args[index+1]) == "" || strings.HasPrefix(args[index+1], "-") {
+				return options, errors.New("--usb-queue requires one Windows USB printer queue name")
+			}
+			seen[arg] = true
+			index++
+			options.USBQueue = args[index]
 		case "--force-family":
 			if seen[arg] || index+1 >= len(args) {
 				return options, errors.New("--force-family requires one non-empty family ID")
@@ -301,11 +317,23 @@ func parseInstallArgs(args []string) (install.InstallOptions, error) {
 			options.Target = arg
 		}
 	}
+	if options.WindowsDriver {
+		if options.Target == "" || options.PrinterName == "" || options.Profile != nil || options.ForceFamily != "" || options.Offline || options.USBQueue != "" {
+			return options, errors.New("use add <ip> --windows-driver --name <queue>; cannot combine with profile, offline, USB, or family options")
+		}
+		return options, nil
+	}
+	if options.PrinterName != "" {
+		return options, errors.New("--name requires --windows-driver")
+	}
 	if options.Profile != nil {
 		if options.Target != "" || options.ForceFamily != "" {
 			return options, errors.New("--profile cannot be combined with a target or --force-family")
 		}
 		return options, nil
+	}
+	if options.USBQueue != "" {
+		return options, errors.New("--usb-queue requires a USB printer file passed with --profile")
 	}
 	if options.Offline {
 		return options, errors.New("--offline requires an administrator-prevalidated --profile")
@@ -423,7 +451,7 @@ var commandUsage = map[string]string{
 	"printers":     "spoolsmith printers [--copyable] [--json]   installed queues, and which can be copied\n",
 	"status":       "spoolsmith status --profile <file> [--json] local configuration only, no network\n",
 	"copy":         copyUsage,
-	"apply": "spoolsmith apply <file.ssb|set.zip> [--member <name>] [--dry-run] [--offline] [--update]\n" +
+	"apply": "spoolsmith apply <file.ssb|set.zip> [--member <name>] [--usb-queue <name>] [--dry-run] [--offline] [--update]\n" +
 		"                                [--plan-hash <fingerprint>] [--yes] [--non-interactive] [--json]\n" +
 		"A .ssb is one printer; a .zip is a printer set. Each printer in a set gets its own plan and\n" +
 		"its own confirmation; --member applies just one of them.\n",
@@ -432,11 +460,12 @@ var commandUsage = map[string]string{
 		"spoolsmith profile import-all <set.zip> <folder> [--dry-run]\n" +
 		"--dry-run reviews filenames, printer settings and destination conflicts without writing files.\n" +
 		"spoolsmith profile capture <target> <file> --name <queue> --driver <installed-driver-name>\n" +
+		"spoolsmith profile capture <ip> <file.ssb> --name <queue> --windows-driver\n" +
 		"spoolsmith profile edit <file> [--name <queue>] [--driver <name>] [--target <ip>]\n" +
 		"spoolsmith profile edit <file> [--package <recipe-id> --archive <local-file>] [--clear-package]\n",
-	"add":       "spoolsmith add --profile <file> [--offline] [--dry-run] [--yes] [--json]\n",
-	"configure": "spoolsmith configure --profile <file> [--offline] [--dry-run] [--yes] [--json]\n",
-	"install":   "spoolsmith install <ip> [--force-family <id>] [--dry-run|--what-if] [--yes] [--non-interactive] [--json]\n",
+	"add":       "spoolsmith add <ip> --windows-driver --name <queue> [--dry-run] [--yes] [--json]\nspoolsmith add --profile <file> [--usb-queue <name>] [--offline] [--dry-run] [--yes] [--json]\n",
+	"configure": "spoolsmith configure --profile <file> [--usb-queue <name>] [--offline] [--dry-run] [--yes] [--json]\n",
+	"install":   "spoolsmith install <ip> --windows-driver --name <queue> [--dry-run] [--yes] [--json]\nspoolsmith install <ip> [--force-family <id>] [--dry-run|--what-if] [--yes] [--non-interactive] [--json]\n",
 	"repoint":   "spoolsmith repoint <queue> <new-ip> [--dry-run] [--yes] [--non-interactive] [--json]\n",
 	"remove":    "spoolsmith remove --profile <file> [--dry-run] [--json]\n",
 	"uninstall": "spoolsmith uninstall <printer-name> [--purge-driver] [--dry-run|--what-if] [--yes] [--non-interactive] [--json]\n",
@@ -476,7 +505,7 @@ func printUsage(writer io.Writer) {
 	for _, line := range strings.Split(strings.TrimSuffix(copyUsage, "\n"), "\n") {
 		fmt.Fprintln(writer, "  "+line)
 	}
-	fmt.Fprintln(writer, "  spoolsmith apply <file.ssb|set.zip> [--member <name>] [--dry-run] [--offline] [--update]")
+	fmt.Fprintln(writer, "  spoolsmith apply <file.ssb|set.zip> [--member <name>] [--usb-queue <name>] [--dry-run] [--offline] [--update]")
 	fmt.Fprintln(writer, "                                 [--plan-hash <fingerprint>] [--yes] [--non-interactive] [--json]")
 	fmt.Fprintln(writer, "  spoolsmith bundle inspect <file.ssb|set.zip>  read a printer file or printer set, touching nothing")
 	fmt.Fprintln(writer, "  Each printer in a set gets its own plan and its own confirmation.")
@@ -491,7 +520,9 @@ func printUsage(writer io.Writer) {
 	fmt.Fprintln(writer, "  spoolsmith profile edit <file> [--package <recipe-id> --archive <local-file> | --clear-package]")
 	fmt.Fprintln(writer, "")
 	fmt.Fprintln(writer, "Map, change, and remove queues")
-	fmt.Fprintln(writer, "  spoolsmith add|configure --profile <file> [--offline] [--dry-run] [--yes] [--json]")
+	fmt.Fprintln(writer, "  spoolsmith add <ip> --windows-driver --name <queue> [--dry-run] [--yes] [--json]")
+	fmt.Fprintln(writer, "  Windows automatic setup requires verified IPP support and uses the inbox class driver.")
+	fmt.Fprintln(writer, "  spoolsmith add|configure --profile <file> [--usb-queue <name>] [--offline] [--dry-run] [--yes] [--json]")
 	fmt.Fprintln(writer, "  spoolsmith repoint <queue> <new-ip> [--dry-run] [--yes] [--non-interactive] [--json]")
 	fmt.Fprintln(writer, "  spoolsmith remove --profile <file> [--dry-run] [--json]")
 	fmt.Fprintln(writer, "  spoolsmith uninstall <printer-name> [--purge-driver] [--dry-run|--what-if] [--yes] [--non-interactive] [--json]")

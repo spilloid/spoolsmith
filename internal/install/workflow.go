@@ -32,9 +32,14 @@ const (
 type InstallOptions struct {
 	// ExpectedPlan binds execution to a previously reviewed preview. A changed
 	// plan requires another preview; callers cannot authorize an unseen plan.
-	ExpectedPlan   *Plan
-	Target         string
-	Profile        *Profile
+	ExpectedPlan  *Plan
+	Target        string
+	WindowsDriver bool
+	PrinterName   string
+	Profile       *Profile
+	// USBQueue explicitly selects an existing Windows USB printer queue by name.
+	// Empty means only a queue matching the saved printer name can map automatically.
+	USBQueue       string
 	Offline        bool
 	UpdateExisting bool
 	Compact        bool
@@ -88,19 +93,21 @@ type Outcome struct {
 // the command package remains a transport adapter. Function fields are public
 // to let a future GUI and tests supply the same seams without global state.
 type Workflow struct {
-	Collect   func(context.Context, string) (probe.Result, error)
-	Resolve   func(evidence.Evidence) catalog.ResolutionResult
-	Families  func() []catalog.Family
-	DriverFor func(string) (catalog.DriverPackage, bool)
+	DiscoverIPP func(context.Context, string) (string, string, error)
+	Collect     func(context.Context, string) (probe.Result, error)
+	Resolve     func(evidence.Evidence) catalog.ResolutionResult
+	Families    func() []catalog.Family
+	DriverFor   func(string) (catalog.DriverPackage, bool)
 }
 
 // NewWorkflow returns the production workflow backed by the probe and catalog packages.
 func NewWorkflow() Workflow {
 	return Workflow{
-		Collect:   probe.Collect,
-		Resolve:   catalog.Resolve,
-		Families:  catalog.Families,
-		DriverFor: catalog.DriverFor,
+		DiscoverIPP: DiscoverIPPEndpoint,
+		Collect:     probe.Collect,
+		Resolve:     catalog.Resolve,
+		Families:    catalog.Families,
+		DriverFor:   catalog.DriverFor,
 	}
 }
 
@@ -114,6 +121,24 @@ func (w Workflow) RunInstall(ctx context.Context, env Environment, input io.Read
 	if err := w.validate(); err != nil {
 		return failOutcome(outcome, err, ExitGeneralError)
 	}
+	if options.WindowsDriver {
+		if options.Profile != nil || options.ForceFamily != "" || options.Offline || options.BundleDriver != nil || options.USBQueue != "" {
+			return failOutcome(outcome, errors.New("install: Windows automatic setup requires an IP and name; profile, offline, USB, and OEM driver options cannot be combined"), ExitUsageError)
+		}
+		discover := w.DiscoverIPP
+		if discover == nil {
+			discover = DiscoverIPPEndpoint
+		}
+		endpoint, model, err := discover(ctx, options.Target)
+		if err != nil {
+			return failOutcome(outcome, err, ExitUnresolved)
+		}
+		p, err := windowsIPPProfile(options.Target, options.PrinterName, endpoint, model)
+		if err != nil {
+			return failOutcome(outcome, err, ExitUsageError)
+		}
+		options.Profile, options.Target = &p, ""
+	}
 	if options.Offline && options.Profile == nil {
 		return failOutcome(outcome, errors.New("install: --offline requires an administrator-prevalidated --profile"), ExitUsageError)
 	}
@@ -124,7 +149,13 @@ func (w Workflow) RunInstall(ctx context.Context, env Environment, input io.Read
 		if err := options.Profile.Validate(); err != nil {
 			return failOutcome(outcome, err, ExitUsageError)
 		}
+		if options.Profile.PortType == "usb" {
+			return w.runUSBInstall(ctx, env, input, interactive, inputIsTerminal, options)
+		}
 		options.Target = options.Profile.Target
+	}
+	if options.USBQueue != "" {
+		return failOutcome(outcome, errors.New("install: --usb-queue requires a USB printer file"), ExitUsageError)
 	}
 
 	var forcedFamily *catalog.Family
@@ -144,6 +175,10 @@ func (w Workflow) RunInstall(ctx context.Context, env Environment, input io.Read
 	// below; only the notice and the recorded resolution tell them apart.
 	autoOffline := false
 	if options.Offline {
+		probeResult.Evidence.IP = options.Target
+	} else if options.Profile != nil && options.Profile.Evidence.IPPModel != "" {
+		// IPP-only printers need not answer the legacy HTTP/SNMP/PJL probes.
+		// Their captured IPP identity is checked below using the same protocol.
 		probeResult.Evidence.IP = options.Target
 	} else {
 		probeResult, err = w.Collect(ctx, options.Target)
@@ -171,6 +206,20 @@ func (w Workflow) RunInstall(ctx context.Context, env Environment, input io.Read
 	}
 	if err != nil {
 		return failOutcome(outcome, fmt.Errorf("install: collect evidence: %w", err), ExitGeneralError)
+	}
+	if options.Profile != nil && options.Profile.Evidence.IPPModel != "" {
+		discover := w.DiscoverIPP
+		if discover == nil {
+			discover = DiscoverIPPEndpoint
+		}
+		endpoint, model, discoveryErr := discover(ctx, options.Target)
+		if discoveryErr != nil {
+			return failOutcome(outcome, discoveryErr, ExitUnresolved)
+		}
+		if endpoint != options.Profile.IPPURL || model != options.Profile.Evidence.IPPModel {
+			return failOutcome(outcome, errors.New("install: IPP endpoint or model changed; verify the printer and capture again"), ExitUnresolved)
+		}
+		probeResult.Evidence.IPPModel = model
 	}
 
 	reader := bufferedReader(input)
@@ -277,8 +326,16 @@ func (w Workflow) RunInstall(ctx context.Context, env Environment, input io.Read
 	plan.ForcedOverride = forced
 	plan.Offline = options.Offline
 	plan.UpdateExisting = options.UpdateExisting
+	if options.Profile != nil && options.Profile.PortType == "ipp" {
+		plan.IPP = true
+		plan.IPPURL = options.Profile.IPPURL
+		plan.PortName = "" // Windows creates and names the IPP port during directed discovery.
+	}
 	plan.Commands = installCommands(plan)
 	if options.Profile != nil && options.Profile.DriverPackage != nil {
+		if plan.IPP {
+			return failOutcome(outcome, errors.New("install: IPP class driver is selected by Windows and cannot use a vendor package"), ExitUsageError)
+		}
 		selection := *options.Profile.DriverPackage
 		plan.DriverPackage = &selection
 		record, recordErr := selection.record(plan.DriverName)
@@ -296,6 +353,9 @@ func (w Workflow) RunInstall(ctx context.Context, env Environment, input io.Read
 		plan.Commands = append([]string{command}, plan.Commands...)
 	}
 	if options.BundleDriver != nil {
+		if plan.IPP {
+			return failOutcome(outcome, errors.New("install: IPP class driver is selected by Windows and cannot use a bundled driver"), ExitUsageError)
+		}
 		if plan.DriverPackage != nil {
 			return failOutcome(outcome, errors.New("install: a bundle driver payload and a vendor package recipe cannot both stage the same driver"), ExitUsageError)
 		}
@@ -408,6 +468,9 @@ func (w Workflow) RunUninstall(ctx context.Context, env Environment, input io.Re
 		if err := options.Profile.Validate(); err != nil {
 			return failOutcome(outcome, err, ExitUsageError)
 		}
+		if options.Profile.PortType == "usb" {
+			return failOutcome(outcome, errors.New("remove: USB printer files cannot identify a queue for removal; choose the local queue name"), ExitUsageError)
+		}
 		if options.PrinterName != options.Profile.PrinterName {
 			return failOutcome(outcome, errors.New("remove: profile queue name does not match request"), ExitUsageError)
 		}
@@ -422,8 +485,20 @@ func (w Workflow) RunUninstall(ctx context.Context, env Environment, input io.Re
 	if err != nil {
 		return failOutcome(outcome, err, ExitGeneralError)
 	}
-	if options.Profile != nil && (!strings.EqualFold(configuration.PortName, managedPortPrefix+net.ParseIP(options.Profile.Target).String()) || !strings.EqualFold(configuration.DriverName, options.Profile.DriverName)) {
-		return failOutcome(outcome, fmt.Errorf("remove: installed queue differs from profile (port %q, driver %q); review removal explicitly by queue name", configuration.PortName, configuration.DriverName), ExitUnresolved)
+	if options.Profile != nil {
+		matches := strings.EqualFold(configuration.DriverName, options.Profile.DriverName)
+		if options.Profile.PortType == "ipp" {
+			status, statusErr := CheckStatus(ctx, env, *options.Profile)
+			if statusErr != nil {
+				return failOutcome(outcome, fmt.Errorf("remove: verify IPP queue: %w", statusErr), ExitUnresolved)
+			}
+			matches = matches && status.Compliant && strings.EqualFold(configuration.PortName, status.Actual.PortName)
+		} else {
+			matches = matches && strings.EqualFold(configuration.PortName, managedPortPrefix+net.ParseIP(options.Profile.Target).String())
+		}
+		if !matches {
+			return failOutcome(outcome, fmt.Errorf("remove: installed queue differs from profile (port %q, driver %q); review removal explicitly by queue name", configuration.PortName, configuration.DriverName), ExitUnresolved)
+		}
 	}
 	plan, err := BuildUninstallPlan(configuration.PrinterName, configuration.PortName, configuration.DriverName, options.PurgeDriver)
 	if err != nil {
@@ -580,6 +655,40 @@ func readAnswer(input io.Reader) (string, error) {
 
 func writeInstallPlan(writer io.Writer, plan Plan, compact bool) {
 	fmt.Fprintln(writer, "Install plan")
+	if plan.USB {
+		if plan.USBOffline {
+			fmt.Fprintf(writer, "  Copied USB printer: %s\n  Driver: %s\n", plan.SourcePrinterName, plan.DriverName)
+			fmt.Fprintln(writer, "  Prepare the driver now. No USB queue is installed or changed. Connect the printer later and apply this file again to map its local queue.")
+		} else {
+			fmt.Fprintf(writer, "  Copied printer: %s\n  Windows USB queue here: %s\n  USB port here: %s\n  Driver: %s\n", plan.SourcePrinterName, plan.PrinterName, plan.PortName, plan.DriverName)
+			fmt.Fprintln(writer, "  The reviewed existing USB queue keeps its port and name; its driver is updated if needed.")
+		}
+		if plan.BundleDriver != nil {
+			fmt.Fprintf(writer, "  Embedded driver: %d files (%d bytes), staged only if missing.\n", plan.BundleDriver.FileCount, plan.BundleDriver.TotalBytes)
+		}
+		if !compact {
+			for _, command := range plan.Commands {
+				fmt.Fprintf(writer, "  Command: %s\n", command)
+			}
+		}
+		return
+	}
+	if plan.IPP {
+		fmt.Fprintf(writer, "  IPP endpoint: %s\n  Queue: %s\n  Expected Windows driver: %s\n", plan.IPPURL, plan.PrinterName, plan.DriverName)
+		fmt.Fprintln(writer, "  Windows discovers the IPP printer and chooses its class driver. The resulting queue and endpoint are checked after creation.")
+		if plan.Offline {
+			fmt.Fprintln(writer, "  OFFLINE: live identity is not checked. A new IPP queue still requires the printer to answer directed discovery during installation.")
+		}
+		if plan.UpdateExisting {
+			fmt.Fprintln(writer, "  Existing IPP queues are reused only when their driver and endpoint match; a changed endpoint requires explicit removal first.")
+		}
+		if !compact {
+			for _, command := range plan.Commands {
+				fmt.Fprintf(writer, "  Command: %s\n", command)
+			}
+		}
+		return
+	}
 	if plan.Offline {
 		fmt.Fprintln(writer, "  OFFLINE: live identity is not checked. Verify local queue, driver and RAW TCP 9100 endpoint after applying; printing requires network connectivity.")
 	}
