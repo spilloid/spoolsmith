@@ -140,7 +140,7 @@ unambiguous existing RAW driver mapping at that IP. If the source uses Microsoft
 Class Driver and no usable RAW mapping is known, it saves a verified IPP endpoint instead. LPR, non-9100,
 and virtual ports cannot be mapped by this workflow.
 
-### Windows automatic setup by IP (v1.4)
+### Windows automatic setup by IP (v1.4; native driver step unreleased, targeting v1.5)
 
 For an IPP-capable printer, select **Windows automatic (IPP)** in the desktop
 driver picker, or preview setup from the CLI:
@@ -151,8 +151,11 @@ spoolsmith profile capture 192.168.1.50 office.ssb --name "Office printer" --win
 ```
 
 SpoolSmith verifies the IPP endpoint and model before offering a reviewed setup
-with Microsoft's inbox IPP class driver. Windows manages driver installation;
-this path does not acquire arbitrary OEM drivers. Printers requiring an OEM RAW
+with Microsoft's inbox IPP class driver, then asks Windows for the printer's own driver
+(unreleased): one already registered, one Windows can register by model name, or one Windows
+Update offers. If Windows has none, or the switch cannot be verified, the class driver stays
+and setup still succeeds. SpoolSmith downloads nothing itself: Windows does all driver resolution.
+Printers requiring an OEM RAW
 driver can use the existing installed-driver selection.
 
 ## Native Windows GUI

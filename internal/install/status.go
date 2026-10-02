@@ -61,7 +61,9 @@ func CheckStatus(ctx context.Context, env Environment, profile Profile) (LocalSt
 		}{
 			{actual.QueuePresent && strings.EqualFold(actual.PrinterName, profile.PrinterName), "queue is absent or name differs"},
 			{actual.DriverPresent, "queue driver is not registered"},
-			{strings.EqualFold(actual.DriverName, profile.DriverName), "driver differs"},
+			// Windows may have upgraded the class driver to the printer's own
+			// driver; that is accepted only when the endpoint is verified.
+			{strings.EqualFold(actual.DriverName, profile.DriverName) || (actual.IPPVerified && sameDriverModel(actual.DriverName, profile.Evidence.IPPModel)), "driver differs"},
 			{actual.PortPresent, "IPP port is absent"},
 			{isIPPMonitor(actual.PortMonitor) || (actual.IPPVerified && strings.EqualFold(actual.PortMonitor, "WSD Port Monitor")), "port is not an IPP port"},
 			{sameIPPEndpoint(actual.PortName, profile.IPPURL) || sameIPPEndpoint(actual.Address, profile.IPPURL), "IPP port endpoint differs or is not visible"},
@@ -111,7 +113,7 @@ $d = @(Get-PrinterDriver -ErrorAction Stop | Where-Object { $_.Name -eq $q[0].Dr
 if ($p.Count -gt 1) { throw 'Multiple matching ports' };
 $state = @{queue_present=$true; printer_name=$q[0].Name; driver_name=$q[0].DriverName; driver_present=($d.Count -gt 0); port_name=$q[0].PortName; port_present=($p.Count -eq 1)};
 if ($p.Count -eq 1) { $state.address=[string]$p[0].PrinterHostAddress; $state.port_monitor=[string]$p[0].PortMonitor; $state.protocol=[int]$p[0].Protocol; $state.port_number=[int]$p[0].PortNumber };
-if ($p.Count -eq 1 -and $q[0].DriverName -eq 'Microsoft IPP Class Driver' -and $p[0].PortMonitor -in @('Internet Port','IPP Port Monitor','WSD Port Monitor')) { $connection = Get-SpoolSmithIPPConnection $q[0] $p[0]; if ($connection.Verified) { $state.ipp_verified=$true; $state.address=[string]$connection.Endpoint } };
+if ($p.Count -eq 1 -and $p[0].PortMonitor -in @('Internet Port','IPP Port Monitor','WSD Port Monitor')) { $connection = Get-SpoolSmithIPPConnection $q[0] $p[0]; if ($connection.Verified) { $state.ipp_verified=$true; $state.address=[string]$connection.Endpoint } };
 ConvertTo-Json -InputObject $state`)
 	output, err := runner(ctx, command)
 	if err != nil {

@@ -135,8 +135,8 @@ exported at all: an inbox or Windows Update driver has no driver-store package t
 target machine will need to obtain it the same way this one did.
 
 For a WSD copy that falls back to Microsoft's IPP Class Driver, SpoolSmith saves the verified IPP URL
-and leaves the inbox driver out of the file. Windows selects that driver when it adds the
-printer by IPP on the destination. The destination needs an IPP-capable Windows version and
+and leaves the driver out of the file. Windows selects its class driver when it adds the
+printer by IPP on the destination, then (unreleased, v1.5) SpoolSmith asks Windows for the printer's own driver and keeps the class driver if none is found. The destination needs an IPP-capable Windows version and
 must reach the printer when creating a new queue.
 
 `--settings-only` always leaves the driver out, for example when the destination should use a

@@ -355,7 +355,7 @@ func (a *app) onDrivers() {
 			}
 			switch {
 			case len(names) == 0:
-				a.driverStatus.SetText("Windows automatic setup checks IPP support and uses the inbox driver. No OEM driver is required.")
+				a.driverStatus.SetText("Windows automatic setup checks IPP support, adds the printer, then asks Windows for its own driver. No OEM installer is required.")
 			case suggestion != "":
 				a.driverStatus.SetText("Suggested a driver from the detected model. Change it if this is not the right one.")
 			default:

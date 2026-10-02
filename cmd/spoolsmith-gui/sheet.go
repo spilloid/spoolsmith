@@ -62,6 +62,7 @@ const (
 	stepRemoveQueue
 	stepRemovePort
 	stepRemoveDriver
+	stepNativeDriver
 )
 
 // classifyCommand recognizes the commands the shared workflow emits
@@ -70,6 +71,8 @@ const (
 // as a numbered step whose full text is in Details.
 func classifyCommand(command string) stepKind {
 	switch {
+	case strings.Contains(command, "SPOOLSMITH-NATIVE-DRIVER:"):
+		return stepNativeDriver
 	case strings.Contains(command, "Add-Printer -Name"):
 		// The IPP creation command also contains Remove-Printer for guarded
 		// rollback if verification fails. Its primary action is adding a queue.
@@ -97,6 +100,8 @@ func stepSentence(plan install.Plan, kind stepKind, index int) string {
 			return "Install driver " + plan.DriverName + " from the printer file"
 		}
 		return "Install driver " + plan.DriverName
+	case stepNativeDriver:
+		return "Ask Windows for " + quoted(plan.NativeDriverModel) + "'s own driver (keeps the class driver if none is found)"
 	case stepPort:
 		return "Create port " + plan.IPAddress
 	case stepQueue:
@@ -176,6 +181,19 @@ func planChecklist(out install.Outcome) []checklistLine {
 				ran := out.Result.Ran[i]
 				output := strings.TrimSpace(ran.Output)
 				switch {
+				case kind == stepNativeDriver:
+					// Best effort: never a failure, whatever Windows could or could not do.
+					outcome := install.NativeDriverOutcome(output)
+					if ran.Err != nil {
+						outcome = "skipped " + strings.TrimSpace(ran.Err.Error())
+					}
+					line.State = stepUnchanged
+					if strings.HasPrefix(outcome, "applied ") {
+						line.State = stepDone
+						line.Text = "Switched to the printer's own driver " + quoted(strings.TrimPrefix(outcome, "applied "))
+					} else {
+						line.Detail = append(line.Detail, outcome)
+					}
 				case ran.Err != nil:
 					line.State = stepFailed
 					if reason := strings.TrimSpace(ran.Err.Error()); reason != "" {

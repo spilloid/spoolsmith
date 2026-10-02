@@ -330,6 +330,15 @@ func (w Workflow) RunInstall(ctx context.Context, env Environment, input io.Read
 		plan.IPP = true
 		plan.IPPURL = options.Profile.IPPURL
 		plan.PortName = "" // Windows creates and names the IPP port during directed discovery.
+		// Ask Windows for the printer's own driver once the queue works; this
+		// is best-effort and never fails the operation. Offline plans have no
+		// live identity, so they keep the class driver.
+		if model := strings.TrimSpace(options.Profile.Evidence.IPPModel); model != "" && validatePlanValue("IPP model", model) == nil {
+			// The model also lets a re-apply recognise a queue already upgraded to it.
+			plan.NativeDriverModel = model
+			// A model with no ASCII letters or digits cannot be matched safely.
+			plan.NativeDriver = !options.Offline && normalizeDriverName(model) != ""
+		}
 	}
 	plan.Commands = installCommands(plan)
 	if options.Profile != nil && options.Profile.DriverPackage != nil {
@@ -452,9 +461,12 @@ func (w Workflow) RunInstall(ctx context.Context, env Environment, input io.Read
 	outcome.Status = "success"
 	fmt.Fprintf(interactive, "Printer configured: %s (%s). Reapplying the same profile is safe.\n", plan.PrinterName, plan.IPAddress)
 	for _, ran := range result.Ran {
-		if strings.TrimSpace(ran.Output) != "" {
+		if strings.TrimSpace(ran.Output) != "" && !strings.Contains(ran.Output, nativeDriverMarker) {
 			fmt.Fprintln(interactive, strings.TrimSpace(ran.Output))
 		}
+	}
+	if result.NativeDriver != "" {
+		fmt.Fprintf(interactive, "Native driver: %s\n", result.NativeDriver)
 	}
 	return outcome, ExitSuccess
 }
@@ -676,6 +688,9 @@ func writeInstallPlan(writer io.Writer, plan Plan, compact bool) {
 	if plan.IPP {
 		fmt.Fprintf(writer, "  IPP endpoint: %s\n  Queue: %s\n  Expected Windows driver: %s\n", plan.IPPURL, plan.PrinterName, plan.DriverName)
 		fmt.Fprintln(writer, "  Windows discovers the IPP printer and chooses its class driver. The resulting queue and endpoint are checked after creation.")
+		if plan.NativeDriver {
+			fmt.Fprintf(writer, "  Then Windows is asked for the printer's own driver (%s): drivers it already has, its built-in sources, then Windows Update.\n  If none is found, or the switch cannot be verified, the class driver is kept and the setup still succeeds.\n", plan.NativeDriverModel)
+		}
 		if plan.Offline {
 			fmt.Fprintln(writer, "  OFFLINE: live identity is not checked. A new IPP queue still requires the printer to answer directed discovery during installation.")
 		}

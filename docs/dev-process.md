@@ -1,5 +1,42 @@
 # Dev Process Log
 
+## 2026-10-02: v1.5 (unreleased) — best-effort native driver for IPP setups
+
+Claude orchestrated and implemented (contract tests first); Codex `gpt-6-sol`/high ran one
+read-only adversarial review of the whole diff (Sol/high rung: Windows OS mutation). Task type:
+OS-mutation feature touching plan/preflight/status, PowerShell generation and the desktop sheet.
+
+The review returned six findings. Adjudicated by reading the code and, for #1 and #5, reproducing
+the normalization behaviour; fixes chosen by the orchestrator, not copied from the review:
+
+- **#1 real (P1):** a non-ASCII model (e.g. `打印机`) normalized to the empty string, and the
+  Windows Update title match used `.Contains("")`, so any single pending driver update would have
+  been downloaded and installed. Fixed: empty normalized model gets no native step (plan and
+  PowerShell both), the Windows Update match is exact `DriverModel` plus printer class only (the
+  loose title match is gone).
+- **#2 wording, not a defect:** the review prompt said the step "never creates drivers", but
+  registering a Windows-supplied driver (`Add-PrinterDriver`, Windows Update install) is the
+  feature. Spec, comments and CLAUDE.md now say exactly that and no more.
+- **#3 real (P1):** no time bound on synchronous Windows Update calls. Fixed: 5-minute context
+  deadline on that one command; a timeout reads as "skipped".
+- **#4 real (P2):** a failed class-driver restore was reported as a quiet skip. Fixed: outcome
+  `attention`, and `Install` returns an error.
+- **#5 real (P2, exotic):** Go and PowerShell lower-casing disagreed on `İ`. Fixed: both are now
+  ASCII-only, with a shared test.
+- **#6 real (P2):** the queue could be repointed during the Windows Update search before the
+  switch. Fixed: endpoint is verified before `Set-Printer` as well as after.
+
+My own test run caught one more before review: loosening the existing driver-mismatch rule made
+three older PowerShell harness tests fail. The rule is now "class driver or the model-named driver",
+not "any driver".
+
+Verified: gofmt, `go build`, `GOOS=windows go vet`, full `go test ./...` on Windows, including the
+PowerShell harness tests that run the generated command against stubbed cmdlets.
+**Not verified:** a real Windows Update driver download and a live driver switch (not elevated in
+this session; a read-only Windows Update scan on the Brother PC showed no pending driver). Elevated
+hardware validation is still owed. Cost data was not logged separately.
+
+
 ## 2026-09-19: v0.7.4 — desktop `copy --all`, bulk transfer preview, and two bugs only a real Windows run caught
 
 Astra built the desktop side of bulk driver export — **This PC → Copy all
