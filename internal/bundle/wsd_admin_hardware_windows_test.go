@@ -121,7 +121,7 @@ func TestHardwareAdminIPPImport(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	endpoint, _, err := install.DiscoverIPPEndpointForDevice(ctx, cloned.HostAddress, cloned.SourceWSDDeviceID)
+	endpoint, ippModel, err := install.DiscoverIPPEndpointForDevice(ctx, cloned.HostAddress, cloned.SourceWSDDeviceID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -132,6 +132,8 @@ func TestHardwareAdminIPPImport(t *testing.T) {
 	profile := created.Manifest.Profile
 	profile.PrinterName = fmt.Sprintf("SpoolSmith v1.4 IPP validation %d", time.Now().UnixNano())
 	profile.PortType, profile.IPPURL, profile.DriverName = "ipp", endpoint, "Microsoft IPP Class Driver"
+	// The model is what makes the v1.5 native-driver step run; without it the plan skips the step.
+	profile.Evidence.IPPModel = ippModel
 	// Directed discovery can reject an already registered WSD device even when
 	// the requested IPP queue name is unique. Opt-in source preparation happens
 	// only after capture; restore the source after the temporary IPP cleanup.
