@@ -121,7 +121,7 @@ func TestHardwareAdminIPPImport(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	endpoint, _, err := install.DiscoverIPPEndpointForDevice(ctx, cloned.HostAddress, cloned.SourceWSDDeviceID)
+	endpoint, ippModel, err := install.DiscoverIPPEndpointForDevice(ctx, cloned.HostAddress, cloned.SourceWSDDeviceID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -132,6 +132,8 @@ func TestHardwareAdminIPPImport(t *testing.T) {
 	profile := created.Manifest.Profile
 	profile.PrinterName = fmt.Sprintf("SpoolSmith v1.4 IPP validation %d", time.Now().UnixNano())
 	profile.PortType, profile.IPPURL, profile.DriverName = "ipp", endpoint, "Microsoft IPP Class Driver"
+	// The model is what makes the v1.5 native-driver step run; without it the plan skips the step.
+	profile.Evidence.IPPModel = ippModel
 	// Directed discovery can reject an already registered WSD device even when
 	// the requested IPP queue name is unique. Opt-in source preparation happens
 	// only after capture; restore the source after the temporary IPP cleanup.
@@ -179,6 +181,14 @@ func TestHardwareAdminIPPImport(t *testing.T) {
 		out, code := workflow.RunInstall(ctx, env, strings.NewReader(""), &transcript, false, install.InstallOptions{Profile: &profile, Yes: true})
 		if code != install.ExitSuccess {
 			t.Fatalf("IPP apply %d: %+v; %s", attempt+1, out, transcript.String())
+		}
+		// Record what the v1.5 native-driver step actually did on this printer.
+		// A skip is acceptable (Windows may have no driver for the model); an
+		// unrestored switch is not, and already fails the install.
+		if out.Plan != nil && out.Result != nil {
+			driver, derr := env.Run(ctx, "(Get-Printer -Name '"+strings.ReplaceAll(profile.PrinterName, "'", "''")+"').DriverName")
+			t.Logf("IPP apply %d native driver: wanted=%t model=%q outcome=%q; queue driver now %q (err=%v)",
+				attempt+1, out.Plan.NativeDriver, out.Plan.NativeDriverModel, out.Result.NativeDriver, strings.TrimSpace(driver), derr)
 		}
 	}
 	status, err := install.CheckStatus(ctx, env, profile)

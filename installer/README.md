@@ -73,11 +73,11 @@ a test machine:
 
 ```powershell
 msiexec /i SpoolSmith-v1.3.0-x64.msi /qn /norestart /l*v install-old.log
-msiexec /i SpoolSmith-v1.4.0-x64.msi /qn /norestart /l*v upgrade.log
+msiexec /i SpoolSmith-v1.5.0-x64.msi /qn /norestart /l*v upgrade.log
 Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*' |
   Where-Object DisplayName -eq SpoolSmith | Select-Object DisplayName, DisplayVersion, PSChildName
-# expect exactly one row, DisplayVersion 1.4.0
+# expect exactly one row, DisplayVersion 1.5.0
 msiexec /i SpoolSmith-v1.3.0-x64.msi /qn /norestart   # expect exit code 1603
-msiexec /x SpoolSmith-v1.4.0-x64.msi /qn /norestart
+msiexec /x SpoolSmith-v1.5.0-x64.msi /qn /norestart
 Test-Path 'C:\Program Files\SpoolSmith'               # expect False
 ```

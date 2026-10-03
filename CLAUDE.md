@@ -2,6 +2,22 @@
 
 ## Project Mission
 
+**Operator update, 2026-10-02 (v1.5 native driver, unreleased):** the operator wants one
+place to type a printer IP and get a working mapping with the best driver *Windows* can
+supply, with no vendor OEM installer, and directed the lookup to be **silent** (part of the
+confirmed apply). Authorized on condition of following corporate-strategy standards and filing
+a motion back (`board/meetings/2026-10-02-spoolsmith-v1-5-native-driver/`, ratify-or-reverse).
+See `docs/v1.5-windows-update-driver-spec.md`. What changed in the rules:
+- IPP plans (Windows automatic setup, converted WSD queues) end with a best-effort native-driver
+  step: registered driver by model name, `Add-PrinterDriver`, then a Windows Update driver
+  search; the endpoint is verified before and after `Set-Printer`, the class driver is restored on
+  failure. It **never fails the install** (only a failed restore escalates) and is time-bound.
+- Unchanged: elevation, reviewed plan, exactly one confirmation, no SpoolSmith-side download
+  (D-0040: Windows resolves drivers). RAW plans, `--offline` plans and the catalog are untouched.
+- Hardware-verified 2026-10-02 (Brother HL-L2315D): live switch from the IPP class driver to an
+  already-installed native driver, `in-use` on re-apply, WSD source restored. NOT verified: a real
+  Windows Update OEM download (the driver was already in the DriverStore). Say so.
+
 **Operator update, 2026-09-24 (v1.3 desktop):** the operator approved a
 desktop redesign around the one job -- take printers off this PC, put them on
 that one -- and explicitly asked for .ssb file association, drag-and-drop,

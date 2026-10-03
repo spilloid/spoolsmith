@@ -29,10 +29,14 @@ type Environment interface {
 
 // Plan is the complete, reviewable set of commands for one operation.
 type Plan struct {
-	USB               bool                  `json:"usb,omitempty"`
-	USBOffline        bool                  `json:"usb_offline,omitempty"`
-	IPP               bool                  `json:"ipp,omitempty"`
-	IPPURL            string                `json:"ipp_url,omitempty"`
+	USB        bool   `json:"usb,omitempty"`
+	USBOffline bool   `json:"usb_offline,omitempty"`
+	IPP        bool   `json:"ipp,omitempty"`
+	IPPURL     string `json:"ipp_url,omitempty"`
+	// NativeDriver adds a best-effort final step that asks Windows for the
+	// printer's own driver. NativeDriverModel is the model its IPP reported.
+	NativeDriver      bool                  `json:"native_driver,omitempty"`
+	NativeDriverModel string                `json:"native_driver_model,omitempty"`
 	SourcePrinterName string                `json:"source_printer_name,omitempty"`
 	PreviousPortName  string                `json:"previous_port_name,omitempty"`
 	IPAddress         string                `json:"ip_address,omitempty"`
@@ -54,6 +58,9 @@ type Plan struct {
 type Result struct {
 	Plan Plan            `json:"plan"`
 	Ran  []CommandResult `json:"ran"`
+	// NativeDriver is the outcome of the best-effort native-driver step, empty
+	// when the plan has none. It never indicates a failed operation.
+	NativeDriver string `json:"native_driver,omitempty"`
 }
 
 // CommandResult records one command's output and status.
@@ -217,9 +224,30 @@ func Install(ctx context.Context, env Environment, plan Plan, confirmed bool) (R
 		return result, ErrNotConfirmed
 	}
 
-	for _, command := range plan.Commands {
-		output, err := env.Run(ctx, command)
+	for i, command := range plan.Commands {
+		native := plan.NativeDriver && i == len(plan.Commands)-1
+		runCtx := ctx
+		if native {
+			// Windows Update calls are synchronous; bound them so a stalled
+			// update service cannot hold an already-working install forever.
+			var cancel context.CancelFunc
+			runCtx, cancel = context.WithTimeout(ctx, nativeDriverTimeout)
+			defer cancel()
+		}
+		output, err := env.Run(runCtx, command)
 		result.Ran = append(result.Ran, CommandResult{Command: command, Output: output, Err: err})
+		if native {
+			// The queue already works; a native driver is an upgrade, not a requirement.
+			if err != nil {
+				result.NativeDriver = "skipped " + strings.TrimSpace(err.Error()) + "; keeping " + plan.DriverName
+			} else {
+				result.NativeDriver = NativeDriverOutcome(output)
+			}
+			if strings.HasPrefix(result.NativeDriver, nativeDriverAttention) {
+				return result, fmt.Errorf("install: native driver change left the queue in an unverified state: %s", result.NativeDriver)
+			}
+			continue
+		}
 		if err != nil {
 			return result, fmt.Errorf("install: run %q: %w", command, err)
 		}

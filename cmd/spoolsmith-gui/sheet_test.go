@@ -196,3 +196,54 @@ func TestWrapTextKeepsBreaksAndIndentation(t *testing.T) {
 		t.Fatal("a word longer than the width was split")
 	}
 }
+
+// A switch that could not be put back is the one native-driver outcome the
+// install reports as an error, so the checklist must not draw it as a quiet
+// skip: the operator has to see that the queue needs review.
+func TestNativeDriverFailedRestoreIsShownAsNeedingAttention(t *testing.T) {
+	const cmdNative = `$x; Add-PrinterDriver -Name $model; Write-Output 'SPOOLSMITH-NATIVE-DRIVER: applied'`
+	plan := &install.Plan{PrinterName: "Front", IPP: true, IPPURL: "ipp://10.0.0.5/ipp/print", DriverName: "Microsoft IPP Class Driver",
+		NativeDriver: true, NativeDriverModel: "Example 100", Commands: []string{cmdQueue, cmdNative}}
+	attention := "SPOOLSMITH-NATIVE-DRIVER: attention endpoint changed; could not restore Microsoft IPP Class Driver: spooler stopped; review the queue"
+	lines := planChecklist(install.Outcome{Plan: plan, Status: "failed", Result: &install.Result{Ran: []install.CommandResult{
+		{Command: cmdQueue, Output: "Created IPP printer"},
+		{Command: cmdNative, Output: attention},
+	}}})
+	if len(lines) != 2 || lines[1].State != stepFailed {
+		t.Fatalf("failed restore must be drawn as a failure: %+v", lines)
+	}
+	if len(lines[1].Detail) != 1 || !strings.Contains(lines[1].Detail[0], "review the queue") {
+		t.Errorf("detail = %v", lines[1].Detail)
+	}
+	if strings.Contains(lines[1].Detail[0], "SPOOLSMITH-NATIVE-DRIVER") {
+		t.Errorf("marker leaked into the detail: %v", lines[1].Detail)
+	}
+}
+
+func TestNativeDriverStepIsNeverShownAsAFailure(t *testing.T) {
+	const cmdNative = `$x; Add-PrinterDriver -Name $model; Write-Output 'SPOOLSMITH-NATIVE-DRIVER: applied'`
+	if classifyCommand(cmdNative) != stepNativeDriver {
+		t.Fatal("native-driver step must not be classified as a driver install")
+	}
+	plan := &install.Plan{PrinterName: "Front", IPP: true, IPPURL: "ipp://10.0.0.5/ipp/print", DriverName: "Microsoft IPP Class Driver",
+		NativeDriver: true, NativeDriverModel: "Example 100", Commands: []string{cmdQueue, cmdNative}}
+	for name, ran := range map[string]install.CommandResult{
+		"applied": {Command: cmdNative, Output: "SPOOLSMITH-NATIVE-DRIVER: applied Example 100"},
+		"skipped": {Command: cmdNative, Output: "SPOOLSMITH-NATIVE-DRIVER: skipped Windows has no native driver"},
+		"crashed": {Command: cmdNative, Err: errors.New("powershell crashed")},
+	} {
+		lines := planChecklist(install.Outcome{Plan: plan, Status: "success", Result: &install.Result{Ran: []install.CommandResult{{Command: cmdQueue, Output: "Created IPP printer"}, ran}}})
+		if len(lines) != 2 || lines[1].State == stepFailed {
+			t.Fatalf("%s: %+v", name, lines)
+		}
+		if name == "applied" && (lines[1].State != stepDone || !strings.Contains(lines[1].Text, "Example 100")) {
+			t.Errorf("applied line = %+v", lines[1])
+		}
+		if name != "applied" && (lines[1].State != stepUnchanged || len(lines[1].Detail) != 1) {
+			t.Errorf("%s line = %+v", name, lines[1])
+		}
+	}
+	if got := stepSentence(*plan, stepNativeDriver, 1); !strings.Contains(got, "Example 100") {
+		t.Errorf("sentence = %q", got)
+	}
+}

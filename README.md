@@ -140,7 +140,7 @@ unambiguous existing RAW driver mapping at that IP. If the source uses Microsoft
 Class Driver and no usable RAW mapping is known, it saves a verified IPP endpoint instead. LPR, non-9100,
 and virtual ports cannot be mapped by this workflow.
 
-### Windows automatic setup by IP (v1.4)
+### Windows automatic setup by IP (v1.4; native driver step unreleased, targeting v1.5)
 
 For an IPP-capable printer, select **Windows automatic (IPP)** in the desktop
 driver picker, or preview setup from the CLI:
@@ -151,8 +151,11 @@ spoolsmith profile capture 192.168.1.50 office.ssb --name "Office printer" --win
 ```
 
 SpoolSmith verifies the IPP endpoint and model before offering a reviewed setup
-with Microsoft's inbox IPP class driver. Windows manages driver installation;
-this path does not acquire arbitrary OEM drivers. Printers requiring an OEM RAW
+with Microsoft's inbox IPP class driver, then asks Windows for the printer's own driver
+(unreleased): one already registered, one Windows can register by model name, or one Windows
+Update offers. If Windows has none, or the switch cannot be verified, the class driver stays
+and setup still succeeds. SpoolSmith downloads nothing itself: Windows does all driver resolution.
+Printers requiring an OEM RAW
 driver can use the existing installed-driver selection.
 
 ## Native Windows GUI
@@ -405,13 +408,13 @@ entry; the `.ssb` file association is offered by the app, per user, either way.
 
 ```powershell
 # Interactive
-msiexec /i SpoolSmith-v1.4.0-x64.msi
+msiexec /i SpoolSmith-v1.5.0-x64.msi
 
 # Silent, for deployment tools
-msiexec /i SpoolSmith-v1.4.0-x64.msi /qn /norestart /l*v "$env:TEMP\spoolsmith-install.log"
+msiexec /i SpoolSmith-v1.5.0-x64.msi /qn /norestart /l*v "$env:TEMP\spoolsmith-install.log"
 
 # Silent uninstall (the ProductCode changes every version, so uninstall by file or by name)
-msiexec /x SpoolSmith-v1.4.0-x64.msi /qn /norestart
+msiexec /x SpoolSmith-v1.5.0-x64.msi /qn /norestart
 Get-Package -Name SpoolSmith -ProviderName msi | Uninstall-Package   # without the file; Windows PowerShell 5.1
 ```
 
@@ -434,7 +437,7 @@ what we published before running it — Windows can do this with nothing install
 
 ```powershell
 Get-AuthenticodeSignature .\spoolsmith.exe | Format-List Status, SignerCertificate
-Get-AuthenticodeSignature .\SpoolSmith-v1.4.0-x64.msi | Format-List Status, SignerCertificate
+Get-AuthenticodeSignature .\SpoolSmith-v1.5.0-x64.msi | Format-List Status, SignerCertificate
 
 # And each download against its published .sha256 sidecar
 (Get-FileHash spoolsmith-*-windows-amd64.zip -Algorithm SHA256).Hash.ToLower()

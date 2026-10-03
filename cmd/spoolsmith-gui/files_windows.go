@@ -616,6 +616,13 @@ func (k windowKeys) OnPreTranslate(msg *win.MSG) bool {
 		return false
 	}
 	down := func(key int32) bool { return win.GetKeyState(key) < 0 }
+	// Walk gives modal dialogs Windows' dialog-key handling but runs the main
+	// window's message loop without it, so Tab and Shift+Tab would go nowhere.
+	// Hand just those keys to Windows, which moves focus along the controls'
+	// tab stops exactly as it does in any dialog.
+	if msg.WParam == win.VK_TAB && !down(win.VK_CONTROL) && !down(win.VK_MENU) {
+		return win.IsDialogMessage(main, msg)
+	}
 	if !down(win.VK_CONTROL) || down(win.VK_SHIFT) || down(win.VK_MENU) {
 		return false
 	}

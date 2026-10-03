@@ -521,7 +521,7 @@ func printUsage(writer io.Writer) {
 	fmt.Fprintln(writer, "")
 	fmt.Fprintln(writer, "Map, change, and remove queues")
 	fmt.Fprintln(writer, "  spoolsmith add <ip> --windows-driver --name <queue> [--dry-run] [--yes] [--json]")
-	fmt.Fprintln(writer, "  Windows automatic setup requires verified IPP support and uses the inbox class driver.")
+	fmt.Fprintln(writer, "  Windows automatic setup requires verified IPP support. Windows creates the queue with its class driver, then SpoolSmith asks Windows for the printer's own driver; if none is found the class driver stays and setup still succeeds.")
 	fmt.Fprintln(writer, "  spoolsmith add|configure --profile <file> [--usb-queue <name>] [--offline] [--dry-run] [--yes] [--json]")
 	fmt.Fprintln(writer, "  spoolsmith repoint <queue> <new-ip> [--dry-run] [--yes] [--non-interactive] [--json]")
 	fmt.Fprintln(writer, "  spoolsmith remove --profile <file> [--dry-run] [--json]")

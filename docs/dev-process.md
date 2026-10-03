@@ -1,5 +1,42 @@
 # Dev Process Log
 
+## 2026-10-02: v1.5 (unreleased) — best-effort native driver for IPP setups
+
+Claude orchestrated and implemented (contract tests first); Codex `gpt-6-sol`/high ran one
+read-only adversarial review of the whole diff (Sol/high rung: Windows OS mutation). Task type:
+OS-mutation feature touching plan/preflight/status, PowerShell generation and the desktop sheet.
+
+The review returned six findings. Adjudicated by reading the code and, for #1 and #5, reproducing
+the normalization behaviour; fixes chosen by the orchestrator, not copied from the review:
+
+- **#1 real (P1):** a non-ASCII model (e.g. `打印机`) normalized to the empty string, and the
+  Windows Update title match used `.Contains("")`, so any single pending driver update would have
+  been downloaded and installed. Fixed: empty normalized model gets no native step (plan and
+  PowerShell both), the Windows Update match is exact `DriverModel` plus printer class only (the
+  loose title match is gone).
+- **#2 wording, not a defect:** the review prompt said the step "never creates drivers", but
+  registering a Windows-supplied driver (`Add-PrinterDriver`, Windows Update install) is the
+  feature. Spec, comments and CLAUDE.md now say exactly that and no more.
+- **#3 real (P1):** no time bound on synchronous Windows Update calls. Fixed: 5-minute context
+  deadline on that one command; a timeout reads as "skipped".
+- **#4 real (P2):** a failed class-driver restore was reported as a quiet skip. Fixed: outcome
+  `attention`, and `Install` returns an error.
+- **#5 real (P2, exotic):** Go and PowerShell lower-casing disagreed on `İ`. Fixed: both are now
+  ASCII-only, with a shared test.
+- **#6 real (P2):** the queue could be repointed during the Windows Update search before the
+  switch. Fixed: endpoint is verified before `Set-Printer` as well as after.
+
+My own test run caught one more before review: loosening the existing driver-mismatch rule made
+three older PowerShell harness tests fail. The rule is now "class driver or the model-named driver",
+not "any driver".
+
+Verified: gofmt, `go build`, `GOOS=windows go vet`, full `go test ./...` on Windows, including the
+PowerShell harness tests that run the generated command against stubbed cmdlets.
+**Not verified:** a real Windows Update driver download and a live driver switch (not elevated in
+this session; a read-only Windows Update scan on the Brother PC showed no pending driver). Elevated
+hardware validation is still owed. Cost data was not logged separately.
+
+
 ## 2026-09-19: v0.7.4 — desktop `copy --all`, bulk transfer preview, and two bugs only a real Windows run caught
 
 Astra built the desktop side of bulk driver export — **This PC → Copy all
@@ -1134,3 +1171,73 @@ flag used for scripted daily-use rollout — flagged to the operator as a possib
 documentation question, not treated as license to change anything here. Also deferred, per
 Astra's own recommendation to keep them a separate increment: responsive progress during bundle
 verification/local-status/Intune hashing, and richer partial-failure result presentation.
+
+## 2026-10-02: v1.5 UX lifts and site polish on the unreleased native-driver branch
+
+Five operator-requested lifts on `feat/v1.5-windows-update-driver`, tests first where a test could pin
+the behavior (STD-001):
+
+- **Failed driver restore is a failure, not a skip.** `planChecklist` drew the install's one escalated
+  outcome (`attention ...`, switched then could not restore) as a quiet "unchanged" line because it only
+  recognized `applied`. New `TestNativeDriverFailedRestoreIsShownAsNeedingAttention` failed first. It now
+  draws a failed line with Windows' reason.
+- **Partial-failure guidance.** `friendlyErrorLead` gained two cases: an interrupted run ("earlier steps
+  may already have been applied; re-running reuses them") and the unrestored driver switch. Original text
+  stays underneath.
+- **Responsive local work.** `checkSavedStatus` and printer-file verification (`reviewBundle`) moved off
+  the UI thread. Status has a one-minute bound and is dropped if its dialog closed; file verification
+  shows a title-bar notice and refuses a second concurrent open.
+- **Persistent library folder.** `resolveProfileDirectory` (tested): remembered folder, else beside the
+  app if writable, else `%LOCALAPPDATA%\SpoolSmith\profiles`. Folders chosen in Saved setups and
+  import/export are remembered; opening a file elsewhere deliberately does not change the library.
+- **Site.** Outcome-led copy (comparison section, trust points, MSI link, closing note); stale "New in
+  1.3" label replaced; heading breaks that hid on mobile no longer glue words together. No v1.5 claims:
+  the site deploys from `main` and v1.5 is neither merged nor released.
+
+**Not exercised:** the FlaUI desktop suite was not re-run (STD-008 still owes it before v1.5.0); no real
+Windows Update driver download or live driver switch; no real-display DPI/keyboard/screen-reader pass
+(roadmap item 4 stays open); the site was checked only by headless-Edge screenshot at desktop width
+(its narrow-window capture is clipped by Edge's minimum window width, so mobile overflow is unproven).
+Adversarial review of this diff: pending.
+
+### Review and accessibility follow-up (same day)
+
+**Adversarial review** (Codex `gpt-6.1-sol`, xhigh, read-only, of the uncommitted diff): seven confirmed
+defects and one plausible, all fixed:
+
+- `LoadProfile` (which hashes embedded drivers) ran on the UI thread before the status check's busy state
+  and time bound. It now runs in the goroutine.
+- Selecting another setup re-enabled Check status mid-query, allowing overlapping checks. A `statusRunning`
+  flag now holds the button disabled for the whole query.
+- A slow file verification could replace a review the operator had opened meanwhile. `operationSeq` now
+  makes the late result stand down with a message.
+- Late callbacks now return early if the main window was disposed (the plausible finding).
+- `dirWritable` probed file creation only; a parent that allows files but denies folders passed. It now
+  creates a probe folder and a file in it when the target doesn't exist yet.
+- A relative folder from import would be remembered verbatim. The folder is now stored absolute, and a
+  relative entry in the file is ignored.
+- The "step failed part-way" guidance also matched uninstall errors and promised a retry would finish;
+  removal retry returns already-absent. It no longer promises that or claims nothing is rolled back.
+- Site: "its driver rides along" was unconditional; released v1.4.0 makes settings-only copies when not
+  elevated. Now "whenever Windows lets it be exported".
+
+**Accessibility evidence from the real app** (new `AccessibilityTests.cs`, FlaUI/UIA2, every page, run at a
+125% display scale; output in `dist/gui-accessibility.txt`):
+
+- **Tab did not move focus on 5 of 6 pages** (verified with Win32 `GetGUIThreadInfo`, not only UI
+  Automation). Cause: walk runs modal dialogs through `IsDialogMessage` but the main window's message loop
+  never does. Fixed in `windowKeys.OnPreTranslate` by routing plain Tab/Shift+Tab through it. Afterwards
+  every page tabs through all its controls in order (e.g. Add a printer: 9 stops; Review: 6) and the 34
+  existing GUI tests still pass.
+- Every visible interactive control has an accessible name and takes keyboard focus. Caveat: those names are
+  the app's internal ids (`discover-cidr`, `inspect-target`, `thispc-list`), not human labels, so a screen
+  reader would read the id. Renaming them changes the names the whole FlaUI suite finds controls by, so it
+  is left as a deliberate follow-up, not slipped into this change.
+- The two results tables expose an empty name through UI Automation; announcement is unconfirmed without a
+  screen reader.
+
+**Site checks** (`test/site/check.cjs`, Chromium): no horizontal overflow at 360/390/768/1440 px, zero axe
+WCAG 2 A/AA and 2.1 AA violations, tabs, keyboard, anchors, images and no-JS guides pass.
+
+**Still not covered:** other display scales (only 125% here), Windows high contrast, a real screen reader,
+and color contrast of the native controls.

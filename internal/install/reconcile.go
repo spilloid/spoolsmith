@@ -32,12 +32,15 @@ func installCommands(plan Plan) []string {
 // reviewed profile is reused. After creation we apply the same checks to the
 // Windows-selected driver and port before reporting success.
 func installIPPCommands(plan Plan) []string {
-	name, driver, endpoint := powerShellString(plan.PrinterName), powerShellString(plan.DriverName), powerShellString(plan.IPPURL)
+	name, driver, endpoint, model := powerShellString(plan.PrinterName), powerShellString(plan.DriverName), powerShellString(plan.IPPURL), powerShellString(plan.NativeDriverModel)
 	inner := "$printer = @(Get-Printer -ErrorAction Stop | Where-Object { $_.Name -eq " + name + " }); " +
 		"if ($printer.Count -gt 1) { throw 'Multiple matching printers' }; " +
 		"if ($printer.Count -eq 0) { Add-Printer -Name " + name + " -IppURL " + endpoint + " -ErrorAction Stop; $created = $true; $printer = @(Get-Printer -ErrorAction Stop | Where-Object { $_.Name -eq " + name + " }) }; " +
 		"if ($printer.Count -ne 1) { throw 'Expected IPP printer is missing after directed discovery' }; " +
-		"if ($printer[0].DriverName -ne " + driver + ") { throw 'Windows selected a different driver for the IPP printer; review the queue' }; " +
+		// The class driver is expected. A queue Windows already upgraded to the
+		// printer's own driver (named for its reported model) is also accepted;
+		// any other driver is refused, and the verified endpoint below is the identity check.
+		"if ($printer[0].DriverName -ne " + driver + " -and -not (Get-SpoolSmithDriverIsModel $printer[0].DriverName " + model + ")) { throw 'Windows selected a different driver for the IPP printer; review the queue' }; " +
 		"$port = @(Get-PrinterPort -ErrorAction Stop | Where-Object { $_.Name -eq $printer[0].PortName }); " +
 		"if ($port.Count -ne 1) { throw 'Expected IPP printer port is missing' }; " +
 		"$connection = Get-SpoolSmithIPPConnection $printer[0] $port[0]; if (-not $connection.Verified) { throw 'Printer is not on a verified IPP port' }; " +
@@ -47,12 +50,16 @@ func installIPPCommands(plan Plan) []string {
 	// existing conflicting queue is never removed. Report cleanup errors with
 	// the original post-create verification failure so an operator can inspect
 	// any partial state.
-	command := ippConnectionFunctions + "$created = $false; try { " + inner + " } catch { $failure = $_.Exception.Message; " +
+	command := nativeDriverFunctions + ippConnectionFunctions + "$created = $false; try { " + inner + " } catch { $failure = $_.Exception.Message; " +
 		"if ($created) { try { $cleanup = @(Get-Printer -ErrorAction Stop | Where-Object { $_.Name -eq " + name + " }); " +
 		"if ($cleanup.Count -gt 1) { throw 'multiple matching queues after failed IPP creation' }; " +
 		"if ($cleanup.Count -eq 1) { Remove-Printer -InputObject $cleanup[0] -ErrorAction Stop; $cleanupNote = 'newly created IPP queue removed' } else { $cleanupNote = 'newly created IPP queue already absent' } " +
 		"} catch { throw ($failure + '; cleanup failed: ' + $_.Exception.Message) }; throw ($failure + '; ' + $cleanupNote) }; throw }"
-	return []string{powerShellCommand(command)}
+	commands := []string{powerShellCommand(command)}
+	if plan.NativeDriver {
+		commands = append(commands, nativeDriverCommand(plan))
+	}
+	return commands
 }
 
 func uninstallCommands(plan Plan, purgeDriver bool) []string {
