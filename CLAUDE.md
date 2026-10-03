@@ -14,8 +14,9 @@ See `docs/v1.5-windows-update-driver-spec.md`. What changed in the rules:
   failure. It **never fails the install** (only a failed restore escalates) and is time-bound.
 - Unchanged: elevation, reviewed plan, exactly one confirmation, no SpoolSmith-side download
   (D-0040: Windows resolves drivers). RAW plans, `--offline` plans and the catalog are untouched.
-- Not hardware-verified yet: a real Windows Update OEM download and live driver switch. Say so
-  until `scripts/validate-printer-release.ps1` records it.
+- Hardware-verified 2026-10-02 (Brother HL-L2315D): live switch from the IPP class driver to an
+  already-installed native driver, `in-use` on re-apply, WSD source restored. NOT verified: a real
+  Windows Update OEM download (the driver was already in the DriverStore). Say so.
 
 **Operator update, 2026-09-24 (v1.3 desktop):** the operator approved a
 desktop redesign around the one job -- take printers off this PC, put them on
