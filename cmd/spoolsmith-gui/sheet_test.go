@@ -197,6 +197,29 @@ func TestWrapTextKeepsBreaksAndIndentation(t *testing.T) {
 	}
 }
 
+// A switch that could not be put back is the one native-driver outcome the
+// install reports as an error, so the checklist must not draw it as a quiet
+// skip: the operator has to see that the queue needs review.
+func TestNativeDriverFailedRestoreIsShownAsNeedingAttention(t *testing.T) {
+	const cmdNative = `$x; Add-PrinterDriver -Name $model; Write-Output 'SPOOLSMITH-NATIVE-DRIVER: applied'`
+	plan := &install.Plan{PrinterName: "Front", IPP: true, IPPURL: "ipp://10.0.0.5/ipp/print", DriverName: "Microsoft IPP Class Driver",
+		NativeDriver: true, NativeDriverModel: "Example 100", Commands: []string{cmdQueue, cmdNative}}
+	attention := "SPOOLSMITH-NATIVE-DRIVER: attention endpoint changed; could not restore Microsoft IPP Class Driver: spooler stopped; review the queue"
+	lines := planChecklist(install.Outcome{Plan: plan, Status: "failed", Result: &install.Result{Ran: []install.CommandResult{
+		{Command: cmdQueue, Output: "Created IPP printer"},
+		{Command: cmdNative, Output: attention},
+	}}})
+	if len(lines) != 2 || lines[1].State != stepFailed {
+		t.Fatalf("failed restore must be drawn as a failure: %+v", lines)
+	}
+	if len(lines[1].Detail) != 1 || !strings.Contains(lines[1].Detail[0], "review the queue") {
+		t.Errorf("detail = %v", lines[1].Detail)
+	}
+	if strings.Contains(lines[1].Detail[0], "SPOOLSMITH-NATIVE-DRIVER") {
+		t.Errorf("marker leaked into the detail: %v", lines[1].Detail)
+	}
+}
+
 func TestNativeDriverStepIsNeverShownAsAFailure(t *testing.T) {
 	const cmdNative = `$x; Add-PrinterDriver -Name $model; Write-Output 'SPOOLSMITH-NATIVE-DRIVER: applied'`
 	if classifyCommand(cmdNative) != stepNativeDriver {

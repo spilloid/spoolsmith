@@ -74,6 +74,12 @@ func (a *app) showSavedSetups(paths []string, message string, readErr error) {
 	var setupBtn, updateBtn, editBtn, statusBtn, removeBtn, cancelBtn *walk.PushButton
 	current := append([]string(nil), paths...)
 	folderErr := readErr
+	// closed is set when the dialog goes away, so a status check that finishes
+	// afterwards touches nothing.
+	closed := false
+	// statusRunning keeps Check status disabled for the whole query, however the
+	// selection changes meanwhile, so checks never overlap.
+	statusRunning := false
 
 	labels := func() []string {
 		out := make([]string, 0, len(current))
@@ -119,6 +125,7 @@ func (a *app) showSavedSetups(paths []string, message string, readErr error) {
 		for _, button := range []*walk.PushButton{setupBtn, updateBtn, editBtn, statusBtn, removeBtn} {
 			button.SetEnabled(true)
 		}
+		statusBtn.SetEnabled(!statusRunning)
 	}
 	start := func(kind operationKind) {
 		path, ok := selected()
@@ -146,8 +153,20 @@ func (a *app) showSavedSetups(paths []string, message string, readErr error) {
 				PushButton{AssignTo: &setupBtn, Text: "Set up this printer", Enabled: false, OnClicked: func() { start(opInstall) }},
 				PushButton{AssignTo: &updateBtn, Text: "Update to match", Enabled: false, OnClicked: func() { start(opConfigure) }},
 				PushButton{AssignTo: &statusBtn, Text: "Check status", Enabled: false, OnClicked: func() {
-					if path, ok := selected(); ok {
-						a.checkSavedStatus(dialog, path)
+					if path, ok := selected(); ok && !statusRunning {
+						a.checkSavedStatus(dialog, path, func(busy bool) {
+							statusRunning = busy
+							if closed {
+								return
+							}
+							_, usable := selected()
+							statusBtn.SetEnabled(!busy && usable)
+							if busy {
+								status.SetText("Checking this PC against the saved setup...")
+							} else {
+								status.SetText(shownOr(message, "Folder: "+a.profilesDirectory()))
+							}
+						}, func() bool { return !closed })
 					}
 				}},
 				PushButton{AssignTo: &editBtn, Text: "Edit...", Enabled: false, OnClicked: func() {
@@ -184,7 +203,7 @@ func (a *app) showSavedSetups(paths []string, message string, readErr error) {
 					if ok, err := picker.ShowBrowseFolder(dialog); err != nil {
 						showErr(dialog, "Choose folder", err)
 					} else if ok {
-						a.profileDirPath = picker.FilePath
+						a.setProfileDirectory(picker.FilePath)
 						current, folderErr = savedSetupPaths(picker.FilePath)
 						list.SetModel(labels())
 						status.SetText("Folder: " + picker.FilePath)
@@ -204,6 +223,7 @@ func (a *app) showSavedSetups(paths []string, message string, readErr error) {
 	}
 	list.CurrentIndexChanged().Attach(refreshDetail)
 	list.ItemActivated().Attach(func() { start(opInstall) })
+	dialog.Closing().Attach(func(*bool, walk.CloseReason) { closed = true })
 	list.SetModel(labels())
 	if len(current) > 0 {
 		list.SetCurrentIndex(0)

@@ -23,6 +23,8 @@ func TestFriendlyOperationErrorTranslatesCommonCasesAndKeepsTheDetail(t *testing
 		{"file exists", "copy: office.ssb already exists; retry with a different, unused bundle filename", "already exists"},
 		{"identity mismatch", `profile: HTTP title changed: saved "A", observed "B"; verify the device and recapture if appropriate`, "does not match what was saved"},
 		{"unreachable", "install: collect evidence: dial tcp: connection refused", "could not be reached"},
+		{"driver switch not restored", "install: native driver change left the queue in an unverified state: attention endpoint changed", "queue needs a look"},
+		{"interrupted run", `install: run "Add-Printer -Name X": exit status 1`, "Some earlier steps may already have been applied"},
 		{"corrupt bundle", `bundle: decode manifest: invalid character 'P' looking for beginning of value`, "could not be read as a printer file"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

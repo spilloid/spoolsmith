@@ -28,12 +28,14 @@ product hardening, with additional protocols as future scope.
 3. **Broaden hardware coverage.** Validate the HP LaserJet Pro M4xx family and
    additional explicitly configured drivers. Brother HL-L2315D evidence does not
    establish compatibility for every member of a catalog family.
-4. **Check the native desktop on real displays.** Exercise 125%, 150% and 200%
-   scaling, keyboard-only navigation, a screen reader and Windows high contrast.
-   Hosted Windows automation covers navigation, minimum-size layout and selected
-   workflows; it does not establish those accessibility or hardware outcomes.
-   Extend end-to-end coverage through actual GUI copy/apply and saved-setup transfer.
-5. **Validate the automatic offline fallback (2026-09-22, see CLAUDE.md) against
+4. **Check the native desktop on real displays.** *(partly done, v1.5 unreleased.)* A FlaUI
+   audit at 125% scaling (`AccessibilityTests`, `dist/gui-accessibility.txt`) found and fixed a
+   real defect: Tab did not move focus in the main window; it now walks every control on every
+   page. All interactive controls have accessible names and keyboard focus, but the names are
+   internal ids rather than readable labels. Still open: 100%, 150% and 200% scaling, Windows
+   high contrast, a real screen reader (which also settles how the results tables are
+   announced), and readable accessible names. Hosted Windows automation does not establish
+   those outcomes. Extend end-to-end coverage through actual GUI copy/apply and saved-setup transfer.5. **Validate the automatic offline fallback (2026-09-22, see CLAUDE.md) against
    a real printer.** Power off (or unplug) a printer mid-copy and mid-apply on
    actual hardware, on both the CLI and desktop, and confirm: `copy` still
    writes a usable, clearly-marked bundle; `apply`/`install --profile` still
@@ -67,12 +69,22 @@ product hardening, with additional protocols as future scope.
   can leave an unused port; retry safely reuses it. Validate interruption/retry
   and make residual resources and recovery guidance clearer. Repoint intentionally
   retains the old port.
-- **Keep long local operations responsive.** Local status and bundle verification
-  can currently run synchronously in desktop dialogs. Move slow work off the UI
-  thread with cancellation and explicit progress, then exercise closing/cancelling.
-- **Improve library portability.** The default profile folder is beside the app;
-  a writable extraction folder is needed. Folder selection is per session.
-  Consider a persistent per-user location and clearer missing-archive recovery.
+- **Keep long local operations responsive.** *(v1.5, unreleased.)* Desktop local
+  status and printer-file verification now run off the UI thread with a time bound
+  (status) and a title-bar "checking" notice (file), and a result that arrives after
+  the dialog closed is dropped. Still open: a Cancel button and a progress bar for
+  very large driver bundles, and exercising close/cancel on real hardware.
+- **Improve library portability.** *(v1.5, unreleased.)* The saved-setups folder is
+  now the one the operator last chose (remembered per user in
+  `%APPDATA%\SpoolSmith\library-folder.txt`), else `profiles` beside the app when
+  that is writable, else `%LOCALAPPDATA%\SpoolSmith\profiles` (the machine-wide MSI
+  under Program Files). `SPOOLSMITH_PROFILES_DIR` still overrides all of these.
+  Still open: clearer recovery when a referenced driver archive is missing.
+- **Interrupted operations: guidance shipped, rollback not.** *(v1.5, unreleased.)*
+  A failed step now says earlier steps may already have been applied and that
+  adding the same printer again reuses what exists; a native-driver switch that could not be restored is drawn
+  as a failure with the queue's state, not a quiet skip. Nothing is rolled back
+  automatically.
 - **Update delivery.** Releases ship a portable ZIP and a signed, machine-wide MSI
   (from v1.3.0; see `installer/README.md`) with checksums and Authenticode-signed
   executables. A newer MSI upgrades an older one when it is installed, but nothing

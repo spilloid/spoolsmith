@@ -174,7 +174,7 @@ func (a *app) reviewSetupTransfer(owner walk.Form, importing bool, source, desti
 							}
 							saved = true
 							if importing {
-								a.profileDirPath = preview.Destination
+								a.setProfileDirectory(preview.Destination)
 							}
 							message := fmt.Sprintf("Saved %d setups to %s.\r\n\r\n%s", count, preview.Destination, profileset.TransferScope)
 							if importing {
@@ -226,24 +226,45 @@ func setupTransferSummary(preview profileset.Preview) string {
 	return text.String()
 }
 
-func (a *app) checkSavedStatus(owner walk.Form, path string) {
-	p, err := bundle.LoadProfile(path)
-	if err != nil {
-		showErr(owner, "Check local status", err)
-		return
-	}
-	// A status query does not probe the printer or mutate Windows.
-	status, err := install.CheckStatus(context.Background(), a.env, p)
-	if err != nil {
-		showErr(owner, "Check local status", err)
-		return
-	}
-	text := "This PC matches the saved queue, driver and RAW TCP 9100 settings."
-	if p.PortType == "ipp" {
-		text = "This PC matches the saved IPP queue, driver and endpoint."
-	}
-	if !status.Compliant {
-		text = "This PC differs from the saved setup:\r\n\r\n" + strings.Join(status.Mismatches, "\r\n")
-	}
-	walk.MsgBox(owner, "Local status: "+p.PrinterName, text+"\r\n\r\nThis checks local configuration only, not reachability or physical printing.", walk.MsgBoxIconInformation)
+// checkSavedStatus compares this PC with a saved setup without blocking the
+// window: the query runs off the UI thread, is time-bound, and its result is
+// dropped if the dialog that asked has been closed. setBusy is told when the
+// check starts and ends so the caller can disable its own button.
+func (a *app) checkSavedStatus(owner walk.Form, path string, setBusy func(bool), alive func() bool) {
+	setBusy(true)
+	start := time.Now()
+	go func() {
+		// Reading a saved setup hashes any driver files it carries, so it belongs
+		// off the UI thread with the rest. A status query does not probe the
+		// printer or mutate Windows.
+		p, err := bundle.LoadProfile(path)
+		var status install.LocalStatus
+		if err == nil {
+			ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+			defer cancel()
+			status, err = install.CheckStatus(ctx, a.env, p)
+		}
+		a.log("gui", "check-status", []string{path}, statusOf(err), err, start)
+		a.mw.Synchronize(func() {
+			if a.mw.IsDisposed() {
+				return
+			}
+			setBusy(false)
+			if !alive() {
+				return
+			}
+			if err != nil {
+				showErr(owner, "Check local status", err)
+				return
+			}
+			text := "This PC matches the saved queue, driver and RAW TCP 9100 settings."
+			if p.PortType == "ipp" {
+				text = "This PC matches the saved IPP queue, driver and endpoint."
+			}
+			if !status.Compliant {
+				text = "This PC differs from the saved setup:\r\n\r\n" + strings.Join(status.Mismatches, "\r\n")
+			}
+			walk.MsgBox(owner, "Local status: "+p.PrinterName, text+"\r\n\r\nThis checks local configuration only, not reachability or physical printing.", walk.MsgBoxIconInformation)
+		})
+	}()
 }

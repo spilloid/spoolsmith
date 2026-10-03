@@ -191,6 +191,12 @@ func planChecklist(out install.Outcome) []checklistLine {
 					if strings.HasPrefix(outcome, "applied ") {
 						line.State = stepDone
 						line.Text = "Switched to the printer's own driver " + quoted(strings.TrimPrefix(outcome, "applied "))
+					} else if strings.HasPrefix(outcome, "attention") {
+						// The one outcome that is not a quiet skip: the driver was
+						// switched and could not be put back.
+						line.State = stepFailed
+						line.Text = "Windows changed the printer's driver and it could not be put back"
+						line.Detail = append(line.Detail, strings.TrimSpace(strings.TrimPrefix(outcome, "attention")))
 					} else {
 						line.Detail = append(line.Detail, outcome)
 					}

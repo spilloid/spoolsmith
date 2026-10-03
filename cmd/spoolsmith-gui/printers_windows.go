@@ -29,6 +29,12 @@ type printerUI struct {
 	intuneBtn                                  *walk.PushButton
 	discoveryJSON                              string
 	driversLoading, driversLoaded, captureBusy bool
+	// verifyingFile is set while a dropped or opened printer file is being
+	// verified off the UI thread.
+	verifyingFile bool
+	// operationSeq counts reviews started, so work that finishes later can tell
+	// whether another review replaced the screen in the meantime.
+	operationSeq                               int
 	captureSuggestedName, captureSuggestedFile string
 	// captureDriverTarget is the IP address the current captureDriver value
 	// was chosen for. It is compared against captureTarget's current text
@@ -44,7 +50,8 @@ type printerUI struct {
 
 func (a *app) initializePrinters() {
 	if executable, err := os.Executable(); err == nil {
-		a.profileDirPath = defaultProfileDirectory(executable)
+		a.profileDirPath = resolveProfileDirectory(executable, readRememberedFolder(rememberedFolderFile()), dirWritable,
+			func() string { return os.Getenv("LOCALAPPDATA") })
 	}
 	if dir := strings.TrimSpace(os.Getenv("SPOOLSMITH_PROFILES_DIR")); dir != "" {
 		a.profileDirPath = dir
@@ -54,6 +61,16 @@ func (a *app) initializePrinters() {
 	// Optional panels are re-applied when their page is shown; see pageShown.
 	a.setupGroup.SetVisible(false)
 	a.updateDiscoveryActions()
+}
+
+// setProfileDirectory changes the saved-setups folder for this run and
+// remembers it for the next, so a chosen folder is not forgotten on restart.
+// Failing to remember is not worth interrupting the operator for.
+func (a *app) setProfileDirectory(dir string) {
+	a.profileDirPath = dir
+	if file := rememberedFolderFile(); file != "" {
+		_ = writeRememberedFolder(file, dir)
+	}
 }
 
 func (a *app) profilesDirectory() string {
@@ -417,29 +434,67 @@ func (a *app) onOpenBundle() {
 }
 
 // reviewBundle hands one verified printer file to the review screen.
+//
+// Verification hashes every file in the bundle, and a bundle that carries a
+// driver can be large, so it runs off the UI thread; the window title says
+// what is happening meanwhile, and a second file opened during the check waits
+// for the first rather than racing it.
 func (a *app) reviewBundle(path string) {
+	if a.verifyingFile {
+		walk.MsgBox(a.mw, "Open printer file", "SpoolSmith is still checking the previous printer file. Open this one again in a moment.", walk.MsgBoxIconInformation)
+		return
+	}
+	a.verifyingFile = true
+	seq := a.operationSeq
+	title := a.mw.Title()
+	a.mw.SetTitle(title + " — checking printer file...")
+	start := time.Now()
+	go func() {
+		op, err := verifyBundleOperation(path)
+		a.log("gui", "verify file", []string{path}, statusOf(err), err, start)
+		a.mw.Synchronize(func() {
+			if a.mw.IsDisposed() {
+				return
+			}
+			a.verifyingFile = false
+			a.mw.SetTitle(title)
+			if err != nil {
+				showErr(a.mw, "Open printer file", fmt.Errorf("%s", friendlyOperationError(err.Error())))
+				return
+			}
+			// Another review opened while the file was being checked must not be
+			// silently replaced by this one.
+			if a.operationSeq != seq {
+				walk.MsgBox(a.mw, "Open printer file", "Another printer review was opened while this file was being checked, so it was not opened. Open the file again to review it.", walk.MsgBoxIconInformation)
+				return
+			}
+			a.startOperation(op)
+		})
+	}()
+}
+
+// verifyBundleOperation opens and verifies a printer file and describes the
+// apply it would start. It touches nothing on this PC.
+func verifyBundleOperation(path string) (operation, error) {
 	opened, err := bundle.Open(path)
 	if err != nil {
-		showErr(a.mw, "Open printer file", err)
-		return
+		return operation{}, err
 	}
 	defer opened.Close()
 	if err := opened.Verify(); err != nil {
-		showErr(a.mw, "Open printer file", err)
-		return
+		return operation{}, err
 	}
 	// A bundle whose printer never answered during copy has no live identity
 	// to ever check here either -- say so on the review screen up front
 	// rather than let the operator discover it mid-run.
-	a.startOperation(operation{
+	return operation{
 		Kind:        opApply,
 		BundlePath:  path,
 		PrinterName: opened.Manifest.Profile.PrinterName,
 		Target:      opened.Manifest.Profile.Target,
 		Offline:     opened.Manifest.Profile.PortType != "usb" && opened.Manifest.Profile.Evidence.Provenance != "captured",
-	})
+	}, nil
 }
-
 func (a *app) onCaptureProfile() {
 	if a.captureBusy || a.mutationBusy {
 		return

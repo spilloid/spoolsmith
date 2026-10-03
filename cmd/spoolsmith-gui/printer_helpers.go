@@ -205,3 +205,100 @@ func plural(count int, one, many string) string {
 	}
 	return many
 }
+
+// resolveProfileDirectory picks the folder saved setups live in when the
+// operator has not overridden it with SPOOLSMITH_PROFILES_DIR: a folder they
+// chose before (if it still exists), else a "profiles" folder beside the
+// program when that is writable, else one under the user's local app data. The
+// last case is the machine-wide install, where Program Files is read-only for
+// a standard user.
+func resolveProfileDirectory(executable, remembered string, writable func(string) bool, localAppData func() string) string {
+	if remembered != "" {
+		if info, err := os.Stat(remembered); err == nil && info.IsDir() {
+			return remembered
+		}
+	}
+	beside := defaultProfileDirectory(executable)
+	if writable(beside) {
+		return beside
+	}
+	if base := localAppData(); base != "" {
+		return filepath.Join(base, "SpoolSmith", "profiles")
+	}
+	return beside
+}
+
+// dirWritable reports whether dir can be used as a saved-setups folder: files
+// can be created in it, or, when it does not exist yet, a folder can be created
+// in the nearest existing parent and a file inside that. Both are probed
+// because Windows grants creating files and creating folders separately.
+func dirWritable(dir string) bool {
+	probeIn := func(parent string) bool {
+		probe, err := os.CreateTemp(parent, ".spoolsmith-write-*")
+		if err != nil {
+			return false
+		}
+		name := probe.Name()
+		probe.Close()
+		os.Remove(name)
+		return true
+	}
+	missing := false
+	for {
+		if info, err := os.Stat(dir); err == nil {
+			if !info.IsDir() {
+				return false
+			}
+			if !missing {
+				return probeIn(dir)
+			}
+			sub, err := os.MkdirTemp(dir, ".spoolsmith-write-*")
+			if err != nil {
+				return false
+			}
+			defer os.Remove(sub)
+			return probeIn(sub)
+		}
+		missing = true
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return false
+		}
+		dir = parent
+	}
+}
+
+// readRememberedFolder returns the folder saved in file, or "" when there is
+// none. A missing or blank file is the normal first-run case, not an error.
+func readRememberedFolder(file string) string {
+	data, err := os.ReadFile(file)
+	if err != nil {
+		return ""
+	}
+	dir := strings.TrimSpace(string(data))
+	// A relative folder would mean something different on the next launch.
+	if !filepath.IsAbs(dir) {
+		return ""
+	}
+	return dir
+}
+
+func writeRememberedFolder(file, dir string) error {
+	if abs, err := filepath.Abs(dir); err == nil {
+		dir = abs
+	}
+	if err := os.MkdirAll(filepath.Dir(file), 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(file, []byte(dir+"\r\n"), 0o600)
+}
+
+// rememberedFolderFile is where the chosen saved-setups folder is kept between
+// runs, per user.
+func rememberedFolderFile() string {
+	base, err := os.UserConfigDir()
+	if err != nil || base == "" {
+		return ""
+	}
+	return filepath.Join(base, "SpoolSmith", "library-folder.txt")
+}
