@@ -1,4 +1,4 @@
-# Run from an elevated PowerShell or elevated Codex session before v1.4.0.
+# Run from an elevated PowerShell or elevated Codex session before each release.
 # Creates uniquely named temporary queues, reapplies them, checks local status,
 # and removes them. Sends no print jobs and never removes an installed driver.
 # -PrepareIPPSource temporarily removes/restores the source WSD queue after

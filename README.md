@@ -408,13 +408,13 @@ entry; the `.ssb` file association is offered by the app, per user, either way.
 
 ```powershell
 # Interactive
-msiexec /i SpoolSmith-v1.4.0-x64.msi
+msiexec /i SpoolSmith-v1.5.0-x64.msi
 
 # Silent, for deployment tools
-msiexec /i SpoolSmith-v1.4.0-x64.msi /qn /norestart /l*v "$env:TEMP\spoolsmith-install.log"
+msiexec /i SpoolSmith-v1.5.0-x64.msi /qn /norestart /l*v "$env:TEMP\spoolsmith-install.log"
 
 # Silent uninstall (the ProductCode changes every version, so uninstall by file or by name)
-msiexec /x SpoolSmith-v1.4.0-x64.msi /qn /norestart
+msiexec /x SpoolSmith-v1.5.0-x64.msi /qn /norestart
 Get-Package -Name SpoolSmith -ProviderName msi | Uninstall-Package   # without the file; Windows PowerShell 5.1
 ```
 
@@ -437,7 +437,7 @@ what we published before running it — Windows can do this with nothing install
 
 ```powershell
 Get-AuthenticodeSignature .\spoolsmith.exe | Format-List Status, SignerCertificate
-Get-AuthenticodeSignature .\SpoolSmith-v1.4.0-x64.msi | Format-List Status, SignerCertificate
+Get-AuthenticodeSignature .\SpoolSmith-v1.5.0-x64.msi | Format-List Status, SignerCertificate
 
 # And each download against its published .sha256 sidecar
 (Get-FileHash spoolsmith-*-windows-amd64.zip -Algorithm SHA256).Hash.ToLower()
