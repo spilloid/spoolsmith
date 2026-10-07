@@ -39,7 +39,7 @@ func DriverFor(familyID string) (DriverPackage, bool) {
 // verifiedWindowsDriverNames maps a normalized model to the exact name Windows
 // registers for it. An entry may only be added after that name has been read
 // from Get-PrinterDriver on real hardware and the evidence recorded in
-// docs/real-hardware-verification.md.
+// docs/development/real-hardware-verification.md.
 //
 // This is deliberately not a per-model driver database. It is a register of what
 // has actually been proven, and it stays small by construction: a sibling model

@@ -1,7 +1,7 @@
 # CI/CD implementation spec (DR-0005 §8 — sequenced after the core unit, which now passes)
 
 Mechanical CI/build work, not architecture — routes at a lower tier than the detection/catalog
-core per `docs/dev-process.md`'s routing table and DR-0005 §2. Written by the orchestrator before
+core per `docs/development/dev-process.md`'s routing table and DR-0005 §2. Written by the orchestrator before
 dispatch.
 
 ## Goal

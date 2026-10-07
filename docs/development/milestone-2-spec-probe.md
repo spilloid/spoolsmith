@@ -104,7 +104,7 @@ meant to be exhaustive — it's a hint feeding `MACVendor`, not a source of trut
 MAC address for a given IP, read it from the local ARP table/cache (Linux: parse `/proc/net/arp`;
 this unit's CI target is Linux, and Windows-specific ARP reading can be a documented follow-up
 inside the same file behind a small OS-conditional if easy, but do not block this unit on it if
-Windows ARP reading needs meaningfully different code — note in `docs/dev-process.md` if skipped).
+Windows ARP reading needs meaningfully different code — note in `docs/development/dev-process.md` if skipped).
 
 ### Hostname (`internal/probe/hostname.go`)
 

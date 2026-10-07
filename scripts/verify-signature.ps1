@@ -5,7 +5,7 @@ Checks the Authenticode signature on SpoolSmith binaries.
 .DESCRIPTION
 Uses Get-AuthenticodeSignature rather than `signtool verify`: signtool ships
 with the Windows SDK and is not present on a stock Windows 11 machine (see
-docs/capture-report-review.md §2.4), so anyone who downloaded a release can run
+docs/development/capture-report-review.md §2.4), so anyone who downloaded a release can run
 this without installing anything.
 
 Requires a countersigned timestamp, not just a valid signature. Azure Artifact

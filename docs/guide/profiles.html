@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Discover printers, let Windows set up IPP printers, and capture reusable .ssb printer files to add, update or remove queues.">
+  <meta property="og:title" content="Set up by address, and saved setups · SpoolSmith">
+  <meta property="og:description" content="Discover printers, let Windows set up IPP printers, and capture reusable .ssb printer files to add, update or remove queues.">
+  <meta property="og:url" content="https://spilloid.github.io/spoolsmith/guide/profiles.html">
+  <meta property="og:image" content="https://spilloid.github.io/spoolsmith/img/gui-this-pc.png">
+  <meta name="theme-color" content="#163d38">
+  <title>Set up by address, and saved setups · SpoolSmith docs</title>
+  <link rel="icon" href="../favicon.ico" sizes="16x16 32x32 48x48">
+  <link rel="icon" type="image/png" href="../img/icon-192.png" sizes="192x192">
+  <link rel="apple-touch-icon" href="../apple-touch-icon.png">
+  <link rel="stylesheet" href="../site.css">
+  <link rel="stylesheet" href="guide.css">
+  <script src="../site.js" defer></script>
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+  <!-- Generated page: edit the content below directly. Keep the sidebar in sync across docs/guide/*.html. -->
+  <header class="header wrap">
+    <a class="brand" href="../" aria-label="SpoolSmith home"><img src="../img/icon-192.png" alt="" width="38" height="38">SpoolSmith<span class="brand-dot">.</span></a>
+    <nav aria-label="Main navigation"><a href="../">Product</a><a href="index.html" aria-current="page">Docs</a><a href="https://github.com/spilloid/spoolsmith/releases/latest">Download</a><a class="nav-github" href="https://github.com/spilloid/spoolsmith">GitHub <span aria-hidden="true">↗</span></a></nav>
+  </header>
+  <div class="wrap docs-layout">
+    <details class="docs-menu" open><summary>Documentation menu</summary><div><nav aria-label="Documentation"><h2>Get started</h2><ul><li><a href="index.html">Overview</a></li><li><a href="start.html">Install & first run</a></li></ul><h2>Workflows</h2><ul><li><a href="copy.html">Copy a printer</a></li><li><a href="profiles.html" aria-current="page">Set up by address</a></li><li><a href="intune.html">Intune packaging</a></li></ul><h2>Reference</h2><ul><li><a href="desktop.html">Desktop app</a></li><li><a href="cli.html">Command line</a></li><li><a href="status.html">Safety & limits</a></li></ul><a class="menu-download" href="https://github.com/spilloid/spoolsmith/releases/latest">Download for Windows ↗<span>Signed · ZIP or MSI</span></a></nav></div></details>
+    <main id="main" class="doc">
+      <p class="eyebrow"><span class="status-dot"></span>Workflow</p>
+      <h1>Set up by address, and saved setups</h1>
+      <p class="lead">When no PC has the printer yet, start from its address. Let Windows set up an IPP printer by itself, or pick an installed driver and capture the printer as a reusable <code>.ssb</code> file you can add, update, check or remove on any PC.</p>
+
+      <h2 id="find-printers-on-the-network">Find printers on the network<a class="heading-anchor" href="#find-printers-on-the-network" aria-label="Link to this section">#</a></h2>
+      <p>The desktop's <strong>Add a printer</strong> page lists printers on the network the PC is connected to, scanned when the app starts. <strong>Scan a different network or IP...</strong> takes another subnet, or one address with <strong>Use IP directly</strong>. On the command line:</p>
+      <div class="code-block"><button class="copy" type="button" aria-label="Copy commands">Copy</button><pre><code>.\spoolsmith.exe discover 192.168.1.0/24
+.\spoolsmith.exe inspect 192.168.1.50</code></pre></div>
+      <p><code>discover</code> takes <code>/24</code> through <code>/32</code> and lists printer candidates. <code>inspect</code> shows what one address reports over SNMP, HTTP and PJL, and where each piece of evidence came from. Discovery doesn't cross VLANs or use multicast, and a candidate isn't a certified printer.</p>
+      <figure class="shot doc-shot"><img src="../img/gui-add-printer.png" alt="Add a printer page with a network or IP field, Scan and Use IP directly buttons, and Open a printer file and Open a saved setup buttons." width="960" height="640" loading="lazy" decoding="async"></figure>
+
+      <h2 id="let-windows-set-it-up-ipp">Let Windows set it up (IPP)<a class="heading-anchor" href="#let-windows-set-it-up-ipp" aria-label="Link to this section">#</a></h2>
+      <p>For a printer that supports IPP, Windows can do the driver work. In the desktop, choose <strong>Windows automatic (IPP)</strong> in the driver picker. On the command line:</p>
+      <div class="code-block"><button class="copy" type="button" aria-label="Copy commands">Copy</button><pre><code>.\spoolsmith.exe add 192.168.1.50 --windows-driver --name "Office printer" --dry-run
+.\spoolsmith.exe add 192.168.1.50 --windows-driver --name "Office printer"</code></pre></div>
+      <p>SpoolSmith first verifies the IPP endpoint and the model. Windows then creates the queue with Microsoft's inbox IPP Class Driver, and SpoolSmith asks Windows for the printer's own driver, in this order:</p>
+      <ol>
+        <li>a driver already registered under the printer's model name;</li>
+        <li>one Windows can register by that name;</li>
+        <li>exactly one matching printer driver from Windows Update.</li>
+      </ol>
+      <p>If one is found, the queue switches to it, with the endpoint checked before and after; if the check fails, the class driver is put back. If Windows has nothing, the class driver stays. This step is limited to five minutes and <strong>never fails the setup</strong>. The plan shows the step and the model it will look up, but can't name the driver in advance, because Windows chooses it during setup. SpoolSmith itself downloads nothing.</p>
+      <div class="note"><strong>Check a test page</strong><p>A working IPP connection doesn't prove the driver suits the printer. Print a test page after setup. IPP discovery checks common paths on TCP 631; IPPS-only printers aren't supported yet.</p></div>
+      <p>To save this kind of setup for later, capture it with <code>profile capture 192.168.1.50 office.ssb --name "Office printer" --windows-driver</code>.</p>
+
+      <h2 id="use-an-installed-driver">Use an installed driver<a class="heading-anchor" href="#use-an-installed-driver" aria-label="Link to this section">#</a></h2>
+      <p>For printers that need the manufacturer's driver, install it on the PC first, then get its exact registered name:</p>
+      <div class="code-block"><button class="copy" type="button" aria-label="Copy commands">Copy</button><pre><code>.\spoolsmith.exe drivers</code></pre></div>
+      <div class="warn"><strong>Verify compatibility yourself</strong><p>Choose the driver because you know it works with this model. A similar model name or an AI-suggested driver name doesn't verify it; a printed page does.</p></div>
+      <div class="code-block"><button class="copy" type="button" aria-label="Copy commands">Copy</button><pre><code>New-Item -ItemType Directory -Force profiles
+.\spoolsmith.exe profile capture 192.168.1.50 profiles\office.ssb `
+  --name "Office Printer" --driver "EXACT REGISTERED DRIVER NAME"</code></pre></div>
+      <p>Capture probes the printer, records what it reports, and writes a printer file. It never overwrites an existing file. In the desktop, choose the driver and <strong>Save and review</strong>.</p>
+
+      <h2 id="add-update-and-remove">Add, update and remove<a class="heading-anchor" href="#add-update-and-remove" aria-label="Link to this section">#</a></h2>
+      <span class="code-label">In an administrator PowerShell</span>
+      <div class="code-block"><button class="copy" type="button" aria-label="Copy commands">Copy</button><pre><code># Preview, then confirm
+.\spoolsmith.exe add --profile profiles\office.ssb --dry-run
+.\spoolsmith.exe add --profile profiles\office.ssb
+
+# Change the saved settings, then update the queue to match
+.\spoolsmith.exe profile edit profiles\office.ssb --driver "NEW REGISTERED DRIVER NAME"
+.\spoolsmith.exe configure --profile profiles\office.ssb
+
+# Remove the queue, keeping shared ports and drivers
+.\spoolsmith.exe remove --profile profiles\office.ssb</code></pre></div>
+      <p>In the desktop, open <strong>More → Saved setups</strong> and use <strong>Set up this printer</strong>, <strong>Update to match</strong>, <strong>Check status</strong>, <strong>Edit...</strong> or <strong>Remove printer from this PC...</strong> <strong>Open another folder...</strong> switches libraries.</p>
+      <figure class="shot doc-shot"><img src="../img/gui-saved-setups.png" alt="Saved printer setups window listing saved .ssb files, with Set up this printer, Update to match, Check status, Edit, Remove, Export all and Import all buttons." width="720" height="420" loading="lazy" decoding="async"></figure>
+
+      <h3 id="running-it-again-is-safe">Running it again is safe<a class="heading-anchor" href="#running-it-again-is-safe" aria-label="Link to this section">#</a></h3>
+      <ul>
+        <li><strong>Repeating <code>add</code></strong> with matching settings changes nothing. If the queue exists with different settings, use <code>configure</code>. A conflicting port always stops.</li>
+        <li><strong>Repeating <code>remove</code></strong> on a queue that's gone succeeds without changes. Shared ports and drivers are kept.</li>
+        <li><strong><code>remove --profile</code></strong> checks the installed address and driver against the file first. To remove a differently configured queue, use <code>uninstall "Queue name"</code>.</li>
+        <li><strong>Renaming the queue</strong> in a file creates a new queue rather than renaming the old one, and <strong>moving to a new IP</strong> keeps the old port.</li>
+        <li><strong><code>profile edit</code></strong> keeps a backup under <code>.backups\</code>.</li>
+      </ul>
+
+      <h3 id="the-identity-check-and-offline-fallback">The identity check and offline fallback<a class="heading-anchor" href="#the-identity-check-and-offline-fallback" aria-label="Link to this section">#</a></h3>
+      <p>Before showing the plan, <code>add</code> and <code>configure</code> probe the printer and require the model it reports over HTTP and PJL to match the file. One missing source is tolerated if another agrees; conflicting sources stop the operation. This confirms that the same model is still at that address, not that it's the same physical device.</p>
+      <p>If the printer is unreachable or can't confirm its identity after one retry, setup <strong>falls back to offline</strong> using the saved settings, and the plan says so before you confirm. <code>--offline</code> skips the probe from the start, which is useful when preparing a laptop for another site. Neither case downloads anything, and confirmation, elevation and conflict checks all still apply.</p>
+
+      <h3 id="checking-a-pc-s-configuration">Checking a PC's configuration<a class="heading-anchor" href="#checking-a-pc-s-configuration" aria-label="Link to this section">#</a></h3>
+      <div class="code-block"><button class="copy" type="button" aria-label="Copy commands">Copy</button><pre><code>.\spoolsmith.exe status --profile profiles\office.ssb</code></pre></div>
+      <p><code>status</code> compares the local queue, driver and port with the file without contacting the printer. Exit code <code>0</code> means it matches, <code>3</code> mismatch, <code>2</code> invalid input, <code>1</code> Windows inventory failure. A match doesn't prove the printer is reachable or that printing works.</p>
+
+      <h2 id="move-your-whole-library">Move your whole library<a class="heading-anchor" href="#move-your-whole-library" aria-label="Link to this section">#</a></h2>
+      <div class="code-block"><button class="copy" type="button" aria-label="Copy commands">Copy</button><pre><code>.\spoolsmith.exe profile export-all profiles printer-setups.zip --dry-run
+.\spoolsmith.exe profile export-all profiles printer-setups.zip
+.\spoolsmith.exe profile import-all printer-setups.zip imported-profiles --dry-run
+.\spoolsmith.exe profile import-all printer-setups.zip imported-profiles</code></pre></div>
+      <p>Export writes every <code>.ssb</code> in a folder into one printer set, byte for byte, drivers included. Import checks every printer first, refuses existing filenames (including names that differ only in case), and only saves files: each change to Windows still gets its own review. <code>--dry-run</code> writes nothing and lists every conflict. The transfer is pinned to what you reviewed, so a file that changes afterwards is refused.</p>
+      <p>In the desktop, use <strong>Export all...</strong> and <strong>Import all...</strong> under saved setups. A set holds up to 1,000 printers. Keep exports outside the saved-setup folder.</p>
+
+      <h2 id="optional-the-local-brother-driver-package">Optional: the local Brother driver package<a class="heading-anchor" href="#optional-the-local-brother-driver-package" aria-label="Link to this section">#</a></h2>
+      <p>For the verified Brother HL-L2315D driver on Windows x64, a printer file can reference a reviewed package recipe and a vendor archive you downloaded yourself:</p>
+      <div class="code-block"><button class="copy" type="button" aria-label="Copy commands">Copy</button><pre><code>.\spoolsmith.exe profile edit profiles\brother-home.ssb `
+  --package brother-y14a-c1-hostm-1110 --archive .packages\brother\Y14A_C1-hostm-1110.EXE
+.\spoolsmith.exe add --profile profiles\brother-home.ssb
+
+# Go back to an already-installed driver
+.\spoolsmith.exe profile edit profiles\brother-home.ssb --clear-package</code></pre></div>
+      <p>Relative archive paths resolve from the file's folder. If the driver isn't registered, SpoolSmith checks the archive's pinned hash and vendor signature, extracts it <em>without running the EXE</em>, verifies the driver catalog signature, then stages and registers the driver, all under the one confirmation. The archive is a path, not embedded, so carry it separately when you move the file.</p>
+
+      <h2 id="pending-deprecation-catalog-identification">Pending deprecation: catalog identification<a class="heading-anchor" href="#pending-deprecation-catalog-identification" aria-label="Link to this section">#</a></h2>
+      <p><code>catalog probe</code>, <code>catalog families</code> and catalog-driven <code>install &lt;ip&gt;</code> (with <code>--force-family</code>) still work but will be removed in a future build. They come from the original identify-the-model-and-pick-its-driver design, which copying a working printer has replaced. Using them prints a notice, and the desktop no longer offers them.</p>
+
+      <nav class="pager" aria-label="Previous and next page"><a class="prev" href="copy.html"><span>← Previous</span><strong>Copy a printer</strong></a><a class="next" href="intune.html"><span>Next →</span><strong>Intune packaging</strong></a></nav>
+      <p class="edit-link">Something wrong or unclear? <a href="https://github.com/spilloid/spoolsmith/issues">Open an issue</a> or <a href="https://github.com/spilloid/spoolsmith/edit/main/docs/guide/profiles.html">edit this page</a>.</p>
+      <p id="copy-status" class="sr-only" role="status"></p>
+    </main>
+  </div>
+  <footer class="wrap"><a class="brand" href="../">SpoolSmith<span class="brand-dot">.</span></a><span>A Spillers Technology project</span><div><a href="https://github.com/spilloid/spoolsmith">Source</a><a href="https://github.com/spilloid/spoolsmith/issues">Feedback</a><a href="https://github.com/spilloid/spoolsmith/blob/main/LICENSE">MIT license</a></div></footer>
+</body>
+</html>

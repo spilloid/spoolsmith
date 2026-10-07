@@ -6,7 +6,7 @@ Authenticode-signs SpoolSmith binaries with Azure Artifact Signing.
 The release workflow does not call this script — it uses
 azure/artifact-signing-action@v2, which wraps the same signtool + dlib
 invocation. This exists so a release can be reproduced by hand on a Windows
-machine, per docs/ci-cd-spec.md's rule that the pipeline is never the only way
+machine, per docs/development/ci-cd-spec.md's rule that the pipeline is never the only way
 to produce a release build.
 
 Account details come from parameters or SPOOLSMITH_SIGN_* environment

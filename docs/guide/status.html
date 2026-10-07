@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="How SpoolSmith decides what to change, what it refuses to do, and what has been verified on real hardware.">
+  <meta property="og:title" content="Safety model and limits · SpoolSmith">
+  <meta property="og:description" content="How SpoolSmith decides what to change, what it refuses to do, and what has been verified on real hardware.">
+  <meta property="og:url" content="https://spilloid.github.io/spoolsmith/guide/status.html">
+  <meta property="og:image" content="https://spilloid.github.io/spoolsmith/img/gui-this-pc.png">
+  <meta name="theme-color" content="#163d38">
+  <title>Safety model and limits · SpoolSmith docs</title>
+  <link rel="icon" href="../favicon.ico" sizes="16x16 32x32 48x48">
+  <link rel="icon" type="image/png" href="../img/icon-192.png" sizes="192x192">
+  <link rel="apple-touch-icon" href="../apple-touch-icon.png">
+  <link rel="stylesheet" href="../site.css">
+  <link rel="stylesheet" href="guide.css">
+  <script src="../site.js" defer></script>
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+  <!-- Generated page: edit the content below directly. Keep the sidebar in sync across docs/guide/*.html. -->
+  <header class="header wrap">
+    <a class="brand" href="../" aria-label="SpoolSmith home"><img src="../img/icon-192.png" alt="" width="38" height="38">SpoolSmith<span class="brand-dot">.</span></a>
+    <nav aria-label="Main navigation"><a href="../">Product</a><a href="index.html" aria-current="page">Docs</a><a href="https://github.com/spilloid/spoolsmith/releases/latest">Download</a><a class="nav-github" href="https://github.com/spilloid/spoolsmith">GitHub <span aria-hidden="true">↗</span></a></nav>
+  </header>
+  <div class="wrap docs-layout">
+    <details class="docs-menu" open><summary>Documentation menu</summary><div><nav aria-label="Documentation"><h2>Get started</h2><ul><li><a href="index.html">Overview</a></li><li><a href="start.html">Install & first run</a></li></ul><h2>Workflows</h2><ul><li><a href="copy.html">Copy a printer</a></li><li><a href="profiles.html">Set up by address</a></li><li><a href="intune.html">Intune packaging</a></li></ul><h2>Reference</h2><ul><li><a href="desktop.html">Desktop app</a></li><li><a href="cli.html">Command line</a></li><li><a href="status.html" aria-current="page">Safety & limits</a></li></ul><a class="menu-download" href="https://github.com/spilloid/spoolsmith/releases/latest">Download for Windows ↗<span>Signed · ZIP or MSI</span></a></nav></div></details>
+    <main id="main" class="doc">
+      <p class="eyebrow"><span class="status-dot"></span>Reference</p>
+      <h1>Safety model and limits</h1>
+      <p class="lead">SpoolSmith runs elevated and changes the Windows print system, so it's deliberately conservative. This page covers the rules it follows, what it supports, and what has actually been proven on real hardware.</p>
+
+      <h2 id="the-rules-spoolsmith-follows">The rules SpoolSmith follows<a class="heading-anchor" href="#the-rules-spoolsmith-follows" aria-label="Link to this section">#</a></h2>
+      <ul>
+        <li><strong>Detection is automatic. Changes are not.</strong> Nothing is written to the driver store, the print spooler or the trusted-publisher store without showing the exact steps first and getting an explicit yes. On the CLI, the only ways around the prompt are <code>--yes</code>, which you type yourself, and <code>--plan-hash</code>, which accepts only a plan someone has already reviewed. The desktop always asks.</li>
+        <li><strong>No guessing.</strong> If the printer reports a different identity from the one saved, setup stops. If it just doesn't answer, setup falls back to the saved settings and says so before you confirm.</li>
+        <li><strong>Re-running is safe.</strong> Matching queues and ports are reused rather than duplicated, conflicts stop the operation, and shared ports and drivers are kept on removal.</li>
+        <li><strong>SpoolSmith downloads nothing itself.</strong> Drivers come from a printer file, from what's already registered, from a vendor archive you staged yourself, or from Windows' own driver search during IPP setup. Windows does that search, not SpoolSmith.</li>
+        <li><strong>No credentials, no remote control.</strong> It reads what a printer reports over SNMP, HTTP, PJL and IPP. It never asks for passwords, runs arbitrary commands, or does anything on a schedule.</li>
+        <li><strong>Its own binaries are signed.</strong> Releases are Authenticode-signed, and the release pipeline refuses to publish anything it couldn't sign. SpoolSmith holds itself to the same standard it holds driver payloads to.</li>
+      </ul>
+
+      <h2 id="how-drivers-are-trusted">How drivers are trusted<a class="heading-anchor" href="#how-drivers-are-trusted" aria-label="Link to this section">#</a></h2>
+      <table>
+        <thead><tr><th>Driver source</th><th>What's checked</th></tr></thead>
+        <tbody>
+          <tr><td>Carried in a printer file</td><td>Every file's SHA-256 against the manifest, then Windows' catalog-signature check when <code>pnputil</code> stages it. If the signature is valid but the publisher isn't trusted yet, that exact signer is added to <code>LocalMachine\TrustedPublisher</code>, as a step in the plan. Never the Root store, and never a certificate taken from the file itself.</td></tr>
+          <tr><td>Already registered</td><td>Used as-is. You confirm compatibility; a test print proves it.</td></tr>
+          <tr><td>Windows automatic (IPP)</td><td>Windows chooses and installs the driver. SpoolSmith verifies the endpoint before and after switching, and puts the class driver back if the check fails.</td></tr>
+          <tr><td>Local Brother archive</td><td>Pinned archive hash, vendor Authenticode signature, extraction without running the EXE, then the driver catalog signature.</td></tr>
+        </tbody>
+      </table>
+      <p>Hashes detect corruption and casual edits; they aren't a signature. Trust a printer file as much as the PC it came from.</p>
+
+      <h2 id="what-s-supported">What's supported<a class="heading-anchor" href="#what-s-supported" aria-label="Link to this section">#</a></h2>
+      <ul>
+        <li><strong>Windows x64 only</strong>, for detection and changes. The core is OS-independent, but macOS and Linux aren't built.</li>
+        <li><strong>RAW TCP 9100</strong> by IP, or by hostname (saved as its current IP).</li>
+        <li><strong>WSD</strong> queues SpoolSmith can verify, converted to RAW TCP/IP or a verified IPP endpoint.</li>
+        <li><strong>IPP</strong> through Windows automatic setup, on TCP 631. IPPS-only printers aren't supported.</li>
+        <li><strong>USB</strong> printers, copied to <code>.usb.ssb</code> and mapped once Windows creates the USB queue.</li>
+        <li><strong>Not supported:</strong> LPR, non-9100 RAW ports, and virtual printers.</li>
+        <li><strong>Discovery</strong> needs an IPv4 CIDR from <code>/24</code> to <code>/32</code>. It doesn't cross VLANs or use multicast.</li>
+        <li><strong>Intune</strong> packaging is local only. Tenant sign-in, upload and assignment aren't planned.</li>
+      </ul>
+
+      <h2 id="verified-on-real-hardware">Verified on real hardware<a class="heading-anchor" href="#verified-on-real-hardware" aria-label="Link to this section">#</a></h2>
+      <p>Most of this was recorded with a Brother HL-L2315D on Windows 11 (build 26200). Separately, multiple HP and Sharp network printers were tested with the v1.1 copy-and-apply workflow (operator report, 2026-09-23).</p>
+      <ul class="checklist done">
+        <li>Discovery, adding from a saved setup, and a repeated add that changes nothing, with a physical test print.</li>
+        <li>Offline add and configure, removal, and protection of shared ports and drivers.</li>
+        <li>Copying with the driver (a 115-file, 25.9 MB package), with the file written, re-read and hash-verified.</li>
+        <li>Identity matching against the live printer, repeated applies that change nothing, and a reviewed plan fingerprint accepted while a wrong one is refused.</li>
+        <li>Driver staging from a printer file, with the driver deregistered and its driver-store package deleted first.</li>
+        <li>WSD identity and IPP endpoint verification, plus elevated IPP queue creation, re-apply, status and cleanup.</li>
+        <li>The v1.5 native-driver step switching an IPP queue from the class driver to the printer's own (already installed) driver, and a re-apply recognizing it.</li>
+        <li>The Intune endpoint lifecycle as SYSTEM: install, detection, protected state, standard-user denials, revision updates and removal.</li>
+        <li>The full desktop suite (40 of 40 at 125% scaling), including an accessibility audit of every page.</li>
+      </ul>
+      <p>The dated <a href="https://github.com/spilloid/spoolsmith/tree/main/docs/validation">validation records</a> hold the evidence for each.</p>
+
+      <h2 id="not-verified-yet">Not verified yet<a class="heading-anchor" href="#not-verified-yet" aria-label="Link to this section">#</a></h2>
+      <ul class="checklist">
+        <li>Copying between two separate PCs. The "missing driver" destination was simulated on one PC.</li>
+        <li>Physical printing through a driver staged from a printer file.</li>
+        <li>A live <code>repoint</code>. Only its preview has run against hardware.</li>
+        <li>An actual Windows Update driver download during IPP setup. The verified switch used a driver that was already installed.</li>
+        <li>Printer sets and default driver export on real printers. These are covered by automated tests only.</li>
+        <li>Automatic offline fallback with a real printer powered off mid-copy or mid-apply.</li>
+        <li>USB driver staging on a clean PC.</li>
+        <li>Other brands, Canon included. They're expected to work through their standard Windows driver, but haven't been tested.</li>
+        <li>Delivery through a real Intune tenant and Company Portal.</li>
+        <li>Display scales other than 125%, Windows high contrast, and a screen reader.</li>
+      </ul>
+      <p>These are the next validation priorities in the <a href="https://github.com/spilloid/spoolsmith/blob/main/docs/roadmap.md">roadmap</a>.</p>
+
+      <h2 id="known-issues">Known issues<a class="heading-anchor" href="#known-issues" aria-label="Link to this section">#</a></h2>
+      <ul>
+        <li><strong><code>uninstall --purge-driver</code> can keep a driver that's actually unused.</strong> Windows removes queues asynchronously, so the in-use check can still see the queue that was just deleted. Removing the driver afterwards can need a spooler restart. SpoolSmith never restarts the spooler itself, because that would interrupt other printing.</li>
+        <li><strong>Operations aren't transactions.</strong> If a step fails, earlier steps may already be applied; for example, an unused port can be left behind. Adding the same printer again reuses what exists.</li>
+        <li><strong>A broken Windows print provider blocks changes.</strong> Inventory errors stop the operation instead of being read as "no printer present".</li>
+        <li><strong>Desktop accessible names are internal IDs</strong>, not readable labels. Every control is reachable by keyboard, but a screen reader will announce IDs.</li>
+      </ul>
+
+      <h2 id="under-the-hood">Under the hood<a class="heading-anchor" href="#under-the-hood" aria-label="Link to this section">#</a></h2>
+      <p>SpoolSmith is written in Go with a pure, OS-independent core:</p>
+      <ul>
+        <li><code>internal/probe</code>: live SNMP, HTTP, PJL, port, OUI and hostname fingerprinting, with no third-party dependencies.</li>
+        <li><code>internal/bundle</code>: the <code>.ssb</code> and printer-set formats, and their verification.</li>
+        <li><code>internal/inspect</code>: assembles the reviewable result, with the source of every piece of evidence.</li>
+        <li><code>internal/install</code>: Windows-only driver, port and queue changes behind a narrow interface, so everything else is tested without Windows.</li>
+      </ul>
+      <p>Every change gets an independent adversarial review before it ships. The <a href="https://github.com/spilloid/spoolsmith/blob/main/docs/development/dev-process.md">development log</a> records the defects found and fixed.</p>
+
+      <nav class="pager" aria-label="Previous and next page"><a class="prev" href="cli.html"><span>← Previous</span><strong>Command line</strong></a></nav>
+      <p class="edit-link">Something wrong or unclear? <a href="https://github.com/spilloid/spoolsmith/issues">Open an issue</a> or <a href="https://github.com/spilloid/spoolsmith/edit/main/docs/guide/status.html">edit this page</a>.</p>
+      <p id="copy-status" class="sr-only" role="status"></p>
+    </main>
+  </div>
+  <footer class="wrap"><a class="brand" href="../">SpoolSmith<span class="brand-dot">.</span></a><span>A Spillers Technology project</span><div><a href="https://github.com/spilloid/spoolsmith">Source</a><a href="https://github.com/spilloid/spoolsmith/issues">Feedback</a><a href="https://github.com/spilloid/spoolsmith/blob/main/LICENSE">MIT license</a></div></footer>
+</body>
+</html>

@@ -182,7 +182,7 @@ queries against inside this sandboxed environment. Do not fabricate a fake captu
 - Base its field values on real, publicly documented HP identification strings where you can find
   them (HP's SNMP `sysDescr` format for LaserJet printers, HP's PJL `@PJL INFO ID` response
   format) and cite what you based it on in `provenance_note`.
-- **State explicitly, in the PR/commit description and in `docs/dev-process.md`'s log row, that
+- **State explicitly, in the PR/commit description and in `docs/development/dev-process.md`'s log row, that
   the "at least one captured, not-only-synthetic fixture per family" condition from the board's
   Phase 2/3 debate (Seat 06) is NOT satisfied by this unit** — it remains open, blocking full
   "milestone one done" status, until the operator captures real evidence from an actual printer

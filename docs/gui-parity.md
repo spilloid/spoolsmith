@@ -81,7 +81,7 @@ holds at most 1,000 printers and 8 GiB uncompressed; each printer file keeps its
 1 GiB driver-payload limit.
 
 Intune packaging (local-only Win32 app export) is available from both the CLI
-and the desktop GUI; see [Intune packaging](../README.md#intune-packaging). All
+and the desktop GUI; see [Intune packaging](https://spilloid.github.io/spoolsmith/guide/intune.html). All
 three entry points (`intune build`, `intune wizard`, the desktop wizard) produce
 the same source folder and README.txt, and all three also create the
 `.intunewin` with Microsoft's `IntuneWinAppUtil.exe` when it sits beside the

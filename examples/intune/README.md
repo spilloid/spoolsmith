@@ -25,8 +25,8 @@ entry carries exactly this profile document:
 }
 ```
 
-The [Intune packaging guide](../../docs/intune-deployment.md) and the [README's
-Intune section](../../README.md#intune-packaging) describe generating a complete
+The [Intune packaging guide](https://spilloid.github.io/spoolsmith/guide/intune.html) and the
+[full deployment reference](../../docs/intune-deployment.md) describe generating a complete
 sample bundle with `spoolsmith intune build` or `intune wizard` (CLI or desktop
 GUI). Select the
 separately managed driver prerequisite for this example — it has no bundled

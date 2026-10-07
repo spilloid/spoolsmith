@@ -1,0 +1,100 @@
+/* Documentation pages. Builds on ../site.css (tokens, header, buttons, code blocks). */
+.docs-layout{display:grid;grid-template-columns:232px minmax(0,1fr);gap:64px;align-items:start;padding-block:44px 80px}
+.docs-menu{position:sticky;top:24px;font-size:14px}
+.docs-menu summary{display:none}
+.docs-menu h2{font:700 11px/1 "Segoe UI",system-ui,sans-serif;letter-spacing:1.6px;text-transform:uppercase;color:var(--muted);margin:28px 0 10px}
+.docs-menu h2:first-of-type{margin-top:4px}
+.docs-menu ul{list-style:none;margin:0;padding:0;border-left:1px solid var(--line)}
+.docs-menu a{display:block;padding:7px 0 7px 16px;margin-left:-1px;border-left:2px solid transparent;text-decoration:none;color:var(--muted);line-height:1.35}
+.docs-menu a:hover{color:var(--ink)}
+.docs-menu a[aria-current="page"]{border-left-color:var(--orange);color:var(--ink);font-weight:600}
+.docs-menu .menu-download{display:block;margin-top:28px;padding:12px 14px;border:1px solid var(--line);border-radius:7px;text-decoration:none;font-weight:600;font-size:13px}
+.docs-menu .menu-download:hover{border-color:var(--orange)}
+.docs-menu .menu-download span{display:block;font-weight:400;color:var(--muted);font-size:12px;margin-top:3px}
+
+.doc{max-width:760px;min-width:0}
+.doc .eyebrow{margin-bottom:16px}
+.doc h1{font-size:clamp(40px,4.4vw,56px);letter-spacing:-2px;margin:0 0 18px}
+.doc .lead{font-size:19px;line-height:1.55;margin:0 0 34px;color:var(--ink)}
+.doc h2{font-size:31px;letter-spacing:-1px;margin:58px 0 16px;padding-top:28px;border-top:1px solid var(--line);scroll-margin-top:20px}
+.doc h3{font-size:19px;margin:36px 0 10px;scroll-margin-top:20px}
+.doc p,.doc li{font-size:15.5px;line-height:1.7}
+.doc p{margin:0 0 16px}
+.doc ul,.doc ol{padding-left:22px;margin:0 0 18px}
+.doc li{margin-bottom:6px}
+.doc li::marker{color:var(--muted)}
+.doc a{text-underline-offset:3px;text-decoration-color:#163d3866}
+.doc a:hover{color:var(--orange)}
+.doc :not(pre)>code{font-size:.88em;background:var(--pale);border:1px solid #dfe5d8;border-radius:4px;padding:1px 5px;overflow-wrap:break-word}
+.doc .code-block{margin:18px 0 22px}
+.doc .code-block pre{font-size:13px;padding:46px 20px 18px}
+.doc pre.output{margin:14px 0 22px;padding:16px 18px;background:#fffef9;border:1px solid var(--line);border-left:3px solid #a7beb3;border-radius:6px;font-size:12.5px;line-height:1.7;white-space:pre-wrap;overflow-wrap:anywhere}
+.doc .code-label{display:block;font-size:11px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:var(--muted);margin:22px 0 -10px}
+.heading-anchor{margin-left:10px;font-size:.7em;text-decoration:none;color:var(--line);opacity:0;transition:opacity .15s}
+h2:hover>.heading-anchor,h3:hover>.heading-anchor,.heading-anchor:focus{opacity:1}
+.heading-anchor:hover{color:var(--orange)}
+
+.note,.warn{margin:22px 0;padding:16px 20px;border-radius:7px;border:1px solid}
+.note{background:#eef2e6;border-color:#d4ddc8}
+.warn{background:#f8ece0;border-color:#ecd2bb}
+.note p:last-child,.warn p:last-child{margin-bottom:0}
+.note strong:first-child,.warn strong:first-child{display:block;font-size:11px;letter-spacing:1.3px;text-transform:uppercase;margin-bottom:4px}
+.warn strong:first-child{color:#8c4628}
+
+.doc table{width:100%;border-collapse:collapse;margin:18px 0 26px;font-size:14px;display:block;overflow-x:auto}
+.doc th,.doc td{text-align:left;vertical-align:top;padding:11px 14px 11px 0;border-bottom:1px solid var(--line);line-height:1.55}
+.doc th{font-size:11px;letter-spacing:1.2px;text-transform:uppercase;color:var(--muted);font-weight:700;border-bottom-color:var(--ink)}
+.doc td:first-child{white-space:nowrap;padding-right:22px}
+.doc td code{white-space:nowrap}
+
+.card-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin:22px 0 10px}
+.card-grid>a{display:block;padding:22px 22px 20px;background:#fffef9;border:1px solid var(--line);border-radius:9px;text-decoration:none;transition:border-color .15s,background .15s}
+.card-grid>a:hover{border-color:var(--orange);background:#f1f3e9;color:inherit}
+.card-grid .small-label{color:var(--orange)}
+.card-grid h3{margin:10px 0 6px;font-size:18px}
+.card-grid p{font-size:14px;color:var(--muted);margin:0;line-height:1.55}
+
+.cmd{margin:26px 0 30px}
+.cmd h3{font:600 15px/1.45 "Cascadia Code",Consolas,monospace;margin:0 0 8px;letter-spacing:0;overflow-wrap:anywhere}
+.cmd>p{color:var(--muted);font-size:15px}
+.cmd dl{margin:10px 0 0;display:grid;grid-template-columns:max-content 1fr;gap:6px 18px;font-size:14px}
+.cmd dt{font-family:"Cascadia Code",Consolas,monospace;font-size:13px;padding-top:2px}
+.cmd dd{margin:0;color:var(--muted);line-height:1.55}
+
+.shot.doc-shot{margin:20px 0 28px}
+.shot.doc-shot img{box-shadow:0 14px 32px #163d380d}
+
+.checklist{list-style:none;padding-left:0}
+.checklist li{padding-left:28px;position:relative}
+.checklist li::before{content:"";position:absolute;left:0;top:6px;width:14px;height:14px;border:1.5px solid var(--muted);border-radius:3px}
+.checklist.done li::before{content:"✓";border-color:#507c43;color:#507c43;font-size:11px;line-height:13px;text-align:center}
+
+.pager{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:64px;padding-top:28px;border-top:1px solid var(--line)}
+.pager a{display:block;padding:16px 18px;border:1px solid var(--line);border-radius:8px;text-decoration:none}
+.pager a:hover{border-color:var(--orange);color:inherit}
+.pager span{display:block;font-size:11px;letter-spacing:1.2px;text-transform:uppercase;color:var(--muted);margin-bottom:4px}
+.pager strong{font-weight:600}
+.pager .next{grid-column:2;text-align:right}
+.edit-link{margin-top:22px;font-size:12px;color:var(--muted)}
+
+@media(max-width:900px){
+  .docs-layout{grid-template-columns:1fr;gap:8px;padding-top:24px}
+  .docs-menu{position:static;border:1px solid var(--line);border-radius:8px;background:#fffef9}
+  .docs-menu summary{display:flex;justify-content:space-between;align-items:center;padding:14px 16px;font-weight:600;cursor:pointer;min-height:44px}
+  .docs-menu summary::after{content:"+";font-size:18px;color:var(--muted)}
+  .docs-menu[open] summary::after{content:"–"}
+  .docs-menu>div{padding:0 16px 16px}
+  .doc h2{font-size:27px;margin-top:44px}
+}
+@media(max-width:600px){
+  .card-grid{grid-template-columns:1fr}
+  .cmd dl{grid-template-columns:1fr;gap:2px}
+  .cmd dd{margin-bottom:8px}
+  .pager{grid-template-columns:1fr}
+  .pager .next{grid-column:1}
+  .doc td:first-child{white-space:normal}
+}
+
+/* site.css styles every nav as a flex row; the docs menu and pager are not header navs. */
+.docs-menu nav{display:block;gap:0;font-weight:400;font-size:14px}
+.doc .code-block pre{white-space:pre;overflow-x:auto;overflow-wrap:normal}

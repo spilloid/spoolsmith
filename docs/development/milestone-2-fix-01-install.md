@@ -3,7 +3,7 @@
 Found by independent Codex review (`-s read-only -c model_reasoning_effort=high`). Three High, three
 Medium, all confirmed by the orchestrator — including verifying the most serious claim directly
 against Microsoft's own documentation before accepting it (quoted below). Fix all six, then
-implement the three addendum items from `docs/milestone-2-spec-install-addendum.md` in the same
+implement the three addendum items from `docs/development/milestone-2-spec-install-addendum.md` in the same
 round, per the operator's own request to fold them in here rather than as a separate cycle.
 
 ## Confirmed findings — fix all six
@@ -100,7 +100,7 @@ with a clear, specific error ("Windows driver name not yet verified for this fam
 run for either family until the operator does this real-hardware lookup once per family and fills
 in two strings — state this plainly as the actual remaining blocker, not an engineering gap.
 
-## Then implement the addendum (`docs/milestone-2-spec-install-addendum.md`), with one correction
+## Then implement the addendum (`docs/development/milestone-2-spec-install-addendum.md`), with one correction
 
 The addendum's exit-code contract contradicts itself between its own paragraphs on dry-run (one
 place implies code 0 for a passed dry-run, another assigns code 5). **Resolved here:** dry-run

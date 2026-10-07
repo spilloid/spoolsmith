@@ -6,7 +6,7 @@ formerly called Trusted Signing). The release pipeline signs
 `spoolsmith.exe` and `spoolsmith-gui.exe` after compiling them and before they go into the
 release zip, verifies the result, and refuses to publish anything it could not sign.
 
-This supersedes `docs/ci-cd-spec.md`'s original "no code signing" scope note, which deferred
+This supersedes `docs/development/ci-cd-spec.md`'s original "no code signing" scope note, which deferred
 signing as unpriced procurement work.
 
 ## Why this matters here
@@ -274,7 +274,7 @@ not part of this change.
 
 ## Signing by hand
 
-`docs/ci-cd-spec.md` requires that a release be reproducible without trusting the pipeline.
+`docs/development/ci-cd-spec.md` requires that a release be reproducible without trusting the pipeline.
 `scripts/sign-windows.ps1` is that path. It needs, on Windows:
 
 ```powershell
@@ -304,7 +304,7 @@ does not find.
 Anyone can check a release without installing anything — this deliberately uses
 `Get-AuthenticodeSignature` rather than `signtool verify`, because SignTool ships with the
 Windows SDK and is **not** present on a stock Windows 11 machine
-(`docs/capture-report-review.md` §2.4):
+(`docs/development/capture-report-review.md` §2.4):
 
 ```powershell
 # Against the extracted release

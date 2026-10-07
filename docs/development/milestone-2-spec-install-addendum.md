@@ -1,6 +1,6 @@
 # Milestone 2, Unit 2 addendum — pipeline-safe CLI, forced family override, dry-run
 
-Written by the orchestrator, folded into the same review round as `docs/milestone-2-spec-install.md`
+Written by the orchestrator, folded into the same review round as `docs/development/milestone-2-spec-install.md`
 rather than a separate dispatch cycle, per the operator's own request: treat these as recommended
 upgrade items the independent review surfaces alongside its normal security/correctness pass, then
 implement them in the same fix round as whatever else the review finds. Read the base install spec

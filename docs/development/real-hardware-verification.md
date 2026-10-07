@@ -1,7 +1,7 @@
 # Real-hardware verification runbook
 
 **Current pilot, 2026-09-14:** For offline provisioning and Intune endpoint testing,
-start with the [Windows 11 VM runbook](validation/2026-09-14-windows11-pilot.md).
+start with the [Windows 11 VM runbook](../validation/2026-09-14-windows11-pilot.md).
 The milestone notes below preserve earlier findings and release-specific commands;
 they do not certify the new offline/Intune implementation.
 
@@ -125,7 +125,7 @@ in Step 4.
 ## Step 3 — Populate `WindowsDriverName` and rebuild
 
 Once both real names are known, this is a two-line change in
-[`internal/catalog/driver.go`](../internal/catalog/driver.go):
+[`internal/catalog/driver.go`](../../internal/catalog/driver.go):
 
 ```go
 "hp-laserjet-m4xx": {
@@ -285,7 +285,7 @@ a bare "exit 4" in a log as necessarily meaning the elevation gate.
 - [x] Both negative-path checks (non-elevated, driver-absent) confirmed still fail closed —
       elevation 2026-09-12 (exit 4, plan shown, no mutation), driver-absent 2026-09-12 (exit 4,
       explicit guidance). See Step 5.
-- [x] Everything above logged honestly in `docs/dev-process.md`, including anything that didn't
+- [x] Everything above logged honestly in `docs/development/dev-process.md`, including anything that didn't
       go as expected — a clean run on the first try for privileged Windows mutation code would be
       a little suspicious, not a reason to skip writing down what actually happened. The
       2026-09-12 elevated entry records the `tar.exe` PATH defect that first presented as a

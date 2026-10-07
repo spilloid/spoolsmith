@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Every SpoolSmith command, its options and its exit codes.">
+  <meta property="og:title" content="Command-line reference · SpoolSmith">
+  <meta property="og:description" content="Every SpoolSmith command, its options and its exit codes.">
+  <meta property="og:url" content="https://spilloid.github.io/spoolsmith/guide/cli.html">
+  <meta property="og:image" content="https://spilloid.github.io/spoolsmith/img/gui-this-pc.png">
+  <meta name="theme-color" content="#163d38">
+  <title>Command-line reference · SpoolSmith docs</title>
+  <link rel="icon" href="../favicon.ico" sizes="16x16 32x32 48x48">
+  <link rel="icon" type="image/png" href="../img/icon-192.png" sizes="192x192">
+  <link rel="apple-touch-icon" href="../apple-touch-icon.png">
+  <link rel="stylesheet" href="../site.css">
+  <link rel="stylesheet" href="guide.css">
+  <script src="../site.js" defer></script>
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+  <!-- Generated page: edit the content below directly. Keep the sidebar in sync across docs/guide/*.html. -->
+  <header class="header wrap">
+    <a class="brand" href="../" aria-label="SpoolSmith home"><img src="../img/icon-192.png" alt="" width="38" height="38">SpoolSmith<span class="brand-dot">.</span></a>
+    <nav aria-label="Main navigation"><a href="../">Product</a><a href="index.html" aria-current="page">Docs</a><a href="https://github.com/spilloid/spoolsmith/releases/latest">Download</a><a class="nav-github" href="https://github.com/spilloid/spoolsmith">GitHub <span aria-hidden="true">↗</span></a></nav>
+  </header>
+  <div class="wrap docs-layout">
+    <details class="docs-menu" open><summary>Documentation menu</summary><div><nav aria-label="Documentation"><h2>Get started</h2><ul><li><a href="index.html">Overview</a></li><li><a href="start.html">Install & first run</a></li></ul><h2>Workflows</h2><ul><li><a href="copy.html">Copy a printer</a></li><li><a href="profiles.html">Set up by address</a></li><li><a href="intune.html">Intune packaging</a></li></ul><h2>Reference</h2><ul><li><a href="desktop.html">Desktop app</a></li><li><a href="cli.html" aria-current="page">Command line</a></li><li><a href="status.html">Safety & limits</a></li></ul><a class="menu-download" href="https://github.com/spilloid/spoolsmith/releases/latest">Download for Windows ↗<span>Signed · ZIP or MSI</span></a></nav></div></details>
+    <main id="main" class="doc">
+      <p class="eyebrow"><span class="status-dot"></span>Reference</p>
+      <h1>Command-line reference</h1>
+      <p class="lead">Every <code>spoolsmith.exe</code> command, grouped the way <code>spoolsmith help</code> groups them. Run <code>spoolsmith help &lt;command&gt;</code> or <code>spoolsmith &lt;command&gt; --help</code> for one command's syntax.</p>
+
+      <h2 id="options-that-work-everywhere">Options that work everywhere<a class="heading-anchor" href="#options-that-work-everywhere" aria-label="Link to this section">#</a></h2>
+      <div class="cmd"><dl>
+        <dt>--dry-run</dt><dd>Show the plan and change nothing. It overrides <code>--yes</code> and never prompts. <code>--what-if</code> is an alias on <code>install</code> and <code>uninstall</code>.</dd>
+        <dt>--yes</dt><dd>Accept the plan this PC computes without prompting. On <code>apply</code>, prefer <code>--plan-hash</code>, which accepts only a plan you've reviewed.</dd>
+        <dt>--non-interactive</dt><dd>Never prompt. Anything that would need an answer fails instead.</dd>
+        <dt>--json</dt><dd>Write the machine-readable result to stdout. With <code>--dry-run</code>, it includes the complete plan.</dd>
+        <dt>--offline</dt><dd>Skip the live printer identity check from the start. The plan says so before you confirm.</dd>
+      </dl></div>
+      <p>Redirected stdout is always JSON. Prompts and human-readable summaries go to stderr.</p>
+
+      <h2 id="look-at-this-pc">Look at this PC<a class="heading-anchor" href="#look-at-this-pc" aria-label="Link to this section">#</a></h2>
+      <div class="cmd"><h3 id="spoolsmith-printers-copyable-json">spoolsmith printers [--copyable] [--json]<a class="heading-anchor" href="#spoolsmith-printers-copyable-json" aria-label="Link to this section">#</a></h3>
+        <p>Lists installed queues and marks the ones that can't be copied, with the reason. Read-only.</p>
+        <dl><dt>--copyable</dt><dd>Show only queues that can be copied.</dd></dl></div>
+      <div class="cmd"><h3 id="spoolsmith-drivers">spoolsmith drivers<a class="heading-anchor" href="#spoolsmith-drivers" aria-label="Link to this section">#</a></h3>
+        <p>Lists the exact registered Windows driver names, for <code>--driver</code>.</p></div>
+      <div class="cmd"><h3 id="spoolsmith-status-profile-json">spoolsmith status --profile &lt;file&gt; [--json]<a class="heading-anchor" href="#spoolsmith-status-profile-json" aria-label="Link to this section">#</a></h3>
+        <p>Compares the local queue, driver and port with a printer file, without contacting the printer. Exit codes: <code>0</code> matches, <code>3</code> mismatch, <code>2</code> invalid input, <code>1</code> inventory failure.</p></div>
+      <div class="cmd"><h3 id="spoolsmith-capabilities">spoolsmith capabilities<a class="heading-anchor" href="#spoolsmith-capabilities" aria-label="Link to this section">#</a></h3>
+        <p>Prints this build's capability markers. Intune packaging requires <code>SpoolSmith:intune-endpoint-v2:ssb,offline,status</code>.</p></div>
+
+      <h2 id="copy-a-printer-between-pcs">Copy a printer between PCs<a class="heading-anchor" href="#copy-a-printer-between-pcs" aria-label="Link to this section">#</a></h2>
+      <p>Walkthrough: <a href="copy.html">Copy a printer</a>.</p>
+      <div class="cmd"><h3 id="spoolsmith-copy-out-settings-only-note">spoolsmith copy [&lt;queue&gt;] [--out &lt;file.ssb&gt;] [--settings-only] [--note &lt;text&gt;]<a class="heading-anchor" href="#spoolsmith-copy-out-settings-only-note" aria-label="Link to this section">#</a></h3>
+        <p>Writes one printer to a <code>.ssb</code>, with its driver whenever it can be exported. Leave out the queue name to choose from a list, and leave out <code>--out</code> to name the file after the queue. <code>clone</code> is an alias.</p>
+        <dl>
+          <dt>--settings-only</dt><dd>Always leave the driver out.</dd>
+          <dt>--note &lt;text&gt;</dt><dd>Store a free-text note in the file.</dd>
+        </dl></div>
+      <div class="cmd"><h3 id="spoolsmith-copy-all-out-settings-only-note">spoolsmith copy --all [--out &lt;printers.zip&gt;] [--settings-only] [--note &lt;text&gt;]<a class="heading-anchor" href="#spoolsmith-copy-all-out-settings-only-note" aria-label="Link to this section">#</a></h3>
+        <p>Writes every copyable queue into one printer set, by default <code>SpoolSmith-printers-&lt;date&gt;-&lt;time&gt;.zip</code>. Uncopyable queues are skipped with a reason. Exits zero if at least one printer was saved, so check <code>failed</code> and <code>skipped</code> in the JSON.</p></div>
+      <div class="cmd"><h3 id="spoolsmith-apply-options">spoolsmith apply &lt;file.ssb|set.zip&gt; [options]<a class="heading-anchor" href="#spoolsmith-apply-options" aria-label="Link to this section">#</a></h3>
+        <p>Sets up a printer from a file, after checking its identity and showing the plan. Each printer in a set gets its own plan and confirmation.</p>
+        <dl>
+          <dt>--member &lt;name&gt;</dt><dd>Apply one printer from a set, by file name.</dd>
+          <dt>--update</dt><dd>Change an existing queue to match the file.</dd>
+          <dt>--usb-queue &lt;name&gt;</dt><dd>For a <code>.usb.ssb</code>, map onto this Windows USB queue.</dd>
+          <dt>--offline</dt><dd>Skip the live identity check. An unreachable printer falls back to offline automatically anyway.</dd>
+          <dt>--plan-hash &lt;fp&gt;</dt><dd>Accept only the plan with this fingerprint (printed by <code>--dry-run</code>), and refuse any other. With a set, pair it with <code>--member</code>.</dd>
+          <dt>--dry-run, --yes, --non-interactive, --json</dt><dd>As above.</dd>
+        </dl></div>
+      <div class="cmd"><h3 id="spoolsmith-bundle-inspect">spoolsmith bundle inspect &lt;file.ssb|set.zip&gt;<a class="heading-anchor" href="#spoolsmith-bundle-inspect" aria-label="Link to this section">#</a></h3>
+        <p>Reads a printer file or set and checks every payload hash. Doesn't touch the network or Windows.</p></div>
+
+      <h2 id="find-and-save-a-printer">Find and save a printer<a class="heading-anchor" href="#find-and-save-a-printer" aria-label="Link to this section">#</a></h2>
+      <p>Walkthrough: <a href="profiles.html">Set up by address, and saved setups</a>.</p>
+      <div class="cmd"><h3 id="spoolsmith-discover">spoolsmith discover &lt;IPv4-CIDR&gt;<a class="heading-anchor" href="#spoolsmith-discover" aria-label="Link to this section">#</a></h3>
+        <p>Scans <code>/24</code> through <code>/32</code> for printer candidates.</p></div>
+      <div class="cmd"><h3 id="spoolsmith-inspect">spoolsmith inspect &lt;target&gt;<a class="heading-anchor" href="#spoolsmith-inspect" aria-label="Link to this section">#</a></h3>
+        <p>Shows what an IP address, fixture file or <code>.ssb</code> reports, and where each piece of evidence came from.</p></div>
+      <div class="cmd"><h3 id="spoolsmith-profile-capture-name-driver">spoolsmith profile capture &lt;target&gt; &lt;file&gt; --name &lt;queue&gt; --driver &lt;name&gt;<a class="heading-anchor" href="#spoolsmith-profile-capture-name-driver" aria-label="Link to this section">#</a></h3>
+        <p>Probes the printer and writes a printer file with the queue name and exact registered driver you give it. Use <code>--windows-driver</code> instead of <code>--driver</code> for Windows automatic IPP setup. Never overwrites a file.</p></div>
+      <div class="cmd"><h3 id="spoolsmith-profile-edit-options">spoolsmith profile edit &lt;file&gt; [options]<a class="heading-anchor" href="#spoolsmith-profile-edit-options" aria-label="Link to this section">#</a></h3>
+        <p>Changes saved settings, keeping a backup under <code>.backups\</code>.</p>
+        <dl>
+          <dt>--name, --driver, --target</dt><dd>Change the queue name, driver or IP address.</dd>
+          <dt>--package &lt;id&gt; --archive &lt;file&gt;</dt><dd>Attach a supported local driver package recipe.</dd>
+          <dt>--clear-package</dt><dd>Go back to an already-installed driver.</dd>
+        </dl></div>
+      <div class="cmd"><h3 id="spoolsmith-profile-export-all-dry-run">spoolsmith profile export-all &lt;folder&gt; &lt;set.zip&gt; [--dry-run]<a class="heading-anchor" href="#spoolsmith-profile-export-all-dry-run" aria-label="Link to this section">#</a></h3>
+        <p>Writes every <code>.ssb</code> in a folder into one printer set, byte for byte.</p></div>
+      <div class="cmd"><h3 id="spoolsmith-profile-import-all-dry-run">spoolsmith profile import-all &lt;set.zip&gt; &lt;folder&gt; [--dry-run]<a class="heading-anchor" href="#spoolsmith-profile-import-all-dry-run" aria-label="Link to this section">#</a></h3>
+        <p>Validates the set, then writes each printer file. Refuses existing filenames. Doesn't change Windows.</p></div>
+
+      <h2 id="map-change-and-remove-queues">Map, change and remove queues<a class="heading-anchor" href="#map-change-and-remove-queues" aria-label="Link to this section">#</a></h2>
+      <p>These change Windows and need an administrator prompt.</p>
+      <div class="cmd"><h3 id="spoolsmith-add-windows-driver-name-dry-run-yes-json">spoolsmith add &lt;ip&gt; --windows-driver --name &lt;queue&gt; [--dry-run] [--yes] [--json]<a class="heading-anchor" href="#spoolsmith-add-windows-driver-name-dry-run-yes-json" aria-label="Link to this section">#</a></h3>
+        <p>Windows automatic setup for a verified IPP printer: Windows creates the queue with its class driver, then SpoolSmith asks Windows for the printer's own driver. If none is found, the class driver stays and setup still succeeds.</p></div>
+      <div class="cmd"><h3 id="spoolsmith-add-profile-usb-queue-offline-dry-run-yes-json">spoolsmith add --profile &lt;file&gt; [--usb-queue &lt;name&gt;] [--offline] [--dry-run] [--yes] [--json]<a class="heading-anchor" href="#spoolsmith-add-profile-usb-queue-offline-dry-run-yes-json" aria-label="Link to this section">#</a></h3>
+        <p>Creates the queue from a printer file. Matching settings are reused; conflicting ones stop the operation. <code>install --profile</code> is an alias.</p></div>
+      <div class="cmd"><h3 id="spoolsmith-configure-profile-usb-queue-offline-dry-run-yes-json">spoolsmith configure --profile &lt;file&gt; [--usb-queue &lt;name&gt;] [--offline] [--dry-run] [--yes] [--json]<a class="heading-anchor" href="#spoolsmith-configure-profile-usb-queue-offline-dry-run-yes-json" aria-label="Link to this section">#</a></h3>
+        <p>Updates an existing queue to match its file.</p></div>
+      <div class="cmd"><h3 id="spoolsmith-remove-profile-dry-run-json">spoolsmith remove --profile &lt;file&gt; [--dry-run] [--json]<a class="heading-anchor" href="#spoolsmith-remove-profile-dry-run-json" aria-label="Link to this section">#</a></h3>
+        <p>Removes the queue after checking its address and driver against the file. Shared ports and drivers are kept.</p></div>
+      <div class="cmd"><h3 id="spoolsmith-repoint-dry-run-yes-non-interactive-json">spoolsmith repoint &lt;queue&gt; &lt;new-ip&gt; [--dry-run] [--yes] [--non-interactive] [--json]<a class="heading-anchor" href="#spoolsmith-repoint-dry-run-yes-non-interactive-json" aria-label="Link to this section">#</a></h3>
+        <p>Moves an existing queue to a new address, keeping its name and driver. The old port stays.</p></div>
+      <div class="cmd"><h3 id="spoolsmith-uninstall-purge-driver-options">spoolsmith uninstall &lt;printer-name&gt; [--purge-driver] [options]<a class="heading-anchor" href="#spoolsmith-uninstall-purge-driver-options" aria-label="Link to this section">#</a></h3>
+        <p>Removes a queue by name. Ports and drivers still used by other queues are kept.</p>
+        <dl><dt>--purge-driver</dt><dd>Also remove the driver if nothing else uses it. See <a href="status.html#known-issues">known issues</a>.</dd></dl></div>
+
+      <h2 id="package-for-intune">Package for Intune<a class="heading-anchor" href="#package-for-intune" aria-label="Link to this section">#</a></h2>
+      <p>Walkthrough: <a href="intune.html">Intune packaging</a>. Local only; never contacts a tenant.</p>
+      <div class="cmd"><h3 id="spoolsmith-intune-wizard">spoolsmith intune wizard<a class="heading-anchor" href="#spoolsmith-intune-wizard" aria-label="Link to this section">#</a></h3>
+        <p>Interactive settings, review and export. Needs a terminal.</p></div>
+      <div class="cmd"><h3 id="spoolsmith-intune-build-profile-binary-options">spoolsmith intune build --profile &lt;file.ssb&gt; --binary &lt;exe&gt; [options]<a class="heading-anchor" href="#spoolsmith-intune-build-profile-binary-options" aria-label="Link to this section">#</a></h3>
+        <p>Non-interactive export of one printer file. Metadata is derived from the file when you leave it out.</p>
+        <dl>
+          <dt>--dry-run</dt><dd>Preview the manifest and destination. Writes nothing.</dd>
+          <dt>--revision &lt;n&gt;</dt><dd>Deployment revision, 1 by default. Raise it for every change.</dd>
+          <dt>--id, --name, --description, --location</dt><dd>Deployment ID and app metadata. Keep the ID stable across revisions.</dd>
+          <dt>--binary-sha256 &lt;hash&gt;</dt><dd>Pin the approved CLI hash. A mismatch is refused.</dd>
+          <dt>--output &lt;dir&gt;</dt><dd>A new export folder. Existing folders are refused.</dd>
+          <dt>--driver-prerequisite</dt><dd>Accept that the driver is deployed separately.</dd>
+          <dt>--offline</dt><dd>Skip live identity validation at install time.</dd>
+          <dt>--adopt</dt><dd>Allow taking over an exactly matching, unmanaged existing queue.</dd>
+          <dt>--content-prep-tool, --content-prep-output</dt><dd>Where Microsoft's <code>IntuneWinAppUtil.exe</code> is and where its output goes. By default it's used automatically when it sits beside <code>spoolsmith.exe</code>.</dd>
+          <dt>--no-content-prep</dt><dd>Don't create the <code>.intunewin</code>, even if the tool is present.</dd>
+        </dl></div>
+
+      <h2 id="pending-deprecation">Pending deprecation<a class="heading-anchor" href="#pending-deprecation" aria-label="Link to this section">#</a></h2>
+      <p>These still work but will be removed in a future build; <code>copy</code> and <code>apply</code> replace them. Using them prints a notice.</p>
+      <div class="cmd"><h3 id="spoolsmith-catalog-families-catalog-probe">spoolsmith catalog families · catalog probe &lt;ip&gt;<a class="heading-anchor" href="#spoolsmith-catalog-families-catalog-probe" aria-label="Link to this section">#</a></h3>
+        <p>List the built-in printer families, or print the raw evidence a device returns.</p></div>
+      <div class="cmd"><h3 id="spoolsmith-install-force-family-options">spoolsmith install &lt;ip&gt; [--force-family &lt;id&gt;] [options]<a class="heading-anchor" href="#spoolsmith-install-force-family-options" aria-label="Link to this section">#</a></h3>
+        <p>Identify the printer from the built-in catalog (HP LaserJet Pro M4xx, Brother HL-L2xxx) and install it.</p></div>
+
+      <h2 id="exit-codes">Exit codes<a class="heading-anchor" href="#exit-codes" aria-label="Link to this section">#</a></h2>
+      <table>
+        <thead><tr><th>Code</th><th>Meaning</th></tr></thead>
+        <tbody>
+          <tr><td><code>0</code></td><td>Success, including "already configured" and "already absent".</td></tr>
+          <tr><td><code>1</code></td><td>General failure: Windows inventory, a conflict, verification or execution.</td></tr>
+          <tr><td><code>2</code></td><td>Invalid arguments or input files.</td></tr>
+          <tr><td><code>3</code></td><td>The printer reported a different identity from the file. For <code>status</code>, local configuration doesn't match.</td></tr>
+          <tr><td><code>4</code></td><td>Preflight failed: not elevated, or a driver prerequisite is missing.</td></tr>
+          <tr><td><code>5</code></td><td>Not confirmed: you declined, or no confirmation was possible.</td></tr>
+        </tbody>
+      </table>
+
+      <nav class="pager" aria-label="Previous and next page"><a class="prev" href="desktop.html"><span>← Previous</span><strong>Desktop app</strong></a><a class="next" href="status.html"><span>Next →</span><strong>Safety & limits</strong></a></nav>
+      <p class="edit-link">Something wrong or unclear? <a href="https://github.com/spilloid/spoolsmith/issues">Open an issue</a> or <a href="https://github.com/spilloid/spoolsmith/edit/main/docs/guide/cli.html">edit this page</a>.</p>
+      <p id="copy-status" class="sr-only" role="status"></p>
+    </main>
+  </div>
+  <footer class="wrap"><a class="brand" href="../">SpoolSmith<span class="brand-dot">.</span></a><span>A Spillers Technology project</span><div><a href="https://github.com/spilloid/spoolsmith">Source</a><a href="https://github.com/spilloid/spoolsmith/issues">Feedback</a><a href="https://github.com/spilloid/spoolsmith/blob/main/LICENSE">MIT license</a></div></footer>
+</body>
+</html>

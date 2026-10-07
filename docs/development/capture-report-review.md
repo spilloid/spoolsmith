@@ -3,7 +3,7 @@
 Read-only review of an external research report proposing a capture-and-redeploy direction for
 SpoolSmith: working queue → resolve the exact Driver Store package → export it intact → portable
 profile → `.intunewin` → Intune deployment. The report was reviewed against this repo's code,
-`CLAUDE.md`, `docs/daily-use-spec.md`, and `corporate-strategy/state/products/SpoolSmith.md`, and
+`CLAUDE.md`, `docs/development/daily-use-spec.md`, and `corporate-strategy/state/products/SpoolSmith.md`, and
 its central technical claims were tested live on the operator's own Windows 11 Pro 26200 machine
 against the real `Brother Home` queue that D-0041 recorded.
 

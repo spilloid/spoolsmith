@@ -24,6 +24,11 @@ tabs.forEach((tab, index) => {
   });
 });
 
+// Docs pages: the menu is open by default (so it works without JavaScript)
+// and collapses behind its summary on narrow screens.
+const docsMenu = document.querySelector('.docs-menu');
+if (docsMenu && window.matchMedia('(max-width: 900px)').matches) docsMenu.open = false;
+
 document.querySelectorAll('.copy').forEach(button => {
   button.addEventListener('click', async () => {
     const code = button.parentElement.querySelector('code');

@@ -29,7 +29,7 @@ Automated script tests are supplementary and are not tenant evidence.
 
 Use the [Windows pilot runbook](validation/2026-09-14-windows11-pilot.md) and actual
 [results](validation/2026-09-15-windows11-results.md) to identify the remaining cases.
-The [pre-pilot reflection](offline-intune-reflection.md) records earlier concerns;
+The [pre-pilot reflection](development/offline-intune-reflection.md) records earlier concerns;
 use the dated results for their current validation status.
 
 ## Prepare a validated profile and binary

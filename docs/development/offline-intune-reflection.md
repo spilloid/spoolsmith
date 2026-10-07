@@ -77,7 +77,7 @@ not require rerunning the entire Go suite or rebuilding an unchanged executable.
 
 ## Exit criteria for the next stage
 
-The [Windows runbook](validation/2026-09-14-windows11-pilot.md) orders the work so
+The [Windows runbook](../validation/2026-09-14-windows11-pilot.md) orders the work so
 native execution and local lifecycle evidence come first. Completing that stage
 can establish Windows endpoint behavior. Issue #5 still needs actual disconnected
 provisioning and a later print observation. Issue #6 additionally needs the tenant's

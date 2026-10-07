@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Copy a working Windows printer, or a whole PC of them, into a file and apply it on the next PC after reviewing the plan.">
+  <meta property="og:title" content="Copy a printer to another PC · SpoolSmith">
+  <meta property="og:description" content="Copy a working Windows printer, or a whole PC of them, into a file and apply it on the next PC after reviewing the plan.">
+  <meta property="og:url" content="https://spilloid.github.io/spoolsmith/guide/copy.html">
+  <meta property="og:image" content="https://spilloid.github.io/spoolsmith/img/gui-this-pc.png">
+  <meta name="theme-color" content="#163d38">
+  <title>Copy a printer to another PC · SpoolSmith docs</title>
+  <link rel="icon" href="../favicon.ico" sizes="16x16 32x32 48x48">
+  <link rel="icon" type="image/png" href="../img/icon-192.png" sizes="192x192">
+  <link rel="apple-touch-icon" href="../apple-touch-icon.png">
+  <link rel="stylesheet" href="../site.css">
+  <link rel="stylesheet" href="guide.css">
+  <script src="../site.js" defer></script>
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+  <!-- Generated page: edit the content below directly. Keep the sidebar in sync across docs/guide/*.html. -->
+  <header class="header wrap">
+    <a class="brand" href="../" aria-label="SpoolSmith home"><img src="../img/icon-192.png" alt="" width="38" height="38">SpoolSmith<span class="brand-dot">.</span></a>
+    <nav aria-label="Main navigation"><a href="../">Product</a><a href="index.html" aria-current="page">Docs</a><a href="https://github.com/spilloid/spoolsmith/releases/latest">Download</a><a class="nav-github" href="https://github.com/spilloid/spoolsmith">GitHub <span aria-hidden="true">↗</span></a></nav>
+  </header>
+  <div class="wrap docs-layout">
+    <details class="docs-menu" open><summary>Documentation menu</summary><div><nav aria-label="Documentation"><h2>Get started</h2><ul><li><a href="index.html">Overview</a></li><li><a href="start.html">Install & first run</a></li></ul><h2>Workflows</h2><ul><li><a href="copy.html" aria-current="page">Copy a printer</a></li><li><a href="profiles.html">Set up by address</a></li><li><a href="intune.html">Intune packaging</a></li></ul><h2>Reference</h2><ul><li><a href="desktop.html">Desktop app</a></li><li><a href="cli.html">Command line</a></li><li><a href="status.html">Safety & limits</a></li></ul><a class="menu-download" href="https://github.com/spilloid/spoolsmith/releases/latest">Download for Windows ↗<span>Signed · ZIP or MSI</span></a></nav></div></details>
+    <main id="main" class="doc">
+      <p class="eyebrow"><span class="status-dot"></span>Workflow</p>
+      <h1>Copy a printer to another PC</h1>
+      <p class="lead">Someone needs a printer, and someone two desks over already has it working. Copy it into a printer file, carry the file over, and double-click it. The driver comes along whenever it can.</p>
+
+      <h2 id="in-the-desktop-app">In the desktop app<a class="heading-anchor" href="#in-the-desktop-app" aria-label="Link to this section">#</a></h2>
+      <ol>
+        <li>On the PC that already prints, open <strong>This PC</strong>. Select the printer (or several, or <strong>Ctrl+A</strong> for all) and choose <strong>Copy 1 printer...</strong> or <strong>Copy N printers...</strong> One printer saves a <code>.ssb</code>; several save one <code>.zip</code> set.</li>
+        <li>Move the file to the other PC however you like: a share, a USB stick, a chat. You can also press <strong>Ctrl+C</strong> in the app and paste the printer files straight into a folder.</li>
+        <li>On the other PC, <strong>double-click the file</strong>. Dropping it on the window, pasting it with <strong>Ctrl+V</strong>, or <strong>Add a printer → Open a printer file...</strong> works too.</li>
+        <li>Check the plan on the apply sheet and confirm once. If SpoolSmith isn't elevated, the button reads <strong>Install as administrator...</strong>; Windows asks for permission and the plan is checked again before you confirm.</li>
+      </ol>
+      <figure class="shot doc-shot"><img src="../img/gui-review-and-apply.png" alt="The apply sheet for Accounting - 2nd Floor, listing the steps: install the driver from the printer file, trust its publisher only if Windows validates its signature, create the port, create the printer." width="1200" height="800" loading="lazy" decoding="async"><figcaption><span class="status-dot"></span>The apply sheet: where the file came from, and every step before anything happens.</figcaption></figure>
+      <p>When it finishes, the sheet shows each step's result. <strong>Copy notes for the ticket</strong> puts a plain-text summary on the clipboard.</p>
+
+      <h2 id="on-the-command-line">On the command line<a class="heading-anchor" href="#on-the-command-line" aria-label="Link to this section">#</a></h2>
+      <span class="code-label">On the PC that already prints, as administrator</span>
+      <div class="code-block"><button class="copy" type="button" aria-label="Copy commands">Copy</button><pre><code>.\spoolsmith.exe printers
+.\spoolsmith.exe copy "Accounting" --out accounting.ssb</code></pre></div>
+      <span class="code-label">On the PC that needs the printer, as administrator</span>
+      <div class="code-block"><button class="copy" type="button" aria-label="Copy commands">Copy</button><pre><code>.\spoolsmith.exe apply accounting.ssb --dry-run
+.\spoolsmith.exe apply accounting.ssb</code></pre></div>
+      <p><code>printers</code> lists every queue and marks the ones that can't be copied with <code>!</code> and the reason. It reads Windows' own <code>Get-Printer</code> and <code>Get-PrinterPort</code>, changes nothing, and needs no elevation. Add <code>--copyable</code> to hide the rest.</p>
+      <p>With <code>copy</code>, leave out the queue name to pick from a numbered list, and leave out <code>--out</code> to name the file after the queue. (<code>copy "Accounting" accounting.ssb</code>, with the file name as a second argument, also works.) In a script with no terminal, <code>copy</code> without a queue name fails and asks you to name one. It never picks for you.</p>
+
+      <h2 id="the-driver-comes-along">The driver comes along<a class="heading-anchor" href="#the-driver-comes-along" aria-label="Link to this section">#</a></h2>
+      <p>Every copy tries to export the printer's driver package from the Windows driver store into the file, so the other PC doesn't need it beforehand. That export needs administrator rights. When it can't happen, because you're not elevated, the export failed, or the package is bigger than the 1 GiB limit, the copy still succeeds with the settings only and says why.</p>
+      <ul>
+        <li><code>--settings-only</code> (or clearing the desktop's <strong>Include the driver where possible</strong> box) always leaves the driver out. Use it when the other PC should use a driver you install yourself.</li>
+        <li>Inbox and Windows Update drivers have no driver-store package to export. The other PC gets them the same way this one did.</li>
+        <li><code>--include-driver</code> from older versions is accepted and ignored, with a note.</li>
+      </ul>
+
+      <h2 id="copy-every-printer-at-once">Copy every printer at once<a class="heading-anchor" href="#copy-every-printer-at-once" aria-label="Link to this section">#</a></h2>
+      <div class="code-block"><button class="copy" type="button" aria-label="Copy commands">Copy</button><pre><code>.\spoolsmith.exe copy --all --out printers.zip</code></pre></div>
+      <p>This writes one <strong>printer set</strong>: a plain <code>.zip</code> holding one <code>.ssb</code> per printer, each carrying its driver where possible. Leave out <code>--out</code> to get <code>SpoolSmith-printers-&lt;date&gt;-&lt;time&gt;.zip</code> in the current folder.</p>
+      <ul>
+        <li>Printers that can't be copied are skipped with a reason, and one failure doesn't stop the rest.</li>
+        <li>Duplicate names get <code>-2</code>, <code>-3</code> suffixes. An existing set file is never replaced.</li>
+        <li>Stopping the copy (Ctrl+C on the CLI, or the stop control in the desktop) saves no set.</li>
+        <li>The CLI exits zero if at least one printer was saved. Check <code>failed</code> and <code>skipped</code> in its JSON. The desktop's <strong>Copy results</strong> gives you a plain-text report.</li>
+      </ul>
+      <figure class="shot doc-shot"><img src="../img/gui-copy-all.png" alt="Copy printers dialog with a Save set as name, the include-driver checkbox, progress and per-printer results." width="720" height="480" loading="lazy" decoding="async"><figcaption><span class="status-dot"></span>Copying several printers into one set, with a result for each.</figcaption></figure>
+
+      <h3 id="applying-a-set">Applying a set<a class="heading-anchor" href="#applying-a-set" aria-label="Link to this section">#</a></h3>
+      <div class="code-block"><button class="copy" type="button" aria-label="Copy commands">Copy</button><pre><code>.\spoolsmith.exe bundle inspect printers.zip
+.\spoolsmith.exe apply printers.zip
+.\spoolsmith.exe apply printers.zip --member Accounting</code></pre></div>
+      <p>Every printer in a set gets <strong>its own plan and its own confirmation</strong>, exactly as if its <code>.ssb</code> were applied alone. One confirmation never covers several printers. <code>--member</code> picks one by file name. In the desktop, opening a set shows its printers so you can pick them one at a time.</p>
+
+      <h2 id="what-apply-checks">What apply checks<a class="heading-anchor" href="#what-apply-checks" aria-label="Link to this section">#</a></h2>
+      <p>Before showing the plan, <code>apply</code> probes the printer and compares the model it reports with what was captured. Three outcomes are possible:</p>
+      <ul>
+        <li><strong>It matches.</strong> The plan goes ahead.</li>
+        <li><strong>It reports a different model.</strong> Setup stops. The address now belongs to a different device.</li>
+        <li><strong>It doesn't answer, or can't confirm its identity.</strong> Setup falls back to offline setup from the saved settings, and the plan says so before you confirm.</li>
+      </ul>
+      <p>To skip the check from the start, for example when preparing a PC before a site visit, use <code>--offline</code> (or <strong>More options → Offline setup</strong> on the sheet). Offline success means the queue is configured; it doesn't prove the printer is reachable or that printing works.</p>
+      <p>Applying the same file again is safe: matching settings are reported as unchanged. To change an existing queue to match the file, use <code>apply --update</code> (<strong>More options → Update an existing queue</strong>).</p>
+
+      <h3 id="driver-signatures-and-trusted-publishers">Driver signatures and trusted publishers<a class="heading-anchor" href="#driver-signatures-and-trusted-publishers" aria-label="Link to this section">#</a></h3>
+      <p>A carried driver is installed only if every file matches its SHA-256 in the manifest <em>and</em> Windows validates the driver catalog's signature when <code>pnputil</code> stages it. If the signature is valid but Windows doesn't yet trust that publisher for driver installs, <code>apply</code> adds that exact signer certificate to <code>LocalMachine\TrustedPublisher</code> first. That step is in the plan you confirm. The certificate always comes from a catalog Windows has validated, never from the file itself, and nothing is added to the Root store.</p>
+      <div class="warn"><strong>Trust a printer file as much as the PC it came from</strong><p>The hashes detect corruption and casual edits; they aren't a signature. Windows' signature check is the real gate. Use <code>--settings-only</code> when you'd rather install drivers yourself.</p></div>
+
+      <h2 id="roll-one-reviewed-plan-out-to-many-pcs">Roll one reviewed plan out to many PCs<a class="heading-anchor" href="#roll-one-reviewed-plan-out-to-many-pcs" aria-label="Link to this section">#</a></h2>
+      <div class="code-block"><button class="copy" type="button" aria-label="Copy commands">Copy</button><pre><code>.\spoolsmith.exe apply accounting.ssb --dry-run
+#   ... Reviewed plan fingerprint: 536445b1f7c20f84...
+
+.\spoolsmith.exe apply accounting.ssb --plan-hash 536445b1f7c20f84...</code></pre></div>
+      <p>Any PC that would compute a different plan stops instead of making changes, and shows both fingerprints. This is deliberately stricter than <code>--yes</code>, which accepts whatever plan the PC computes. A fingerprint covers one printer, so with a set, pair <code>--plan-hash</code> with <code>--member</code>.</p>
+
+      <h2 id="which-printers-can-be-copied">Which printers can be copied<a class="heading-anchor" href="#which-printers-can-be-copied" aria-label="Link to this section">#</a></h2>
+      <table>
+        <thead><tr><th>Queue type</th><th>What happens</th></tr></thead>
+        <tbody>
+          <tr><td>RAW TCP 9100 by IP</td><td>Copied as-is.</td></tr>
+          <tr><td>RAW TCP 9100 by hostname</td><td>Saved as the hostname's current IP, with a warning that DNS or DHCP changes can break it.</td></tr>
+          <tr><td>WSD</td><td>Copied when its device ID and IP can be verified (the printer must be reachable). SpoolSmith prefers RAW TCP/IP with the source driver, or an unambiguous existing RAW mapping at that IP. If the source uses Microsoft's IPP Class Driver and no RAW mapping is known, it saves a verified IPP endpoint instead.</td></tr>
+          <tr><td>USB</td><td>Copied to a <code>.usb.ssb</code>. Applying it can prepare the driver before the printer is plugged in. Apply again after Windows creates the USB queue to map it; pick a differently named queue in the sheet or with <code>--usb-queue &lt;name&gt;</code>.</td></tr>
+          <tr><td>LPR, non-9100 ports, IPPS-only, virtual printers</td><td>Not copied. <code>printers</code> says why.</td></tr>
+        </tbody>
+      </table>
+
+      <h2 id="when-a-printer-changes-address">When a printer changes address<a class="heading-anchor" href="#when-a-printer-changes-address" aria-label="Link to this section">#</a></h2>
+      <p>If the printer moved or the subnet was renumbered, re-point the queue instead of rebuilding it, so users keep the printer they already pick:</p>
+      <div class="code-block"><button class="copy" type="button" aria-label="Copy commands">Copy</button><pre><code>.\spoolsmith.exe repoint "Accounting" 192.168.1.75 --dry-run
+.\spoolsmith.exe repoint "Accounting" 192.168.1.75</code></pre></div>
+      <p>The name and driver stay the same, and the old port stays in place in case another queue uses it. In the desktop, select the printer on <strong>This PC</strong> and choose <strong>Change address...</strong></p>
+
+      <h2 id="look-inside-a-file">Look inside a file<a class="heading-anchor" href="#look-inside-a-file" aria-label="Link to this section">#</a></h2>
+      <div class="code-block"><button class="copy" type="button" aria-label="Copy commands">Copy</button><pre><code>.\spoolsmith.exe bundle inspect accounting.ssb</code></pre></div>
+      <p>This shows the printer, address, driver, the PC and time it was copied from, and whether every payload file matches its hash, without contacting the printer or touching Windows. The desktop's <strong>More → Inspect</strong> does the same. A <code>.ssb</code> holds <code>manifest.json</code> (settings and evidence, never commands) and, when a driver was included, <code>payload/</code> with every file listed by size and SHA-256. Entries with unsafe paths are rejected before anything is written.</p>
+
+      <nav class="pager" aria-label="Previous and next page"><a class="prev" href="start.html"><span>← Previous</span><strong>Install & first run</strong></a><a class="next" href="profiles.html"><span>Next →</span><strong>Set up by address</strong></a></nav>
+      <p class="edit-link">Something wrong or unclear? <a href="https://github.com/spilloid/spoolsmith/issues">Open an issue</a> or <a href="https://github.com/spilloid/spoolsmith/edit/main/docs/guide/copy.html">edit this page</a>.</p>
+      <p id="copy-status" class="sr-only" role="status"></p>
+    </main>
+  </div>
+  <footer class="wrap"><a class="brand" href="../">SpoolSmith<span class="brand-dot">.</span></a><span>A Spillers Technology project</span><div><a href="https://github.com/spilloid/spoolsmith">Source</a><a href="https://github.com/spilloid/spoolsmith/issues">Feedback</a><a href="https://github.com/spilloid/spoolsmith/blob/main/LICENSE">MIT license</a></div></footer>
+</body>
+</html>

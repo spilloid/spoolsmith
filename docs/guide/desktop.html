@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="A tour of the SpoolSmith Windows desktop app: This PC, Add a printer, saved setups, Tools and review.">
+  <meta property="og:title" content="The desktop app · SpoolSmith">
+  <meta property="og:description" content="A tour of the SpoolSmith Windows desktop app: This PC, Add a printer, saved setups, Tools and review.">
+  <meta property="og:url" content="https://spilloid.github.io/spoolsmith/guide/desktop.html">
+  <meta property="og:image" content="https://spilloid.github.io/spoolsmith/img/gui-this-pc.png">
+  <meta name="theme-color" content="#163d38">
+  <title>The desktop app · SpoolSmith docs</title>
+  <link rel="icon" href="../favicon.ico" sizes="16x16 32x32 48x48">
+  <link rel="icon" type="image/png" href="../img/icon-192.png" sizes="192x192">
+  <link rel="apple-touch-icon" href="../apple-touch-icon.png">
+  <link rel="stylesheet" href="../site.css">
+  <link rel="stylesheet" href="guide.css">
+  <script src="../site.js" defer></script>
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+  <!-- Generated page: edit the content below directly. Keep the sidebar in sync across docs/guide/*.html. -->
+  <header class="header wrap">
+    <a class="brand" href="../" aria-label="SpoolSmith home"><img src="../img/icon-192.png" alt="" width="38" height="38">SpoolSmith<span class="brand-dot">.</span></a>
+    <nav aria-label="Main navigation"><a href="../">Product</a><a href="index.html" aria-current="page">Docs</a><a href="https://github.com/spilloid/spoolsmith/releases/latest">Download</a><a class="nav-github" href="https://github.com/spilloid/spoolsmith">GitHub <span aria-hidden="true">↗</span></a></nav>
+  </header>
+  <div class="wrap docs-layout">
+    <details class="docs-menu" open><summary>Documentation menu</summary><div><nav aria-label="Documentation"><h2>Get started</h2><ul><li><a href="index.html">Overview</a></li><li><a href="start.html">Install & first run</a></li></ul><h2>Workflows</h2><ul><li><a href="copy.html">Copy a printer</a></li><li><a href="profiles.html">Set up by address</a></li><li><a href="intune.html">Intune packaging</a></li></ul><h2>Reference</h2><ul><li><a href="desktop.html" aria-current="page">Desktop app</a></li><li><a href="cli.html">Command line</a></li><li><a href="status.html">Safety & limits</a></li></ul><a class="menu-download" href="https://github.com/spilloid/spoolsmith/releases/latest">Download for Windows ↗<span>Signed · ZIP or MSI</span></a></nav></div></details>
+    <main id="main" class="doc">
+      <p class="eyebrow"><span class="status-dot"></span>Reference</p>
+      <h1>The desktop app</h1>
+      <p class="lead"><strong>spoolsmith-gui.exe</strong> is built around one job: take printers off this PC, and put them on the next one. The sidebar has two pages for that, <strong>This PC</strong> and <strong>Add a printer</strong>. Everything else is under <strong>More</strong>.</p>
+
+      <h2 id="this-pc">This PC<a class="heading-anchor" href="#this-pc" aria-label="Link to this section">#</a></h2>
+      <p>The app opens here, on a table of Windows' installed printers. Printers SpoolSmith can't copy, such as Print to PDF, are greyed with their reason.</p>
+      <ul>
+        <li>Select printers (<strong>Ctrl+A</strong> for all) and choose <strong>Copy 1 printer...</strong> or <strong>Copy N printers...</strong> One printer saves a <code>.ssb</code>; several save one <code>.zip</code> set.</li>
+        <li>Or press <strong>Ctrl+C</strong> to put the printer files on the clipboard and paste them into a folder, share or chat.</li>
+        <li>With one printer selected, <strong>Change address...</strong> and <strong>Remove printer...</strong> appear.</li>
+      </ul>
+      <p><strong>Include the driver where possible</strong> is on by default. Without administrator rights, or if the export fails, the copy is saved with settings only and the result says why. See <a href="copy.html">Copy a printer</a>.</p>
+      <figure class="shot doc-shot"><img src="../img/gui-this-pc.png" alt="This PC page: a table of nine installed printers with address, driver and whether each can be copied, eight selected, and a Copy 8 printers button." width="960" height="640" loading="lazy" decoding="async"></figure>
+
+      <h2 id="opening-a-printer-file">Opening a printer file<a class="heading-anchor" href="#opening-a-printer-file" aria-label="Link to this section">#</a></h2>
+      <p><strong>Double-click a <code>.ssb</code></strong> to install it. The first time you run the app, it offers to open <code>.ssb</code> files for your Windows account; you can turn that off under <strong>More</strong>. You can also:</p>
+      <ul>
+        <li>drop printer files or sets onto the window, or paste them with <strong>Ctrl+V</strong> after copying them in Explorer;</li>
+        <li>run <code>spoolsmith-gui.exe printer.ssb</code>;</li>
+        <li>use <strong>Add a printer → Open a printer file...</strong></li>
+      </ul>
+      <p>A second double-click while SpoolSmith is open goes to the window that's already open. A <code>.zip</code> set opens a list of its printers, and you review each one on its own.</p>
+
+      <h2 id="the-apply-sheet">The apply sheet<a class="heading-anchor" href="#the-apply-sheet" aria-label="Link to this section">#</a></h2>
+      <p>Every change to Windows opens the apply sheet, whether it's a printer file, a printer found on the network, a saved setup, or <strong>Remove</strong> or <strong>Change address</strong> on This PC. It shows:</p>
+      <ul>
+        <li>the printer's name, address and driver, and whether the driver is included;</li>
+        <li>where the file came from: the source PC and when it was copied;</li>
+        <li>anything to know first, such as settings only or a printer that isn't answering;</li>
+        <li>the steps it will take, prepared as soon as the sheet opens.</li>
+      </ul>
+      <figure class="shot doc-shot"><img src="../img/gui-review-and-apply.png" alt="Apply sheet for Accounting - 2nd Floor, copied from FRONTDESK-01, listing four steps and an Install as administrator button with the Windows shield." width="1200" height="800" loading="lazy" decoding="async"></figure>
+      <p><strong>Details</strong> shows the full plan. <strong>More options</strong> holds offline setup, updating an existing queue and, for removals, removing the driver. The main button asks for the single confirmation. If SpoolSmith isn't elevated, it reads <strong>Install as administrator...</strong> with the Windows shield: Windows asks for permission, SpoolSmith reopens elevated on the same printer, prepares the plan again and asks you to confirm there.</p>
+      <p>When it's done, each step shows its result. <strong>Copy notes for the ticket</strong> puts a plain-text summary on the clipboard. If a step fails, the sheet says earlier steps may already have been applied, and that adding the same printer again reuses what exists.</p>
+
+      <h2 id="add-a-printer">Add a printer<a class="heading-anchor" href="#add-a-printer" aria-label="Link to this section">#</a></h2>
+      <p>This page lists printers on the connected network, scanned when the app starts. <strong>Scan a different network or IP...</strong> takes another subnet, or one address with <strong>Use IP directly</strong>. Pick a printer, then either choose <strong>Windows automatic (IPP)</strong> or a compatible installed driver (<strong>Refresh drivers</strong> reloads the list), and choose <strong>Save and review</strong>. See <a href="profiles.html">Set up by address</a>.</p>
+      <p><strong>Open a printer file...</strong> and <strong>Open a saved setup...</strong> are at the bottom of the page.</p>
+
+      <h2 id="more">More<a class="heading-anchor" href="#more" aria-label="Link to this section">#</a></h2>
+      <p>The <strong>More</strong> menu at the foot of the sidebar holds:</p>
+      <ul>
+        <li><strong>Saved setups</strong>: your library of <code>.ssb</code> files. Set up, update, check status, edit (with a backup) or remove, plus <strong>Export all...</strong> and <strong>Import all...</strong> as a <code>.zip</code> set. See <a href="profiles.html#move-your-whole-library">Move your whole library</a>.</li>
+        <li><strong>Inspect</strong>: what a printer reports about itself, or what a <code>.ssb</code> or set contains. Nothing is installed.</li>
+        <li><strong>Intune package</strong>: build a local Win32 app from a printer file. See <a href="intune.html">Intune packaging</a>.</li>
+        <li><strong>Action log</strong>: recent activity.</li>
+      </ul>
+      <figure class="shot doc-shot"><img src="../img/gui-tools.png" alt="Inspect page with a field for an IP, .ssb or .zip and an Inspect button." width="960" height="640" loading="lazy" decoding="async"></figure>
+
+      <h2 id="keyboard-and-window">Keyboard and window<a class="heading-anchor" href="#keyboard-and-window" aria-label="Link to this section">#</a></h2>
+      <p>Tab and Shift+Tab move through every control on every page. Ctrl+A, Ctrl+C and Ctrl+V work on This PC and for pasting printer files. The window opens at 1060×720 and can shrink to 960×640.</p>
+
+      <h2 id="where-the-app-and-the-cli-differ">Where the app and the CLI differ<a class="heading-anchor" href="#where-the-app-and-the-cli-differ" aria-label="Link to this section">#</a></h2>
+      <p>They run the same workflow, so plans and checks are identical. The differences are deliberate:</p>
+      <ul>
+        <li><strong>Elevation.</strong> The desktop asks Windows for permission and reopens elevated. The CLI stops and asks you to use an administrator prompt.</li>
+        <li><strong>Confirmation.</strong> The desktop always asks. Flags for unattended runs (<code>--yes</code>, <code>--plan-hash</code>, <code>--non-interactive</code>) exist only on the CLI.</li>
+        <li><strong>Deprecated catalog commands</strong> (<code>install &lt;ip&gt;</code>, <code>--force-family</code>, <code>catalog</code>) exist only on the CLI.</li>
+      </ul>
+      <p>The full side-by-side mapping is in <a href="https://github.com/spilloid/spoolsmith/blob/main/docs/gui-parity.md">the desktop/CLI parity table</a>.</p>
+
+      <nav class="pager" aria-label="Previous and next page"><a class="prev" href="intune.html"><span>← Previous</span><strong>Intune packaging</strong></a><a class="next" href="cli.html"><span>Next →</span><strong>Command line</strong></a></nav>
+      <p class="edit-link">Something wrong or unclear? <a href="https://github.com/spilloid/spoolsmith/issues">Open an issue</a> or <a href="https://github.com/spilloid/spoolsmith/edit/main/docs/guide/desktop.html">edit this page</a>.</p>
+      <p id="copy-status" class="sr-only" role="status"></p>
+    </main>
+  </div>
+  <footer class="wrap"><a class="brand" href="../">SpoolSmith<span class="brand-dot">.</span></a><span>A Spillers Technology project</span><div><a href="https://github.com/spilloid/spoolsmith">Source</a><a href="https://github.com/spilloid/spoolsmith/issues">Feedback</a><a href="https://github.com/spilloid/spoolsmith/blob/main/LICENSE">MIT license</a></div></footer>
+</body>
+</html>

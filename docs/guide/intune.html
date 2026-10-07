@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Export a validated printer setup as a reviewable Win32 app for Microsoft Intune, entirely locally.">
+  <meta property="og:title" content="Package a printer for Intune · SpoolSmith">
+  <meta property="og:description" content="Export a validated printer setup as a reviewable Win32 app for Microsoft Intune, entirely locally.">
+  <meta property="og:url" content="https://spilloid.github.io/spoolsmith/guide/intune.html">
+  <meta property="og:image" content="https://spilloid.github.io/spoolsmith/img/gui-this-pc.png">
+  <meta name="theme-color" content="#163d38">
+  <title>Package a printer for Intune · SpoolSmith docs</title>
+  <link rel="icon" href="../favicon.ico" sizes="16x16 32x32 48x48">
+  <link rel="icon" type="image/png" href="../img/icon-192.png" sizes="192x192">
+  <link rel="apple-touch-icon" href="../apple-touch-icon.png">
+  <link rel="stylesheet" href="../site.css">
+  <link rel="stylesheet" href="guide.css">
+  <script src="../site.js" defer></script>
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+  <!-- Generated page: edit the content below directly. Keep the sidebar in sync across docs/guide/*.html. -->
+  <header class="header wrap">
+    <a class="brand" href="../" aria-label="SpoolSmith home"><img src="../img/icon-192.png" alt="" width="38" height="38">SpoolSmith<span class="brand-dot">.</span></a>
+    <nav aria-label="Main navigation"><a href="../">Product</a><a href="index.html" aria-current="page">Docs</a><a href="https://github.com/spilloid/spoolsmith/releases/latest">Download</a><a class="nav-github" href="https://github.com/spilloid/spoolsmith">GitHub <span aria-hidden="true">↗</span></a></nav>
+  </header>
+  <div class="wrap docs-layout">
+    <details class="docs-menu" open><summary>Documentation menu</summary><div><nav aria-label="Documentation"><h2>Get started</h2><ul><li><a href="index.html">Overview</a></li><li><a href="start.html">Install & first run</a></li></ul><h2>Workflows</h2><ul><li><a href="copy.html">Copy a printer</a></li><li><a href="profiles.html">Set up by address</a></li><li><a href="intune.html" aria-current="page">Intune packaging</a></li></ul><h2>Reference</h2><ul><li><a href="desktop.html">Desktop app</a></li><li><a href="cli.html">Command line</a></li><li><a href="status.html">Safety & limits</a></li></ul><a class="menu-download" href="https://github.com/spilloid/spoolsmith/releases/latest">Download for Windows ↗<span>Signed · ZIP or MSI</span></a></nav></div></details>
+    <main id="main" class="doc">
+      <p class="eyebrow"><span class="status-dot"></span>Workflow</p>
+      <h1>Package a printer for Intune</h1>
+      <p class="lead">Turn one printer file into a reviewable Win32 app, with silent install, uninstall and detection scripts and the exact commands to paste into Intune. With Microsoft's packaging tool beside SpoolSmith, you also get the finished <code>.intunewin</code>.</p>
+
+      <div class="note"><strong>Where SpoolSmith stops</strong><p>SpoolSmith never signs in to a tenant, uploads an app, or creates or assigns groups, and building a package never changes this PC's printers. You create, upload and assign the Win32 app in the Intune admin center, like any other app.</p></div>
+
+      <h2 id="before-you-start">Before you start<a class="heading-anchor" href="#before-you-start" aria-label="Link to this section">#</a></h2>
+      <ol>
+        <li><strong>Validate the printer first.</strong> Copy or capture it to a <code>.ssb</code>, set it up on a test PC, and print a page. Check the queue name, address and driver.</li>
+        <li><strong>One package is one printer.</strong> Use a single <code>.ssb</code>. A printer set (<code>.zip</code>) isn't a package source, so package each of its files separately.</li>
+        <li><strong>Decide where the driver comes from:</strong> embedded in the <code>.ssb</code> (the default for copies), the supported local Brother archive, or a driver you deploy separately, which you confirm with <code>--driver-prerequisite</code> or the matching wizard choice.</li>
+        <li><strong>Use the current CLI.</strong> <code>spoolsmith capabilities</code> must report <code>SpoolSmith:intune-endpoint-v2:ssb,offline,status</code>. Older builds and the GUI executable are refused as the package payload. The target PCs don't need SpoolSmith or the MSI installed, because each package carries the CLI it was reviewed with, pinned by hash.</li>
+      </ol>
+      <p>On the Intune side you need an enrolled x64 pilot device, the right licensing, and an admin who can create and assign Win32 apps. See Microsoft's <a href="https://learn.microsoft.com/en-us/intune/app-management/deployment/add-win32">Win32 app prerequisites</a>.</p>
+
+      <h2 id="build-the-package">Build the package<a class="heading-anchor" href="#build-the-package" aria-label="Link to this section">#</a></h2>
+      <h3 id="with-the-wizard">With the wizard<a class="heading-anchor" href="#with-the-wizard" aria-label="Link to this section">#</a></h3>
+      <p>In the desktop, choose <strong>More → Intune package → Build an Intune printer app...</strong> In a terminal, run <code>.\spoolsmith.exe intune wizard</code>. Both have two steps:</p>
+      <ol>
+        <li><strong>Package settings.</strong> Choose the printer file and the approved CLI. The app name comes from the queue name, the revision starts at 1, a stable deployment ID is suggested, and the CLI's SHA-256 is worked out for you. <strong>Advanced settings</strong> holds the ID, revision, location, description, a hash override, offline setup and adoption. <strong>Validate and preview package</strong> moves on.</li>
+        <li><strong>Review and export.</strong> Check the destination, ID, commands, hashes, target, driver and policy, then export. <strong>Back to settings</strong> discards the review, and you validate again.</li>
+      </ol>
+      <figure class="shot doc-shot"><img src="../img/gui-intune-page.png" alt="Package a printer for Intune page explaining what the package contains and what it never does, with a Build an Intune printer app button." width="960" height="640" loading="lazy" decoding="async"></figure>
+      <p>The wizard keeps the reviewed payload hashes until export, so the files you reviewed are the files that get packaged.</p>
+
+      <h3 id="from-a-script">From a script<a class="heading-anchor" href="#from-a-script" aria-label="Link to this section">#</a></h3>
+      <div class="code-block"><button class="copy" type="button" aria-label="Copy commands">Copy</button><pre><code>.\spoolsmith.exe intune build `
+  --profile .\profiles\accounting.ssb `
+  --binary .\spoolsmith.exe --dry-run</code></pre></div>
+      <p><code>--dry-run</code> shows the manifest and destination and writes nothing; run it again without <code>--dry-run</code> to export. Add <code>--driver-prerequisite</code> when the file carries no driver. If you preview and export in separate runs, pass the reviewed <code>--binary-sha256</code> and <code>--output</code> to pin them. To update an existing deployment, keep its ID and raise the revision:</p>
+      <div class="code-block"><button class="copy" type="button" aria-label="Copy commands">Copy</button><pre><code>.\spoolsmith.exe intune build `
+  --profile .\profiles\accounting.ssb `
+  --binary .\spoolsmith.exe --binary-sha256 '&lt;approved SHA-256&gt;' `
+  --id indy-accounting --revision 2 --name 'Accounting Copier' `
+  --location Indianapolis --output .\accounting-r2 --dry-run</code></pre></div>
+
+      <h3 id="the-intunewin-file">The .intunewin file<a class="heading-anchor" href="#the-intunewin-file" aria-label="Link to this section">#</a></h3>
+      <p>Put Microsoft's <a href="https://github.com/microsoft/Microsoft-Win32-Content-Prep-Tool"><code>IntuneWinAppUtil.exe</code></a> next to <code>spoolsmith.exe</code> (or <code>spoolsmith-gui.exe</code>), and all three entry points also produce <code>install.intunewin</code> in a new <code>&lt;export folder&gt;-intunewin</code> folder. <code>--content-prep-tool</code> and <code>--content-prep-output</code> (or the desktop review page's fields) point elsewhere, and <code>--no-content-prep</code> skips it. Without the tool, the export's <code>README.txt</code> names the exact command to run yourself.</p>
+
+      <h3 id="what-the-export-contains">What the export contains<a class="heading-anchor" href="#what-the-export-contains" aria-label="Link to this section">#</a></h3>
+      <p><code>install.ps1</code>, <code>uninstall.ps1</code>, <code>detect.ps1</code>, <code>runtime.ps1</code>, <code>spoolsmith.exe</code>, a settings-only <code>profile.ssb</code>, <code>deployment.json</code> and <code>README.txt</code>. It also contains <code>bundle.ssb</code> when the file carries a driver, or <code>driver.exe</code> for the vendor archive. Every payload is pinned by SHA-256 and checked again at export. The export goes to a new folder (by default <code>&lt;id&gt;-r&lt;revision&gt;</code> next to the file), never an existing one. The scripts are unsigned UTF-8, so apply your script-signing policy if you enforce one.</p>
+
+      <h2 id="upload-to-intune">Upload to Intune<a class="heading-anchor" href="#upload-to-intune" aria-label="Link to this section">#</a></h2>
+      <ol>
+        <li>Create a <strong>Windows app (Win32)</strong>, upload the <code>.intunewin</code>, and copy the install and uninstall commands from the export's <code>README.txt</code>.</li>
+        <li>Set the install behavior to <strong>System</strong>, require x64, and set a 15-minute install limit. Each CLI run inside is capped at ten minutes.</li>
+        <li>Upload <code>detect.ps1</code> as a <strong>custom detection script</strong>, and choose <strong>No</strong> for running it as a 32-bit process.</li>
+        <li>Replace the default return codes with these:</li>
+      </ol>
+      <table>
+        <thead><tr><th>Code</th><th>Intune</th><th>Meaning</th></tr></thead>
+        <tbody>
+          <tr><td><code>0</code></td><td>Success</td><td>Configured and verified locally, or removed or already absent.</td></tr>
+          <tr><td><code>1</code></td><td>Failed</td><td>Inventory, conflict, package verification, execution or wrapper failure. Check the logs.</td></tr>
+          <tr><td><code>2</code></td><td>Failed</td><td>Invalid file, deployment inputs or arguments.</td></tr>
+          <tr><td><code>3</code></td><td>Failed</td><td>The printer reported a different identity. (An unreachable printer falls back to offline setup instead.)</td></tr>
+          <tr><td><code>4</code></td><td>Failed</td><td>Elevation or driver prerequisite missing.</td></tr>
+          <tr><td><code>5</code></td><td>Failed</td><td>Confirmation contract failed. The generated scripts always supply approval.</td></tr>
+          <tr><td><code>1618</code></td><td>Retry</td><td>Another SpoolSmith deployment holds the machine lock.</td></tr>
+          <tr><td><code>1460</code></td><td>Retry</td><td>The CLI timed out. Check for partial state before retrying.</td></tr>
+        </tbody>
+      </table>
+      <p>No reboot codes are generated. Signature and configuration failures are deliberately not mapped to Retry, because a person needs to look at them.</p>
+
+      <h3 id="what-detection-checks">What detection checks<a class="heading-anchor" href="#what-detection-checks" aria-label="Link to this section">#</a></h3>
+      <p>Detection succeeds only when the intended revision and the local queue, driver, address and protocol all match. It never contacts the printer. On any mismatch, missing state, or install still in progress, it exits non-zero with no output, as Microsoft's <a href="https://learn.microsoft.com/en-us/intune/app-management/deployment/add-win32#step-4-detection-rules">custom detection rules</a> require.</p>
+
+      <h2 id="on-the-endpoint">On the endpoint<a class="heading-anchor" href="#on-the-endpoint" aria-label="Link to this section">#</a></h2>
+      <p>Installation checks the printer's identity first. If the printer is unreachable or never confirms its identity, installation falls back to offline setup from the reviewed settings and <code>logs\lifecycle.log</code> records it. A conflicting identity still fails with code 3. Choosing <strong>Offline setup</strong> when you build the package skips the check from the start, which suits PCs prepared off-site. Either way, test printing once the PC can reach the printer.</p>
+
+      <h2 id="assign-it">Assign it<a class="heading-anchor" href="#assign-it" aria-label="Link to this section">#</a></h2>
+      <ul>
+        <li><strong>Required</strong> assignments provision the printer automatically.</li>
+        <li><strong>Available</strong> assignments offer it in Company Portal; pilot with a standard user. Target users for personal printer choices, and target devices for shared machines where location decides the printer.</li>
+        <li>Queues created as SYSTEM are machine-wide. An assignment controls delivery of the app, not permission to print.</li>
+        <li>For user-initiated removal, enable <strong>Allow available uninstall</strong>. Intune hides it for apps with dependencies, which matters if you model a separately managed driver as one.</li>
+      </ul>
+
+      <h2 id="updates-and-retirement">Updates and retirement<a class="heading-anchor" href="#updates-and-retirement" aria-label="Link to this section">#</a></h2>
+      <p>A deployment ID owns one queue name. <strong>To change the address, driver, CLI or validation mode, keep the ID and raise the revision.</strong> Same-revision changes and downgrades are refused. SpoolSmith doesn't look up which revision is deployed, so keep track of that yourself.</p>
+      <ul>
+        <li>A first install refuses an existing queue unless you enabled adoption <em>and</em> it matches exactly. A queue owned by one deployment can't be adopted by another.</li>
+        <li>Conflicting ports are never overwritten. Old ports stay after an address change, and shared drivers and ports are kept on removal.</li>
+        <li>To rename a queue, uninstall the old deployment and deploy a new ID. Don't assign both at once.</li>
+        <li><strong>Removing a Required assignment doesn't remove the printer.</strong> Retire it with an explicit Uninstall assignment.</li>
+      </ul>
+      <p>Protected state lives in <code>%ProgramData%\SpoolSmith\Deployments\&lt;id&gt;</code>, readable by SYSTEM and Administrators only. Each revision keeps what it needs for removal, so uninstall still works after Intune's cache is gone. After an interrupted install, retry the same revision or remove it before trying another.</p>
+
+      <h2 id="troubleshooting">Troubleshooting<a class="heading-anchor" href="#troubleshooting" aria-label="Link to this section">#</a></h2>
+      <p>Start with <code>logs\lifecycle.log</code> in the deployment folder, then the per-run <code>*.stdout.log</code> and <code>*.stderr.log</code>. <code>spoolsmith status --profile &lt;file&gt;</code> reports local mismatches without contacting the printer. Hash or signature failures need an approved replacement payload, never a bypass.</p>
+
+      <h2 id="validation-status">Validation status<a class="heading-anchor" href="#validation-status" aria-label="Link to this section">#</a></h2>
+      <p>The endpoint lifecycle (install, detection, protected state, standard-user denials, revision updates and removal) was validated as SYSTEM on real Windows, and the desktop wizard on real hardware. <strong>Delivery through a real Intune tenant and Company Portal hasn't been validated yet.</strong> The <a href="https://github.com/spilloid/spoolsmith/blob/main/docs/intune-deployment.md">full deployment reference</a> has the pilot checklist and every edge-case rule.</p>
+
+      <nav class="pager" aria-label="Previous and next page"><a class="prev" href="profiles.html"><span>← Previous</span><strong>Set up by address</strong></a><a class="next" href="desktop.html"><span>Next →</span><strong>Desktop app</strong></a></nav>
+      <p class="edit-link">Something wrong or unclear? <a href="https://github.com/spilloid/spoolsmith/issues">Open an issue</a> or <a href="https://github.com/spilloid/spoolsmith/edit/main/docs/guide/intune.html">edit this page</a>.</p>
+      <p id="copy-status" class="sr-only" role="status"></p>
+    </main>
+  </div>
+  <footer class="wrap"><a class="brand" href="../">SpoolSmith<span class="brand-dot">.</span></a><span>A Spillers Technology project</span><div><a href="https://github.com/spilloid/spoolsmith">Source</a><a href="https://github.com/spilloid/spoolsmith/issues">Feedback</a><a href="https://github.com/spilloid/spoolsmith/blob/main/LICENSE">MIT license</a></div></footer>
+</body>
+</html>

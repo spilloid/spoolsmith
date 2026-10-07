@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Everything you need to copy, map and package Windows network printers with SpoolSmith.">
+  <meta property="og:title" content="Documentation · SpoolSmith">
+  <meta property="og:description" content="Everything you need to copy, map and package Windows network printers with SpoolSmith.">
+  <meta property="og:url" content="https://spilloid.github.io/spoolsmith/guide/index.html">
+  <meta property="og:image" content="https://spilloid.github.io/spoolsmith/img/gui-this-pc.png">
+  <meta name="theme-color" content="#163d38">
+  <title>Documentation · SpoolSmith docs</title>
+  <link rel="icon" href="../favicon.ico" sizes="16x16 32x32 48x48">
+  <link rel="icon" type="image/png" href="../img/icon-192.png" sizes="192x192">
+  <link rel="apple-touch-icon" href="../apple-touch-icon.png">
+  <link rel="stylesheet" href="../site.css">
+  <link rel="stylesheet" href="guide.css">
+  <script src="../site.js" defer></script>
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+  <!-- Generated page: edit the content below directly. Keep the sidebar in sync across docs/guide/*.html. -->
+  <header class="header wrap">
+    <a class="brand" href="../" aria-label="SpoolSmith home"><img src="../img/icon-192.png" alt="" width="38" height="38">SpoolSmith<span class="brand-dot">.</span></a>
+    <nav aria-label="Main navigation"><a href="../">Product</a><a href="index.html" aria-current="page">Docs</a><a href="https://github.com/spilloid/spoolsmith/releases/latest">Download</a><a class="nav-github" href="https://github.com/spilloid/spoolsmith">GitHub <span aria-hidden="true">↗</span></a></nav>
+  </header>
+  <div class="wrap docs-layout">
+    <details class="docs-menu" open><summary>Documentation menu</summary><div><nav aria-label="Documentation"><h2>Get started</h2><ul><li><a href="index.html" aria-current="page">Overview</a></li><li><a href="start.html">Install & first run</a></li></ul><h2>Workflows</h2><ul><li><a href="copy.html">Copy a printer</a></li><li><a href="profiles.html">Set up by address</a></li><li><a href="intune.html">Intune packaging</a></li></ul><h2>Reference</h2><ul><li><a href="desktop.html">Desktop app</a></li><li><a href="cli.html">Command line</a></li><li><a href="status.html">Safety & limits</a></li></ul><a class="menu-download" href="https://github.com/spilloid/spoolsmith/releases/latest">Download for Windows ↗<span>Signed · ZIP or MSI</span></a></nav></div></details>
+    <main id="main" class="doc">
+      <p class="eyebrow"><span class="status-dot"></span>SpoolSmith documentation</p>
+      <h1>Printer setup you can repeat.</h1>
+      <p class="lead">SpoolSmith copies a working Windows printer into a file, driver included, and sets it up on the next PC after you've reviewed exactly what will change. Double-click the file, check the plan, confirm once.</p>
+
+      <h2 id="start-with-what-you-have">Start with what you have<a class="heading-anchor" href="#start-with-what-you-have" aria-label="Link to this section">#</a></h2>
+      <div class="card-grid">
+        <a href="copy.html"><span class="small-label">One PC already prints</span><h3 class="card-title">Copy a printer →</h3><p>Save the working printer, or every printer on the PC, and apply it on the next one.</p></a>
+        <a href="profiles.html#let-windows-set-it-up-ipp"><span class="small-label">You know the IP</span><h3 class="card-title">Set up by address →</h3><p>Let Windows set up an IPP printer, or pick an installed driver yourself.</p></a>
+        <a href="profiles.html#find-printers-on-the-network"><span class="small-label">You need to find it</span><h3 class="card-title">Discover printers →</h3><p>Scan a subnet for printer candidates and see what each one reports.</p></a>
+        <a href="intune.html"><span class="small-label">Many managed PCs</span><h3 class="card-title">Package for Intune →</h3><p>Turn a printer file into a reviewable Win32 app. Local only; no tenant sign-in.</p></a>
+      </div>
+
+      <h2 id="new-here">New here?<a class="heading-anchor" href="#new-here" aria-label="Link to this section">#</a></h2>
+      <p><a href="start.html">Install and first run</a> covers the portable ZIP and the MSI, how to check the signature, and which steps need administrator rights.</p>
+      <p>SpoolSmith is two signed programs: <strong>spoolsmith-gui.exe</strong>, the <a href="desktop.html">desktop app</a>, and <strong>spoolsmith.exe</strong>, the <a href="cli.html">command-line tool</a>. They run the same checks, so use whichever suits the job.</p>
+
+      <h2 id="two-kinds-of-file">Two kinds of file<a class="heading-anchor" href="#two-kinds-of-file" aria-label="Link to this section">#</a></h2>
+      <p>Everything SpoolSmith remembers is in a file you control. It needs no account, server or agent.</p>
+      <table>
+        <thead><tr><th>File</th><th>What it is</th></tr></thead>
+        <tbody>
+          <tr><td><code>.ssb</code> printer file</td><td>One printer: its Windows settings, the evidence the printer reported, and its driver whenever it could be exported. Copies, saved setups and Intune packages all use it. USB printers use <code>.usb.ssb</code>.</td></tr>
+          <tr><td><code>.zip</code> printer set</td><td>Several printers: a plain zip with <code>.ssb</code> files at its root. Explorer's <strong>Compress to ZIP file</strong> makes a valid one.</td></tr>
+        </tbody>
+      </table>
+      <p>Neither contains commands. Both are ordinary zips you can open and read.</p>
+
+      <h2 id="what-spoolsmith-will-and-won-t-do">What SpoolSmith will and won't do<a class="heading-anchor" href="#what-spoolsmith-will-and-won-t-do" aria-label="Link to this section">#</a></h2>
+      <ul>
+        <li><strong>It shows you the plan before changing Windows.</strong> Every change to printers, ports, drivers or trusted publishers is listed step by step and then confirmed. Running the same setup again reuses what's already there.</li>
+        <li><strong>It stops when the evidence disagrees.</strong> If the printer at an address now reports a different model, setup stops. If the printer simply doesn't answer, setup falls back to the saved settings and tells you before you confirm.</li>
+        <li><strong>It downloads nothing itself and never asks for credentials.</strong> Drivers come from the printer file, from what's installed, or from Windows' own driver search.</li>
+      </ul>
+      <p>The details, and what has and hasn't been verified on real hardware, are in <a href="status.html">Safety and limits</a>.</p>
+
+      <nav class="pager" aria-label="Previous and next page"><a class="next" href="start.html"><span>Next →</span><strong>Install & first run</strong></a></nav>
+      <p class="edit-link">Something wrong or unclear? <a href="https://github.com/spilloid/spoolsmith/issues">Open an issue</a> or <a href="https://github.com/spilloid/spoolsmith/edit/main/docs/guide/index.html">edit this page</a>.</p>
+      <p id="copy-status" class="sr-only" role="status"></p>
+    </main>
+  </div>
+  <footer class="wrap"><a class="brand" href="../">SpoolSmith<span class="brand-dot">.</span></a><span>A Spillers Technology project</span><div><a href="https://github.com/spilloid/spoolsmith">Source</a><a href="https://github.com/spilloid/spoolsmith/issues">Feedback</a><a href="https://github.com/spilloid/spoolsmith/blob/main/LICENSE">MIT license</a></div></footer>
+</body>
+</html>

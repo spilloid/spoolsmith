@@ -31,7 +31,7 @@ Source queue restoration required recreating its device port and preserving
 the original driver/settings. Clean-target setup, cross-PC apply, and physical
 printing remain unverified. Implementation and final hardware verification are
 in progress; v1.4 is a draft, not a published release. See SpoolSmith's
-`docs/v1.4-windows-driver-spec.md` and
+`docs/development/v1.4-windows-driver-spec.md` and
 `docs/validation/2026-10-01-wsd-conversion.md` for the contract and actual results.
 
 **Affected products:** SpoolSmith only. No simulated labor allocation or advance

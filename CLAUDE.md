@@ -7,7 +7,7 @@ place to type a printer IP and get a working mapping with the best driver *Windo
 supply, with no vendor OEM installer, and directed the lookup to be **silent** (part of the
 confirmed apply). Authorized on condition of following corporate-strategy standards and filing
 a motion back (`board/meetings/2026-10-02-spoolsmith-v1-5-native-driver/`, ratify-or-reverse).
-See `docs/v1.5-windows-update-driver-spec.md`. What changed in the rules:
+See `docs/development/v1.5-windows-update-driver-spec.md`. What changed in the rules:
 - IPP plans (Windows automatic setup, converted WSD queues) end with a best-effort native-driver
   step: registered driver by model name, `Add-PrinterDriver`, then a Windows Update driver
   search; the endpoint is verified before and after `Set-Printer`, the class driver is restored on
@@ -21,7 +21,7 @@ See `docs/v1.5-windows-update-driver-spec.md`. What changed in the rules:
 **Operator update, 2026-09-24 (v1.3 desktop):** the operator approved a
 desktop redesign around the one job -- take printers off this PC, put them on
 that one -- and explicitly asked for .ssb file association, drag-and-drop,
-file copy and file paste. See `docs/v1.3-gui-spec.md`. What changed in the
+file copy and file paste. See `docs/development/v1.3-gui-spec.md`. What changed in the
 rules:
 - **The desktop may relaunch itself elevated, only when the operator presses
   a shield button.** This replaces "SpoolSmith does not self-elevate" for the
@@ -173,7 +173,7 @@ local driver trust checks. Automatic driver downloads remain future work.
 
 **Operator update, 2026-09-06:** The operator asked Astra to prioritize daily use:
 known-IP mapping, discovery, and reusable per-printer JSON. See
-`docs/daily-use-spec.md`. Explicit operator profiles now extend queue mapping beyond
+`docs/development/daily-use-spec.md`. Explicit operator profiles now extend queue mapping beyond
 the two built-in catalog families, using an already-registered Windows driver and
 fresh evidence checks. The historical two-family restrictions below still describe
 automatic catalog selection and driver-package work; they do not prohibit this
@@ -321,6 +321,14 @@ is written, also check whether the GUI changed since the last release and, if so
   v0.7.0, first screenshotted in v0.7.3) is exactly the gap this step exists to catch.
 - Check `docs/index.html`'s gallery and copy against what the screenshots actually show now —
   a stale caption next to a fresh screenshot is its own kind of drift.
+
+Whether or not the GUI changed, update the docs site (`docs/guide/*.html`) with the release:
+new or changed commands and flags in `cli.html` (diff against `spoolsmith --help`), desktop
+labels in `desktop.html`, workflow changes in the matching guide, and newly verified (or still
+unverified) behavior in `status.html`. The README is deliberately short and links into these
+pages — put detail there, not back in the README. The sidebar is duplicated in every guide page,
+so adding a page means updating all of them. Guide pages and the README link to
+`releases/latest`; only `docs/index.html` carries versioned download links.
 This was missed for two releases in a row (v0.7.0 shipped Intune with no screenshot; v0.7.1's own
 site-update commit didn't add one either) before being caught and fixed in v0.7.3.
 
