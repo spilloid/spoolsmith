@@ -186,29 +186,15 @@ func Create(ctx context.Context, env install.Environment, collect Collector, opt
 	}
 
 	result := CreateResult{}
-	if cloned.USB {
-		result.Warning = "USB printer file: the driver can be prepared before the printer is connected; apply the file again after Windows detects the USB queue to review the mapping"
-		report("Warning: " + result.Warning)
-	}
-	if cloned.SourceHostname != "" {
-		result.Warning = fmt.Sprintf("Windows port uses hostname %q; this copy maps it to %s. Check the address before applying if DNS or DHCP changes", cloned.SourceHostname, cloned.HostAddress)
-		profile.Evidence.ProvenanceNote = strings.TrimSpace(strings.Join([]string{profile.Evidence.ProvenanceNote, result.Warning}, " "))
-		manifest.Profile = profile
-		report("Warning: " + result.Warning)
-	}
-	if cloned.SourceWSDPort != "" {
-		if cloned.IPPURL != "" {
-			result.Warning = fmt.Sprintf("Windows WSD port %q (device %s) was verified at %s with IPP endpoint %s; this file installs an IPP printer at that address, so confirm it if the printer moves and check a test page after applying", cloned.SourceWSDPort, cloned.SourceWSDDeviceID, cloned.HostAddress, cloned.IPPURL)
-		} else {
-			result.Warning = fmt.Sprintf("Windows WSD port %q (device %s) was verified at %s and RAW TCP 9100 was available; this file installs an IP port, so confirm the address if the printer moves and check a test page because an open RAW port does not prove driver compatibility", cloned.SourceWSDPort, cloned.SourceWSDDeviceID, cloned.HostAddress)
+	warnings := copyWarnings(cloned)
+	for _, warning := range warnings {
+		if warning.provenance {
+			profile.Evidence.ProvenanceNote = strings.TrimSpace(strings.Join([]string{profile.Evidence.ProvenanceNote, warning.text}, " "))
 		}
-		if cloned.SourceDriverQueue != "" {
-			result.Warning += fmt.Sprintf(". Driver %q comes from this printer's existing RAW mapping %q; the WSD source used %q", cloned.DriverName, cloned.SourceDriverQueue, cloned.SourceDriverName)
-		}
-		profile.Evidence.ProvenanceNote = strings.TrimSpace(strings.Join([]string{profile.Evidence.ProvenanceNote, result.Warning}, " "))
-		manifest.Profile = profile
-		report("Warning: " + result.Warning)
+		report("Warning: " + warning.text)
 	}
+	manifest.Profile = profile
+	result.Warning = joinWarnings(warnings)
 	needsDriver := func(why string) string {
 		if cloned.IPPURL != "" {
 			return fmt.Sprintf("%s; Windows must support IPP directed discovery and select %q on the other PC", why, cloned.DriverName)
@@ -389,4 +375,47 @@ func (b *Bundle) PrepareDriver() (*install.BundleDriver, string, error) {
 		TotalBytes:        b.Manifest.TotalPayloadBytes(),
 		PayloadDigest:     b.PayloadDigest(),
 	}, stageDir, nil
+}
+
+// copyWarning is one thing the operator must check before applying a copy.
+// provenance warnings also travel inside the file, in the evidence note.
+type copyWarning struct {
+	text       string
+	provenance bool
+}
+
+// copyWarnings lists every warning a copy of this queue earns. Each is kept:
+// a queue that earns more than one must not lose any to the last.
+func copyWarnings(cloned install.ClonedQueue) []copyWarning {
+	var warnings []copyWarning
+	if cloned.USB {
+		warnings = append(warnings, copyWarning{text: "USB printer file: the driver can be prepared before the printer is connected; apply the file again after Windows detects the USB queue to review the mapping"})
+	}
+	if cloned.SourceHostname != "" {
+		warnings = append(warnings, copyWarning{provenance: true, text: fmt.Sprintf("Windows port uses hostname %q; this copy maps it to %s. Check the address before applying if DNS or DHCP changes", cloned.SourceHostname, cloned.HostAddress)})
+	}
+	if cloned.SourceWSDPort != "" {
+		var text string
+		if cloned.IPPURL != "" {
+			text = fmt.Sprintf("Windows WSD port %q (device %s) was verified at %s with IPP endpoint %s; this file installs an IPP printer at that address, so confirm it if the printer moves and check a test page after applying", cloned.SourceWSDPort, cloned.SourceWSDDeviceID, cloned.HostAddress, cloned.IPPURL)
+		} else {
+			text = fmt.Sprintf("Windows WSD port %q (device %s) was verified at %s and RAW TCP 9100 was available; this file installs an IP port, so confirm the address if the printer moves and check a test page because an open RAW port does not prove driver compatibility", cloned.SourceWSDPort, cloned.SourceWSDDeviceID, cloned.HostAddress)
+		}
+		if cloned.SourceDriverQueue != "" {
+			text += fmt.Sprintf(". Driver %q comes from this printer's existing RAW mapping %q; the WSD source used %q", cloned.DriverName, cloned.SourceDriverQueue, cloned.SourceDriverName)
+		}
+		warnings = append(warnings, copyWarning{provenance: true, text: text})
+	}
+	return warnings
+}
+
+// joinWarnings joins warnings into CreateResult.Warning. Each warning ends
+// without a period, as callers print "Warning: %s.", so they are joined as
+// sentences.
+func joinWarnings(warnings []copyWarning) string {
+	texts := make([]string, 0, len(warnings))
+	for _, warning := range warnings {
+		texts = append(texts, warning.text)
+	}
+	return strings.Join(texts, ". ")
 }

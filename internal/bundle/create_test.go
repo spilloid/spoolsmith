@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/spilloid/spoolsmith/internal/install"
 	"github.com/spilloid/spoolsmith/internal/probe"
 )
 
@@ -205,5 +206,29 @@ func TestCreatePrefersTheDriverAndFallsBackToSettingsOnly(t *testing.T) {
 				t.Fatalf("written bundle driver = %+v; verify = %v", opened.Manifest.Driver, err)
 			}
 		})
+	}
+}
+
+func TestCopyWarningsKeepsEveryWarning(t *testing.T) {
+	cloned := install.ClonedQueue{
+		USB: true, DriverName: "Brother HL-L2315D series", HostAddress: "192.0.2.10",
+		SourceHostname: "printer.example", SourceWSDPort: "WSD-1", SourceWSDDeviceID: "uuid:1",
+		SourceDriverQueue: "Office RAW", SourceDriverName: "Microsoft IPP Class Driver",
+	}
+	warnings := copyWarnings(cloned)
+	if len(warnings) != 3 || warnings[0].provenance || !warnings[1].provenance || !warnings[2].provenance {
+		t.Fatalf("copyWarnings() = %+v, want USB, hostname and WSD warnings", warnings)
+	}
+	joined := joinWarnings(warnings)
+	for _, want := range []string{"USB printer file", `hostname "printer.example"`, `WSD port "WSD-1"`, `RAW mapping "Office RAW"`} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("joined warning lost %q: %s", want, joined)
+		}
+	}
+	if !strings.Contains(joined, "review the mapping. Windows port uses hostname") {
+		t.Fatalf("warnings are not joined as sentences: %s", joined)
+	}
+	if joinWarnings(nil) != "" {
+		t.Fatal("no warnings must join to an empty Warning")
 	}
 }
