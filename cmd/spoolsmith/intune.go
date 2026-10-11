@@ -8,11 +8,13 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"io/fs"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/spilloid/spoolsmith/internal/install"
 	"github.com/spilloid/spoolsmith/internal/intune"
 )
 
@@ -47,17 +49,34 @@ func runIntune(ctx context.Context, args []string, input io.Reader, stdout, stde
 			}
 			return value
 		}
-		fmt.Fprintln(stderr, "Step 1 of 2: Select a validated profile or SpoolSmith bundle, and approved Windows x64 CLI. Hashing is automatic.")
-		profilePath := ask("Profile JSON or .ssb bundle path")
+		// askRequired asks again on an empty answer instead of carrying an
+		// empty path forward; only the end of input stops it.
+		askRequired := func(label string) string {
+			for {
+				value := ask(label)
+				if value != "" || promptErr != nil {
+					return value
+				}
+				fmt.Fprintln(stderr, "A value is required.")
+			}
+		}
+		fmt.Fprintln(stderr, "Step 1 of 2: Select a validated printer file (.ssb) and approved Windows x64 CLI. Hashing is automatic.")
+		profilePath := askRequired("Printer file (.ssb) path")
+		if profilePath == "" {
+			return usageError(stdout, stderr, "intune wizard", errors.New("a printer file (.ssb) is required"))
+		}
 		var err error
 		opts, err = intune.ProfileDefaults(profilePath)
 		if err != nil {
-			return commandError(stdout, stderr, "intune wizard", err, 2)
+			return commandError(stdout, stderr, "intune wizard", err, int(install.ExitGeneralError))
 		}
-		opts.BinaryPath = ask("SpoolSmith Windows CLI binary path")
+		opts.BinaryPath = askRequired("SpoolSmith Windows CLI binary path")
+		if opts.BinaryPath == "" {
+			return usageError(stdout, stderr, "intune wizard", errors.New("the SpoolSmith Windows CLI binary path is required"))
+		}
 		hasPayload, err := intune.HasLocalPayload(profilePath)
 		if err != nil {
-			return commandError(stdout, stderr, "intune wizard", err, 2)
+			return commandError(stdout, stderr, "intune wizard", err, int(install.ExitGeneralError))
 		}
 		if !hasPayload {
 			opts.DriverPrerequisite = ask("This profile has no local driver payload. Driver will be registered separately before installation? Type yes to accept") == "yes"
@@ -70,7 +89,17 @@ func runIntune(ctx context.Context, args []string, input io.Reader, stdout, stde
 		}
 		if advanced == "yes" {
 			opts.ID = askDefault("Stable deployment ID", opts.ID)
-			opts.Revision, _ = strconv.Atoi(askDefault("Positive deployment revision", "1"))
+			for {
+				revision, convErr := strconv.Atoi(askDefault("Positive deployment revision", "1"))
+				if convErr == nil && revision >= 1 {
+					opts.Revision = revision
+					break
+				}
+				if promptErr != nil {
+					break
+				}
+				fmt.Fprintln(stderr, "Enter a positive whole number, such as 2.")
+			}
 			opts.DisplayName = askDefault("Company Portal display name", opts.DisplayName)
 			opts.Location = ask("Location (optional)")
 			opts.Description = askDefault("Description", opts.Description)
@@ -84,7 +113,7 @@ func runIntune(ctx context.Context, args []string, input io.Reader, stdout, stde
 		}
 		output, err = intune.SuggestOutput(filepath.Dir(opts.ProfilePath), opts.ID, opts.Revision)
 		if err != nil {
-			return commandError(stdout, stderr, "intune wizard", err, 2)
+			return commandError(stdout, stderr, "intune wizard", err, intuneFailureCode(err))
 		}
 		if advanced == "yes" {
 			output = askDefault("Export folder (must not already exist)", output)
@@ -118,7 +147,7 @@ func runIntune(ctx context.Context, args []string, input io.Reader, stdout, stde
 		}
 		prepared, err := intune.Prepare(opts)
 		if err != nil {
-			return commandError(stdout, stderr, "intune wizard", err, 2)
+			return commandError(stdout, stderr, "intune wizard", err, intuneFailureCode(err))
 		}
 		fmt.Fprintln(stderr, "Step 2 of 2: Review package contents, commands, hashes and policy.")
 		fmt.Fprintln(stderr, "Export folder:", output)
@@ -153,7 +182,7 @@ func runIntune(ctx context.Context, args []string, input io.Reader, stdout, stde
 	}
 	flags := flag.NewFlagSet("intune build", flag.ContinueOnError)
 	flags.SetOutput(stderr)
-	flags.StringVar(&opts.ProfilePath, "profile", "", "administrator-prevalidated profile (.json) or bundle (.ssb)")
+	flags.StringVar(&opts.ProfilePath, "profile", "", "administrator-prevalidated printer file (.ssb)")
 	flags.StringVar(&opts.BinaryPath, "binary", "", "Windows x64 CLI binary containing offline/status commands")
 	flags.StringVar(&opts.BinarySHA256, "binary-sha256", "", "optional approved binary SHA-256 (default: calculate from selected CLI)")
 	flags.StringVar(&opts.ID, "id", "", "stable deployment ID (default: derived from profile queue name)")
@@ -178,9 +207,17 @@ func runIntune(ctx context.Context, args []string, input io.Reader, stdout, stde
 	if flags.NArg() != 0 {
 		return usageError(stdout, stderr, "intune build", errors.New("provide no positional arguments"))
 	}
+	if strings.TrimSpace(opts.ProfilePath) == "" {
+		return usageError(stdout, stderr, "intune build", errors.New("--profile <file.ssb> is required"))
+	}
+	if strings.TrimSpace(opts.BinaryPath) == "" {
+		return usageError(stdout, stderr, "intune build", errors.New("--binary <exe> is required"))
+	}
+	// The arguments are well formed from here on: a printer file that cannot
+	// be read is a failure of that file, not of how the command was typed.
 	defaults, err := intune.ProfileDefaults(opts.ProfilePath)
 	if err != nil {
-		return commandError(stdout, stderr, "intune build", err, 2)
+		return commandError(stdout, stderr, "intune build", err, int(install.ExitGeneralError))
 	}
 	provided := make(map[string]bool)
 	flags.Visit(func(f *flag.Flag) { provided[f.Name] = true })
@@ -196,7 +233,7 @@ func runIntune(ctx context.Context, args []string, input io.Reader, stdout, stde
 	if !provided["output"] {
 		output, err = intune.SuggestOutput(filepath.Dir(opts.ProfilePath), opts.ID, opts.Revision)
 		if err != nil {
-			return commandError(stdout, stderr, "intune build", err, 2)
+			return commandError(stdout, stderr, "intune build", err, intuneFailureCode(err))
 		}
 	} else if output == "" {
 		return usageError(stdout, stderr, "intune build", errors.New("--output must name a new bundle directory"))
@@ -236,13 +273,15 @@ func runIntune(ctx context.Context, args []string, input io.Reader, stdout, stde
 
 	prepared, err := intune.Prepare(opts)
 	if err != nil {
-		return commandError(stdout, stderr, "intune build", err, 2)
+		return commandError(stdout, stderr, "intune build", err, intuneFailureCode(err))
 	}
 	fmt.Fprintln(stderr, "Export folder:", output)
 	if prepTool != "" {
 		fmt.Fprintf(stderr, "%s folder: %s\n", intune.PreparedPackageName, prepOutput)
 	}
-	if !dryRun {
+	if dryRun {
+		fmt.Fprintln(stderr, "Dry run: nothing was written and the content prep tool was not run.")
+	} else {
 		if err = prepared.Export(output); err != nil {
 			return commandError(stdout, stderr, "intune build", err, 1)
 		}
@@ -255,6 +294,16 @@ func runIntune(ctx context.Context, args []string, input io.Reader, stdout, stde
 		}
 	}
 	return encodeSuccess(stdout, stderr, "intune build", prepared.Manifest)
+}
+
+// intuneFailureCode tells a file that could not be read (exit 1) from an
+// option the packager refused (exit 2, a usage error).
+func intuneFailureCode(err error) int {
+	var pathErr *fs.PathError
+	if errors.As(err, &pathErr) {
+		return int(install.ExitGeneralError)
+	}
+	return int(install.ExitUsageError)
 }
 
 // runContentPrep runs Microsoft's tool over an already exported folder. The

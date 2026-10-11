@@ -185,6 +185,70 @@ func TestIntunePackagingUX(t *testing.T) {
 			t.Fatalf("wizard overrides: %d %s %s %v", code, stdout, stderr, err)
 		}
 	})
+	t.Run("build names its required flags", func(t *testing.T) {
+		profile, _ := fixture(t, false)
+		for _, tt := range []struct {
+			args []string
+			want string
+		}{
+			{[]string{"build"}, "--profile <file.ssb> is required"},
+			{[]string{"build", "--binary", binaryPath}, "--profile <file.ssb> is required"},
+			{[]string{"build", "--profile", profile}, "--binary <exe> is required"},
+		} {
+			code, stdout, stderr := runCommand(tt.args, "")
+			if code != 2 || !strings.Contains(stderr, tt.want) {
+				t.Fatalf("%v: %d %s %s", tt.args, code, stdout, stderr)
+			}
+		}
+	})
+	t.Run("an unreadable printer file is a general error", func(t *testing.T) {
+		dir := t.TempDir()
+		notABundle := filepath.Join(dir, "not-a-bundle.ssb")
+		if err := os.WriteFile(notABundle, []byte("{}"), 0600); err != nil {
+			t.Fatal(err)
+		}
+		for _, path := range []string{filepath.Join(dir, "missing.ssb"), notABundle} {
+			code, stdout, stderr := runCommand([]string{"build", "--profile", path, "--binary", binaryPath, "--driver-prerequisite", "--dry-run"}, "")
+			if code != 1 {
+				t.Fatalf("%s: %d %s %s", path, code, stdout, stderr)
+			}
+			assertValidJSON(t, []byte(stdout))
+			code, _, stderr = runCommand([]string{"wizard"}, path+"\n"+binaryPath+"\n")
+			if code != 1 {
+				t.Fatalf("wizard %s: %d %s", path, code, stderr)
+			}
+		}
+		profile, _ := fixture(t, false)
+		if code, _, stderr := runCommand([]string{"build", "--profile", profile, "--binary", filepath.Join(dir, "missing.exe"), "--driver-prerequisite", "--dry-run"}, ""); code != 1 {
+			t.Fatalf("missing binary: %d %s", code, stderr)
+		}
+	})
+	t.Run("build dry run says nothing was written", func(t *testing.T) {
+		profile, output := fixture(t, false)
+		code, _, stderr := runCommand([]string{"build", "--profile", profile, "--binary", binaryPath, "--driver-prerequisite", "--dry-run"}, "")
+		if code != 0 || !strings.Contains(stderr, "Dry run: nothing was written") {
+			t.Fatalf("%d %s", code, stderr)
+		}
+		if _, err := os.Stat(output); !os.IsNotExist(err) {
+			t.Fatal("dry run created output")
+		}
+	})
+	t.Run("wizard asks again for empty paths and a bad revision", func(t *testing.T) {
+		profile, _ := fixture(t, false)
+		output := filepath.Join(t.TempDir(), "custom")
+		input := strings.Join([]string{"", profile, "", binaryPath, "yes", "yes", "existing-id", "abc", "0", "2", "Custom", "", "Description", "", "strict", "", output, "", "export", ""}, "\n")
+		code, stdout, stderr := runCommand([]string{"wizard"}, input)
+		var m intune.Manifest
+		if err := json.Unmarshal([]byte(stdout), &m); err != nil || code != 0 || m.Revision != 2 {
+			t.Fatalf("wizard: %d %s %s %v", code, stdout, stderr, err)
+		}
+		if strings.Count(stderr, "A value is required.") != 2 || strings.Count(stderr, "Enter a positive whole number") != 2 {
+			t.Fatalf("wizard did not ask again: %s", stderr)
+		}
+		if code, _, stderr := runCommand([]string{"wizard"}, ""); code != 2 || !strings.Contains(stderr, "printer file (.ssb) is required") {
+			t.Fatalf("wizard with no input: %d %s", code, stderr)
+		}
+	})
 	t.Run("wizard from a bundle skips the driver-prerequisite prompt", func(t *testing.T) {
 		bundlePath, output := fixture(t, true)
 		// No "yes\n" answer for the driver-archive question: a bundle that
