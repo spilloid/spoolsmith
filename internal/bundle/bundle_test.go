@@ -427,3 +427,44 @@ func TestValidateMemberNameSharesWindowsNameRules(t *testing.T) {
 		t.Fatalf("validateMemberName(Office.ssb) = %v", err)
 	}
 }
+
+func TestOpenNamesAnOversizedManifest(t *testing.T) {
+	path := writeBundle(t, false)
+	source, err := zip.OpenReader(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var manifest map[string]any
+	entry, err := source.File[0].Open()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.NewDecoder(entry).Decode(&manifest); err != nil {
+		t.Fatal(err)
+	}
+	entry.Close()
+	source.Close()
+	original, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest["note"] = strings.Repeat("x", MaxManifestBytes)
+	longNote, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, content := range map[string][]byte{
+		"an oversized document": longNote,
+		// Padding past the limit used to pass: the object decoded before
+		// the cut-off and the rest was only whitespace.
+		"trailing padding": append(original, []byte(strings.Repeat(" ", MaxManifestBytes))...),
+	} {
+		t.Run(name, func(t *testing.T) {
+			altered := filepath.Join(t.TempDir(), "altered.ssb")
+			rewriteEntry(t, path, altered, ManifestName, content)
+			if _, err := Open(altered); err == nil || !strings.Contains(err.Error(), "manifest too large") {
+				t.Fatalf("Open() = %v, want a manifest-too-large error", err)
+			}
+		})
+	}
+}

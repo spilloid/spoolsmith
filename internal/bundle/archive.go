@@ -2,6 +2,7 @@ package bundle
 
 import (
 	"archive/zip"
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -214,7 +215,17 @@ func openReader(reader *zip.Reader) (*Bundle, error) {
 		return nil, err
 	}
 	defer rc.Close()
-	decoder := json.NewDecoder(io.LimitReader(rc, MaxManifestBytes+1))
+	// Read one byte past the limit so an oversized manifest is named as such,
+	// rather than surfacing as a JSON "unexpected EOF" where it was cut off
+	// (or passing, when the excess is only trailing whitespace).
+	data, err := io.ReadAll(io.LimitReader(rc, MaxManifestBytes+1))
+	if err != nil {
+		return nil, fmt.Errorf("bundle: read manifest: %w", err)
+	}
+	if len(data) > MaxManifestBytes {
+		return nil, fmt.Errorf("bundle: manifest too large (over the %d byte limit)", MaxManifestBytes)
+	}
+	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
 	var m Manifest
 	if err := decoder.Decode(&m); err != nil {
@@ -222,7 +233,7 @@ func openReader(reader *zip.Reader) (*Bundle, error) {
 	}
 	var extra any
 	if err := decoder.Decode(&extra); err != io.EOF {
-		return nil, errors.New("bundle: manifest has trailing data or is oversized")
+		return nil, errors.New("bundle: manifest has trailing data")
 	}
 	if err := m.Validate(); err != nil {
 		return nil, err
