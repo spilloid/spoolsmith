@@ -53,6 +53,10 @@ func Resolve(e evidence.Evidence) ResolutionResult {
 	for _, value := range identityValues(e) {
 		matches = append(matches, matchIdentity(value)...)
 	}
+	// The hostname still takes part in conflict detection below, but it
+	// never identifies a model on its own (see the check after it).
+	hostnameMatches := matchIdentity(e.Hostname)
+	matches = append(matches, hostnameMatches...)
 
 	if len(matches) == 0 {
 		return unresolved("no fixture-backed printer model matched the observed identifiers")
@@ -69,6 +73,12 @@ func Resolve(e evidence.Evidence) ResolutionResult {
 	}
 	if len(models) != 1 {
 		return unresolved("observed identifiers conflict across printer models")
+	}
+	// A reverse-DNS name is whatever someone typed into DNS or DHCP; the
+	// device itself never vouched for it. Fail closed unless the printer's
+	// own SNMP, HTTP or PJL identity named the model too.
+	if len(matches) == len(hostnameMatches) {
+		return unresolved(fmt.Sprintf("only the hostname %q names a printer model; a hostname is not device identity, so SNMP, HTTP or PJL identity is required", e.Hostname))
 	}
 
 	match := matches[0]
@@ -119,6 +129,9 @@ func unresolved(reason string) ResolutionResult {
 	}
 }
 
+// identityValues are the identifiers the device itself reports. The hostname
+// is matched separately in Resolve: it can contradict them, but never stands
+// in for them.
 func identityValues(e evidence.Evidence) []string {
 	return []string{
 		e.SNMPSysDescr,
@@ -126,7 +139,6 @@ func identityValues(e evidence.Evidence) []string {
 		e.HTTPTitle,
 		e.HTTPModelString,
 		e.PJLID,
-		e.Hostname,
 	}
 }
 

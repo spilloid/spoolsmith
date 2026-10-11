@@ -2,6 +2,7 @@ package catalog
 
 import (
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/spilloid/spoolsmith/internal/evidence"
@@ -202,4 +203,29 @@ func loadFixture(t *testing.T, name string) evidence.Evidence {
 		t.Fatalf("LoadFixture(%q) error = %v", name, err)
 	}
 	return e
+}
+
+func TestResolveNeverIdentifiesAModelFromTheHostnameAlone(t *testing.T) {
+	hostnameOnly := evidence.Evidence{IP: "192.0.2.10", Hostname: "hp-laserjet-pro-m404dn.example.test", OpenPorts: []int{9100}, Provenance: "captured"}
+	got := Resolve(hostnameOnly)
+	if got.Family != nil || got.Driver != nil || got.Confidence != 0 {
+		t.Fatalf("hostname-only Resolve() = %#v, want unresolved", got)
+	}
+	if len(got.Uncertain) != 1 || !strings.Contains(got.Uncertain[0], "hostname") {
+		t.Fatalf("Uncertain = %#v, want the hostname-only reason", got.Uncertain)
+	}
+
+	// The same hostname backed by the device's own identity resolves.
+	backed := hostnameOnly
+	backed.HTTPModelString = "HP LaserJet Pro M404dn"
+	if got := Resolve(backed); got.Family == nil || got.Confidence != 1.0 || got.NormalizedModel != "HP LaserJet Pro M404dn" {
+		t.Fatalf("backed Resolve() = %#v, want a confident match", got)
+	}
+
+	// A hostname that contradicts the device still fails closed.
+	contradicted := backed
+	contradicted.Hostname = "brother-hl-l2350dw.example.test"
+	if got := Resolve(contradicted); got.Family != nil || len(got.Uncertain) == 0 || !strings.Contains(got.Uncertain[0], "conflict") {
+		t.Fatalf("contradicted Resolve() = %#v, want a conflict", got)
+	}
 }
