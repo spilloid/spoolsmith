@@ -148,6 +148,20 @@ func TestListPrintersCommandForcesAnArray(t *testing.T) {
 	}
 }
 
+// A hidden Get-PrinterPort failure would read as "no ports", marking every
+// queue uncopyable; inventory failures are fatal instead.
+func TestListPrintersCommandFailsOnInventoryErrors(t *testing.T) {
+	command := listPrintersCommand()
+	if strings.Contains(command, "SilentlyContinue") {
+		t.Fatalf("listPrintersCommand() hides an inventory failure: %s", command)
+	}
+	for _, want := range []string{"Get-PrinterPort -ErrorAction Stop", "Get-Printer -ErrorAction Stop"} {
+		if !strings.Contains(command, want) {
+			t.Fatalf("listPrintersCommand() is missing %q: %s", want, command)
+		}
+	}
+}
+
 func TestProtocolName(t *testing.T) {
 	for protocol, want := range map[int]string{1: "RAW", 2: "LPR", 0: "", 7: "unknown (7)"} {
 		if got := protocolName(protocol); got != want {

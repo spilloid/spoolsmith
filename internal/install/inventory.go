@@ -166,9 +166,13 @@ func ListPrinters(ctx context.Context, env Environment) ([]InstalledQueue, error
 // ConvertTo-Json, because ConvertTo-Json emits a bare object rather than a
 // one-element array when exactly one queue exists, and Windows PowerShell 5.1
 // has no -AsArray to suppress that.
+//
+// A port enumeration failure stops the listing rather than being hidden: an
+// empty port table would mark every queue's port unknown and so every queue
+// falsely uncopyable.
 func listPrintersCommand() string {
 	return powerShellCommand(`$ports = @{};
-foreach ($port in @(Get-PrinterPort -ErrorAction SilentlyContinue)) { $ports[[string]$port.Name] = $port };
+foreach ($port in @(Get-PrinterPort -ErrorAction Stop)) { $ports[[string]$port.Name] = $port };
 $items = @();
 foreach ($printer in @(Get-Printer -ErrorAction Stop)) {
   $name = [string]$printer.PortName;
