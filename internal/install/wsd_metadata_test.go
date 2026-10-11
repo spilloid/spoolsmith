@@ -132,3 +132,12 @@ func TestHardwareWSDMetadata(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestWSDMetadataClientNeverUsesAProxy(t *testing.T) {
+	// The device is on the local network; a configured HTTP proxy must never
+	// see (or answer for) the identity check.
+	transport, ok := newWSDMetadataClient().Transport.(*http.Transport)
+	if !ok || transport.Proxy != nil {
+		t.Fatalf("WSD metadata client transport = %#v, want an *http.Transport with no proxy", transport)
+	}
+}

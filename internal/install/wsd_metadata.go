@@ -130,11 +130,7 @@ func verifyWSDMetadata(ctx context.Context, locationURL, deviceID string) error 
 		return err
 	}
 	request.Header.Set("Content-Type", "application/soap+xml; charset=utf-8")
-	client := &http.Client{
-		Timeout:       8 * time.Second,
-		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
-	}
-	response, err := client.Do(request)
+	response, err := newWSDMetadataClient().Do(request)
 	if err != nil {
 		return fmt.Errorf("request live WSD metadata: %w", err)
 	}
@@ -150,4 +146,18 @@ func verifyWSDMetadata(ctx context.Context, locationURL, deviceID string) error 
 		return errors.New("WSD metadata response is too large")
 	}
 	return validateWSDMetadataResponse(payload, location, identity, messageID)
+}
+
+// newWSDMetadataClient talks to the device directly, never through a proxy
+// from the environment (as newIPPProbeClient does), and never follows a
+// redirect away from the address Windows cached.
+func newWSDMetadataClient() *http.Client {
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.Proxy = nil
+	transport.DisableKeepAlives = true
+	return &http.Client{
+		Transport:     transport,
+		Timeout:       8 * time.Second,
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+	}
 }

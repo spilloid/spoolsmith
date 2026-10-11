@@ -16,15 +16,7 @@ const maxHTTPBody = 64 << 10
 func probeHTTP(ctx context.Context, host string) (string, error) {
 	probeCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
-	client := &http.Client{
-		Timeout: 2 * time.Second,
-		CheckRedirect: func(_ *http.Request, via []*http.Request) error {
-			if len(via) > 2 {
-				return fmt.Errorf("more than two redirects")
-			}
-			return nil
-		},
-	}
+	client := newHTTPProbeClient(host)
 	request, err := http.NewRequestWithContext(probeCtx, http.MethodGet, "http://"+net.JoinHostPort(host, "80")+"/", nil)
 	if err != nil {
 		return "", fmt.Errorf("HTTP request: %w", err)
@@ -52,6 +44,28 @@ var (
 	titleOpen  = regexp.MustCompile(`(?i)<title(?:\s[^>]*)?>`)
 	titleClose = regexp.MustCompile(`(?i)</title\s*>`)
 )
+
+// newHTTPProbeClient talks to the printer directly, never through a proxy
+// from the environment, and follows a redirect only while it stays on the
+// target host: a title served by some other host is not this printer's.
+func newHTTPProbeClient(host string) *http.Client {
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.Proxy = nil
+	transport.DisableKeepAlives = true
+	return &http.Client{
+		Transport: transport,
+		Timeout:   2 * time.Second,
+		CheckRedirect: func(request *http.Request, via []*http.Request) error {
+			if len(via) > 2 {
+				return fmt.Errorf("more than two redirects")
+			}
+			if !strings.EqualFold(request.URL.Hostname(), host) {
+				return fmt.Errorf("redirect leaves %s for %s", host, request.URL.Hostname())
+			}
+			return nil
+		},
+	}
+}
 
 func extractHTTPTitle(document string) (string, error) {
 	open := titleOpen.FindStringIndex(document)
