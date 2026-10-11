@@ -219,13 +219,95 @@ func TestNativeDriverStepIsTimeBoundedAndAttentionIsAnError(t *testing.T) {
 	}
 }
 
-// TestNativeDriverSkipQuotesTheStepsOutput: a skipped step says what it
-// printed, not only how it exited.
-func TestNativeDriverSkipQuotesTheStepsOutput(t *testing.T) {
+// lookupFailEnv is nativeFailEnv that can also read the queue back.
+type lookupFailEnv struct {
+	nativeFailEnv
+	driver    string
+	lookupErr error
+}
+
+func (e *lookupFailEnv) LookupPrinter(_ context.Context, name string) (PrinterConfiguration, error) {
+	return PrinterConfiguration{PrinterName: name, DriverName: e.driver}, e.lookupErr
+}
+
+// TestNativeDriverErrorReportsTheQueuesActualDriver: a step that errors or
+// runs out of time may have stopped between switching the driver and
+// verifying it, so the outcome reads the queue instead of claiming the class
+// driver is still in place.
+func TestNativeDriverErrorReportsTheQueuesActualDriver(t *testing.T) {
 	plan := nativeTestPlan(t)
-	env := &nativeFailEnv{err: map[int]error{1: errors.New("exit status 1")}, out: map[int]string{1: "\r\n  Windows Update service is not running\r\nmore detail\r\n"}}
+	for _, tc := range []struct {
+		name string
+		env  Environment
+		want string
+	}{
+		{"class driver still in place", &lookupFailEnv{driver: "Microsoft IPP Class Driver"}, "keeping Microsoft IPP Class Driver"},
+		{"switched before it stopped", &lookupFailEnv{driver: "Example Printer 100"}, "the queue now uses Example Printer 100; check the queue"},
+		{"queue cannot be read", &lookupFailEnv{lookupErr: errors.New("spooler down")}, "current driver unknown; check the queue"},
+		{"no way to read it", &nativeFailEnv{}, "current driver unknown; check the queue"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var base *nativeFailEnv
+			switch env := tc.env.(type) {
+			case *lookupFailEnv:
+				base = &env.nativeFailEnv
+			case *nativeFailEnv:
+				base = env
+			}
+			base.err = map[int]error{1: errors.New("exit status 1")}
+			base.out = map[int]string{1: "\r\n  Windows Update service is not running\r\nmore detail\r\n"}
+			result, err := Install(context.Background(), tc.env, plan, true)
+			if err != nil {
+				t.Fatalf("a native-driver error failed the install: %v", err)
+			}
+			want := "skipped exit status 1: Windows Update service is not running; " + tc.want
+			if result.NativeDriver != want {
+				t.Fatalf("native = %q, want %q", result.NativeDriver, want)
+			}
+		})
+	}
+}
+
+// cancelOnNativeEnv cancels the operator's context while the native step runs.
+type cancelOnNativeEnv struct {
+	nativeFailEnv
+	cancel context.CancelFunc
+}
+
+func (e *cancelOnNativeEnv) Run(ctx context.Context, c string) (string, error) {
+	if len(e.ran) == 1 {
+		e.ran = append(e.ran, c)
+		e.cancel()
+		<-ctx.Done()
+		return "", ctx.Err()
+	}
+	return e.nativeFailEnv.Run(ctx, c)
+}
+
+// TestNativeDriverStepCanceledIsNotASuccess: the step's own time limit is a
+// quiet skip, but an operator cancel must never be reported as a finished
+// install.
+func TestNativeDriverStepCanceledIsNotASuccess(t *testing.T) {
+	plan := nativeTestPlan(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	env := &cancelOnNativeEnv{cancel: cancel}
+	result, err := Install(ctx, env, plan, true)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("Install() after cancel = %v, want context.Canceled", err)
+	}
+	if !strings.Contains(err.Error(), "check the queue") || !strings.Contains(result.NativeDriver, "current driver unknown") {
+		t.Fatalf("err = %v; native = %q", err, result.NativeDriver)
+	}
+}
+
+// TestNativeDriverTimeoutIsStillAQuietSkip: running out of the step's own
+// time is not an operator cancel.
+func TestNativeDriverTimeoutIsStillAQuietSkip(t *testing.T) {
+	plan := nativeTestPlan(t)
+	env := &lookupFailEnv{driver: "Microsoft IPP Class Driver", nativeFailEnv: nativeFailEnv{err: map[int]error{1: context.DeadlineExceeded}}}
 	result, err := Install(context.Background(), env, plan, true)
-	if err != nil || result.NativeDriver != "skipped exit status 1: Windows Update service is not running; keeping Microsoft IPP Class Driver" {
+	if err != nil || result.NativeDriver != "skipped context deadline exceeded; keeping Microsoft IPP Class Driver" {
 		t.Fatalf("err = %v; native = %q", err, result.NativeDriver)
 	}
 }

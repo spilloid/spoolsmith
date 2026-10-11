@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net"
 	"strings"
+	"time"
 
 	"github.com/spilloid/spoolsmith/internal/catalog"
 )
@@ -243,7 +244,14 @@ func Install(ctx context.Context, env Environment, plan Plan, confirmed bool) (R
 				if line := firstLine(output); line != "" {
 					why += ": " + line
 				}
-				result.NativeDriver = "skipped " + why + "; keeping " + plan.DriverName
+				if ctxErr := ctx.Err(); ctxErr != nil {
+					// The operator canceled, not the step's own time limit: that
+					// is never a success, and the step may have stopped between
+					// switching the driver and verifying it.
+					result.NativeDriver = "stopped " + why + "; current driver unknown; check the queue"
+					return result, fmt.Errorf("install: canceled during the native driver step; the printer was created but its driver may have changed, check the queue: %w", ctxErr)
+				}
+				result.NativeDriver = "skipped " + why + "; " + nativeDriverState(ctx, env, plan)
 			} else {
 				result.NativeDriver = NativeDriverOutcome(output)
 			}
@@ -257,6 +265,26 @@ func Install(ctx context.Context, env Environment, plan Plan, confirmed bool) (R
 		}
 	}
 	return result, nil
+}
+
+// nativeDriverState says which driver the queue has after a native-driver step
+// that did not report its own outcome (it errored or ran out of time). The
+// step may have stopped anywhere, including between switching the driver and
+// verifying it, so this reads the queue rather than assuming the class driver
+// is still in place.
+func nativeDriverState(ctx context.Context, env Environment, plan Plan) string {
+	if _, ok := env.(printerLookupEnvironment); ok {
+		lookupCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		defer cancel()
+		configuration, err := LookupPrinter(lookupCtx, env, plan.PrinterName)
+		if driver := strings.TrimSpace(configuration.DriverName); err == nil && driver != "" {
+			if driver == plan.DriverName {
+				return "keeping " + plan.DriverName
+			}
+			return "the queue now uses " + driver + "; check the queue"
+		}
+	}
+	return "current driver unknown; check the queue"
 }
 
 // maxFirstLine caps how much of a command's output an error message quotes.
