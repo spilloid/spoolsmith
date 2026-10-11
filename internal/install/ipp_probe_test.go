@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
+	"errors"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -135,4 +136,51 @@ func TestHardwareIPPMatchesWSDDevice(t *testing.T) {
 		t.Fatalf("Brother IPP endpoint = %q, model %q", uri, model)
 	}
 	t.Logf("WSD identity %s maps to IPP endpoint %s (%s)", testWSDUUID, uri, model)
+}
+
+// TestIPPProbeSaysWhyNoPathWasAccepted: a printer that answers but is never
+// accepted gets the last path's reason, not only "did not advertise".
+func TestIPPProbeSaysWhyNoPathWasAccepted(t *testing.T) {
+	var requests int
+	ip, port, closeServer := testIPPServer(t, func(w http.ResponseWriter, r *http.Request, _ string) {
+		requests++
+		http.NotFound(w, r)
+	})
+	defer closeServer()
+	_, _, err := discoverIPPEndpoint(context.Background(), ip, "", port, newIPPProbeClient())
+	if err == nil || !strings.HasPrefix(err.Error(), "printer at 127.0.0.1 did not advertise a verified IPP endpoint") || !strings.HasSuffix(err.Error(), "; last tried /: IPP HTTP status 404") {
+		t.Fatalf("err = %v", err)
+	}
+	if requests != len(ippProbePaths) {
+		t.Fatalf("requests = %d, want every path tried on a printer that answers", requests)
+	}
+}
+
+// TestIPPProbeStopsWhenTheHostIsDown: a refused connection means no other
+// path on that address will answer, so discovery stops at the first.
+func TestIPPProbeStopsWhenTheHostIsDown(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, port, _ := net.SplitHostPort(listener.Addr().String())
+	listener.Close()
+	var dials int
+	client := newIPPProbeClient()
+	transport := client.Transport.(*http.Transport)
+	dial := transport.DialContext
+	transport.DialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
+		dials++
+		return dial(ctx, network, address)
+	}
+	_, _, err = discoverIPPEndpoint(context.Background(), "127.0.0.1", testWSDUUID, port, client)
+	if err == nil || !strings.HasPrefix(err.Error(), "printer at 127.0.0.1 did not advertise a verified IPP endpoint with WSD device ID") || !strings.Contains(err.Error(), "last tried /ipp/print:") || !strings.Contains(err.Error(), "refused") {
+		t.Fatalf("err = %v", err)
+	}
+	if dials != 1 {
+		t.Fatalf("dials = %d, want discovery to stop after the host refused", dials)
+	}
+	if !ippHostDown(&net.OpError{Op: "dial", Err: errors.New("x")}) || ippHostDown(errors.New("IPP HTTP status 404")) {
+		t.Fatal("ippHostDown misclassified")
+	}
 }

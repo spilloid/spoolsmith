@@ -84,20 +84,43 @@ func discoverIPPEndpoint(ctx context.Context, address, expectedUUID, port string
 			return "", "", err
 		}
 	}
+	// lastErr is the last path's reason, so a failure says why the printer
+	// was not accepted rather than only that it was not.
+	var lastErr error
+	lastPath := ""
 	for _, path := range ippProbePaths {
 		if err := ctx.Err(); err != nil {
 			return "", "", err
 		}
+		lastPath = path
 		result, err := probeIPPEndpoint(ctx, client, ip, port, path)
-		if err != nil || (expectedUUID != "" && result.uuid != expectedUUID) {
+		if err != nil {
+			lastErr = err
+			if ippHostDown(err) {
+				// No other path on the same address will answer either.
+				break
+			}
+			continue
+		}
+		if expectedUUID != "" && result.uuid != expectedUUID {
+			lastErr = fmt.Errorf("printer answered with device ID %q", result.uuid)
 			continue
 		}
 		// A device may answer at an alias and advertise a canonical resource.
 		// Query the canonical resource as well before recording it in a bundle.
 		canonical, _ := url.Parse(result.uri)
 		if canonical.EscapedPath() != path {
+			lastPath = canonical.EscapedPath()
 			verified, err := probeIPPEndpoint(ctx, client, ip, port, canonical.EscapedPath())
-			if err != nil || verified.uri != result.uri || (expectedUUID != "" && verified.uuid != expectedUUID) {
+			switch {
+			case err != nil:
+				lastErr = err
+				continue
+			case verified.uri != result.uri:
+				lastErr = fmt.Errorf("advertised %s instead of %s", verified.uri, result.uri)
+				continue
+			case expectedUUID != "" && verified.uuid != expectedUUID:
+				lastErr = fmt.Errorf("printer answered with device ID %q", verified.uuid)
 				continue
 			}
 			result = verified
@@ -107,10 +130,25 @@ func discoverIPPEndpoint(ctx context.Context, address, expectedUUID, port string
 	if err := ctx.Err(); err != nil {
 		return "", "", err
 	}
-	if expectedUUID != "" {
-		return "", "", fmt.Errorf("printer at %s did not advertise a verified IPP endpoint with WSD device ID %s", ip, expectedUUID)
+	reason := ""
+	if lastErr != nil {
+		reason = fmt.Sprintf("; last tried %s: %v", lastPath, lastErr)
 	}
-	return "", "", fmt.Errorf("printer at %s did not advertise a verified IPP endpoint", ip)
+	if expectedUUID != "" {
+		return "", "", fmt.Errorf("printer at %s did not advertise a verified IPP endpoint with WSD device ID %s%s", ip, expectedUUID, reason)
+	}
+	return "", "", fmt.Errorf("printer at %s did not advertise a verified IPP endpoint%s", ip, reason)
+}
+
+// ippHostDown reports a failure to reach the address at all -- refused,
+// unreachable or timed out -- rather than an answer this path did not accept.
+func ippHostDown(err error) bool {
+	var opErr *net.OpError
+	if errors.As(err, &opErr) && opErr.Op == "dial" {
+		return true
+	}
+	var netErr net.Error
+	return errors.As(err, &netErr) && netErr.Timeout()
 }
 
 func probeIPPEndpoint(ctx context.Context, client *http.Client, ip net.IP, port, path string) (ippProbeResult, error) {
