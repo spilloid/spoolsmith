@@ -1,6 +1,7 @@
 package install
 
 import (
+	"fmt"
 	"strings"
 	"time"
 )
@@ -12,6 +13,19 @@ const nativeDriverMarker = "SPOOLSMITH-NATIVE-DRIVER:"
 // nativeDriverTimeout bounds the whole native-driver step, including a Windows
 // Update search, download and install.
 var nativeDriverTimeout = 5 * time.Minute
+
+// nativeDriverTimeLimit states nativeDriverTimeout for the reviewed plan.
+func nativeDriverTimeLimit() string {
+	minutes := int(nativeDriverTimeout / time.Minute)
+	switch {
+	case nativeDriverTimeout%time.Minute != 0:
+		return nativeDriverTimeout.String()
+	case minutes == 1:
+		return "1 minute"
+	default:
+		return fmt.Sprintf("%d minutes", minutes)
+	}
+}
 
 // nativeDriverAttention prefixes an outcome that is not a quiet skip: the step
 // changed the queue's driver and could not put the class driver back.

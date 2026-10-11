@@ -693,6 +693,7 @@ func writeInstallPlan(writer io.Writer, plan Plan, compact bool) {
 		fmt.Fprintln(writer, "  Windows discovers the IPP printer and chooses its class driver. The resulting queue and endpoint are checked after creation.")
 		if plan.NativeDriver {
 			fmt.Fprintf(writer, "  Then Windows is asked for the printer's own driver (%s): drivers it already has, its built-in sources, then Windows Update.\n  If none is found, or the switch cannot be verified, the class driver is kept and the setup still succeeds.\n", plan.NativeDriverModel)
+			fmt.Fprintf(writer, "  This step can take up to %s. If a switch fails and the class driver cannot be put back, the setup is reported as failed.\n", nativeDriverTimeLimit())
 		}
 		if plan.Offline {
 			fmt.Fprintln(writer, "  OFFLINE: live identity is not checked. A new IPP queue still requires the printer to answer directed discovery during installation.")

@@ -6,6 +6,7 @@ import (
 	"io"
 	"strings"
 	"testing"
+	"time"
 )
 
 func nativeTestPlan(t *testing.T) Plan {
@@ -331,5 +332,31 @@ func TestFailedCommandNamesItsPositionAndOutputNotItsText(t *testing.T) {
 	}
 	if got := firstLine(strings.Repeat("x", maxFirstLine+50)); len(got) != maxFirstLine+3 || !strings.HasSuffix(got, "...") {
 		t.Fatalf("long line not capped: %d", len(got))
+	}
+}
+
+// TestIPPPlanTextStatesTheNativeStepsLimitAndFailure: the reviewed plan says
+// how long the step may take and the one way it can fail the setup.
+func TestIPPPlanTextStatesTheNativeStepsLimitAndFailure(t *testing.T) {
+	plan := nativeTestPlan(t)
+	var text strings.Builder
+	writeInstallPlan(&text, plan, true)
+	want := "  This step can take up to 5 minutes. If a switch fails and the class driver cannot be put back, the setup is reported as failed.\n"
+	if !strings.Contains(text.String(), want) {
+		t.Fatalf("plan text missing %q:\n%s", want, text.String())
+	}
+	plan.NativeDriver = false
+	text.Reset()
+	writeInstallPlan(&text, plan, true)
+	if strings.Contains(text.String(), "This step can take") {
+		t.Fatalf("plan without the native step mentions it:\n%s", text.String())
+	}
+	saved := nativeDriverTimeout
+	defer func() { nativeDriverTimeout = saved }()
+	for limit, want := range map[time.Duration]string{time.Minute: "1 minute", 90 * time.Second: "1m30s"} {
+		nativeDriverTimeout = limit
+		if got := nativeDriverTimeLimit(); got != want {
+			t.Errorf("nativeDriverTimeLimit(%v) = %q, want %q", limit, got, want)
+		}
 	}
 }
