@@ -163,6 +163,36 @@ func clipboardRoot() string {
 	return filepath.Join(os.TempDir(), "SpoolSmith", "clipboard")
 }
 
+// --- Opened sets --------------------------------------------------------------
+
+// setFolderPrefix names the temporary folder an opened printer set is
+// extracted into.
+const setFolderPrefix = "spoolsmith-set-"
+
+// staleSetFolder reports a folder left by an earlier opened set that is safe
+// to clean up: made by us, and old enough that no review (or the elevated
+// relaunch one hands its path to) is still reading it.
+func staleSetFolder(name string, modified, now time.Time) bool {
+	return strings.HasPrefix(name, setFolderPrefix) && now.Sub(modified) > 24*time.Hour
+}
+
+// cleanSetFolders removes stale opened-set folders from root (the temp
+// folder). The folder of a set chosen for review must outlive the dialog,
+// since the review may relaunch elevated with a path inside it, so it is
+// swept here on a later start instead.
+func cleanSetFolders(root string, now time.Time) {
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return
+	}
+	for _, entry := range entries {
+		info, err := entry.Info()
+		if err == nil && entry.IsDir() && staleSetFolder(entry.Name(), info.ModTime(), now) {
+			os.RemoveAll(filepath.Join(root, entry.Name()))
+		}
+	}
+}
+
 // printerFileCandidates keeps the paths worth trying to open as printer files.
 // The content decides in the end (a set is recognized by what is inside the
 // zip), so this only drops folders and obviously unrelated extensions.

@@ -8,6 +8,7 @@ import (
 	"net/netip"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/spilloid/spoolsmith/internal/evidence"
 	"github.com/tailscale/walk"
@@ -117,6 +118,7 @@ func main() {
 	a.nav.SetFocus()
 	a.startNetworkDiscovery()
 	go cleanClipboardFolders()
+	go cleanSetFolders(os.TempDir(), time.Now())
 	a.mw.Synchronize(func() {
 		switch {
 		case requestErr != nil:

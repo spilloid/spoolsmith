@@ -149,7 +149,11 @@ func (a *app) onInspect() {
 	start := time.Now()
 	go func() {
 		if strings.EqualFold(filepath.Ext(target), bundle.SetExt) {
-			entries, note, err := extractSet(target)
+			entries, dir, note, err := extractSet(target)
+			if dir != "" {
+				// Inspect only reads the members; nothing opens them later.
+				os.RemoveAll(dir)
+			}
 			var text string
 			if err != nil {
 				text = "Error: " + err.Error()

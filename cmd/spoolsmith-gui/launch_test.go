@@ -99,3 +99,34 @@ func TestPrinterFileCandidatesDropFoldersAndOtherFiles(t *testing.T) {
 		t.Fatalf("candidates = %v, rejected = %v", got, rejected)
 	}
 }
+
+// TestCleanSetFoldersSweepsOnlyStaleSetFolders: an opened set chosen for
+// review keeps its extracted folder (an elevated relaunch may still read it),
+// so a later start removes it -- but only our own folders, and only once a
+// day old.
+func TestCleanSetFoldersSweepsOnlyStaleSetFolders(t *testing.T) {
+	root := t.TempDir()
+	now := time.Now()
+	for name, age := range map[string]time.Duration{
+		setFolderPrefix + "old":   25 * time.Hour,
+		setFolderPrefix + "fresh": time.Hour,
+		"someone-else":            48 * time.Hour,
+	} {
+		dir := filepath.Join(root, name)
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "a.ssb"), []byte("x"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chtimes(dir, now.Add(-age), now.Add(-age)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cleanSetFolders(root, now)
+	for name, want := range map[string]bool{setFolderPrefix + "old": false, setFolderPrefix + "fresh": true, "someone-else": true} {
+		if _, err := os.Stat(filepath.Join(root, name)); (err == nil) != want {
+			t.Errorf("%s exists = %v, want %v", name, err == nil, want)
+		}
+	}
+}

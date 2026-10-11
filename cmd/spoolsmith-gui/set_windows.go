@@ -39,6 +39,12 @@ func (a *app) showPrinterSet(path string) {
 	var setupBtn, closeBtn *walk.PushButton
 	var entries []setEntry
 	closed := false
+	// dir holds the extracted members once they land. It is kept only when a
+	// printer is chosen for review, which may relaunch elevated with a path
+	// inside it; otherwise it is removed when the dialog closes. Anything a
+	// review leaves behind is swept on a later start (cleanSetFolders).
+	dir := ""
+	chosen := false
 
 	selected := func() (setEntry, bool) {
 		i := list.CurrentIndex()
@@ -52,6 +58,7 @@ func (a *app) showPrinterSet(path string) {
 		if !ok {
 			return
 		}
+		chosen = true
 		dialog.Accept()
 		a.reviewBundle(entry.path)
 	}
@@ -84,11 +91,15 @@ func (a *app) showPrinterSet(path string) {
 	})
 
 	go func() {
-		loaded, note, err := extractSet(path)
+		loaded, loadedDir, note, err := extractSet(path)
 		a.mw.Synchronize(func() {
 			if closed {
+				if loadedDir != "" {
+					os.RemoveAll(loadedDir)
+				}
 				return
 			}
+			dir = loadedDir
 			if err != nil {
 				status.SetText("This set cannot be used: " + friendlyOperationError(err.Error()))
 				return
@@ -110,29 +121,39 @@ func (a *app) showPrinterSet(path string) {
 		})
 	}()
 	a.runDialog(dialog)
+	closed = true
+	if !chosen && dir != "" {
+		os.RemoveAll(dir)
+	}
 }
 
 // extractSet unpacks every member into a private temporary folder and
 // verifies each one, so what the list shows is exactly what review will open.
-func extractSet(path string) ([]setEntry, string, error) {
+// The caller owns the returned folder; on error nothing is left behind.
+func extractSet(path string) (entries []setEntry, dir, note string, err error) {
 	set, err := bundle.OpenSet(path)
 	if err != nil {
-		return nil, "", err
+		return nil, "", "", err
 	}
 	defer set.Close()
-	dir, err := os.MkdirTemp("", "spoolsmith-set-")
+	work, err := os.MkdirTemp("", setFolderPrefix)
 	if err != nil {
-		return nil, "", err
+		return nil, "", "", err
 	}
-	entries := make([]setEntry, 0, len(set.Members))
-	for _, name := range set.Members {
-		extracted, err := set.Extract(name, dir)
+	defer func() {
 		if err != nil {
-			return nil, "", fmt.Errorf("%s: %w", name, err)
+			os.RemoveAll(work)
+		}
+	}()
+	entries = make([]setEntry, 0, len(set.Members))
+	for _, name := range set.Members {
+		extracted, err := set.Extract(name, work)
+		if err != nil {
+			return nil, "", "", fmt.Errorf("%s: %w", name, err)
 		}
 		opened, err := bundle.Open(extracted)
 		if err != nil {
-			return nil, "", fmt.Errorf("%s: %w", name, err)
+			return nil, "", "", fmt.Errorf("%s: %w", name, err)
 		}
 		profile := opened.Manifest.Profile
 		driver := "settings only"
@@ -149,5 +170,5 @@ func extractSet(path string) ([]setEntry, string, error) {
 			label: fmt.Sprintf("%s  ·  %s  ·  %s", profile.PrinterName, target, driver),
 		})
 	}
-	return entries, set.Note, nil
+	return entries, work, set.Note, nil
 }
