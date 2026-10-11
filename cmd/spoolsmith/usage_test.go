@@ -140,3 +140,49 @@ func TestValueFlagsRefuseTheNextFlagAsTheirValue(t *testing.T) {
 		t.Fatalf("a refused command wrote files: %v", entries)
 	}
 }
+
+func TestHelpAnywhereInTheArgumentsShowsThatCommandsUsage(t *testing.T) {
+	app := testApplication()
+	app.collect = func(context.Context, string) (probe.Result, error) { panic("--help probed the network") }
+	tests := []struct {
+		args []string
+		want string
+	}{
+		{args: []string{"copy", "Accounting", "--settings-only", "--help"}, want: copyUsage},
+		{args: []string{"apply", "x.ssb", "--dry-run", "-h"}, want: commandUsage["apply"]},
+		{args: []string{"uninstall", "Accounting", "--purge-driver", "--help"}, want: uninstallUsage},
+		{args: []string{"profile", "edit", "x.ssb", "--name", "Q", "--help"}, want: profileEditUsage},
+		{args: []string{"profile", "capture", "192.0.2.10", "x.ssb", "--help"}, want: profileCaptureUsage},
+		{args: []string{"intune", "wizard", "--help"}, want: intuneWizardUsage},
+		{args: []string{"inspect", "--help"}, want: commandUsage["inspect"]},
+	}
+	for _, tt := range tests {
+		var stdout, stderr bytes.Buffer
+		if code := run(context.Background(), tt.args, strings.NewReader(""), &stdout, &stderr, app); code != 0 {
+			t.Errorf("%v: code = %d; stderr=%q", tt.args, code, stderr.String())
+		}
+		if stdout.String() != tt.want {
+			t.Errorf("%v: stdout = %q, want %q", tt.args, stdout.String(), tt.want)
+		}
+	}
+}
+
+func TestHelpAsAFlagValueIsNotAHelpRequest(t *testing.T) {
+	for _, args := range [][]string{
+		{"copy", "Accounting", "--out", "--help"},
+		{"apply", "x.ssb", "--member", "-h"},
+		{"profile", "edit", "x.ssb", "--name", "--help"},
+	} {
+		if usage, ok := helpRequested(args); ok {
+			t.Errorf("%v was taken as a help request: %q", args, usage)
+		}
+		var stdout, stderr bytes.Buffer
+		if code := run(context.Background(), args, strings.NewReader(""), &stdout, &stderr, testApplication()); code == 0 {
+			t.Errorf("%v: code = 0; a flag value of --help must not succeed", args)
+		}
+	}
+	// intune build keeps its own flag listing.
+	if _, ok := helpRequested([]string{"intune", "build", "--help"}); ok {
+		t.Error("intune build --help was intercepted instead of listing every flag")
+	}
+}

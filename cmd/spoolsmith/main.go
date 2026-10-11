@@ -85,14 +85,12 @@ func run(ctx context.Context, args []string, input io.Reader, stdout, stderr io.
 		return usageError(stdout, stderr, "spoolsmith", errors.New("command is required"))
 	}
 
-	// "<command> --help"/"-h" is intercepted before that command's own
+	// "<command> ... --help"/"-h" is intercepted before that command's own
 	// parser ever sees it, rather than being treated as an unknown flag
 	// (most commands) or, for `inspect`, as the target to inspect.
-	if len(args) > 1 && (args[1] == "--help" || args[1] == "-h") {
-		if usage, ok := commandUsage[args[0]]; ok {
-			fmt.Fprint(stdout, usage)
-			return 0
-		}
+	if usage, ok := helpRequested(args); ok {
+		fmt.Fprint(stdout, usage)
+		return 0
 	}
 
 	switch args[0] {
@@ -406,6 +404,39 @@ func parseUninstallArgs(args []string) (install.UninstallOptions, error) {
 	return options, nil
 }
 
+// valueFlags are the flags, across every command, that consume the argument
+// after them. A "--help" in that position is the flag's (refused) value, not
+// a request for help.
+var valueFlags = map[string]bool{
+	"--out": true, "--note": true, "--plan-hash": true, "--member": true, "--usb-queue": true,
+	"--profile": true, "--name": true, "--driver": true, "--target": true, "--package": true,
+	"--archive": true, "--force-family": true,
+}
+
+// helpRequested reports whether "--help" or "-h" appears anywhere among a
+// command's arguments (other than as a value-taking flag's value), and if so
+// returns the most specific usage: the subcommand's ("profile edit") when it
+// has one, otherwise the command's. `intune build` is left to its own flag
+// set, whose --help lists every flag with its default.
+func helpRequested(args []string) (string, bool) {
+	if len(args) < 2 || (args[0] == "intune" && args[1] == "build") {
+		return "", false
+	}
+	for index := 1; index < len(args); index++ {
+		switch arg := args[index]; {
+		case valueFlags[arg]:
+			index++
+		case arg == "--help" || arg == "-h":
+			if usage, ok := commandUsage[args[0]+" "+args[1]]; ok {
+				return usage, true
+			}
+			usage, ok := commandUsage[args[0]]
+			return usage, ok
+		}
+	}
+	return "", false
+}
+
 // takeValue returns the value following a value-taking flag at args[index].
 // A missing or blank value, or one that starts with "-", is refused: it is
 // far more likely to be the next flag (`copy Foo --out --settings-only`) than
@@ -497,6 +528,7 @@ var commandUsage = map[string]string{
 	"profile export-all": profileExportAllUsage + transferDryRunNote,
 	"profile import-all": profileImportAllUsage + transferDryRunNote,
 	"profile edit":       profileEditUsage,
+	"profile capture":    profileCaptureUsage,
 	"help":               "spoolsmith help [<command>]                every command, or one command's syntax\n",
 	"add":                "spoolsmith add <ip> --windows-driver --name <queue> [--dry-run] [--yes] [--json]\nspoolsmith add --profile <file> [--usb-queue <name>] [--offline] [--dry-run] [--yes] [--json]\n",
 	"configure":          "spoolsmith configure --profile <file> [--usb-queue <name>] [--offline] [--dry-run] [--yes] [--json]\n",
