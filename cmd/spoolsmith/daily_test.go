@@ -85,6 +85,24 @@ func TestDiscoveryCLIReportsUnresolvedCandidate(t *testing.T) {
 	}
 }
 
+func TestDiscoverRefusesAMalformedRangeBeforeScanning(t *testing.T) {
+	app := testApplication()
+	app.discover = func(context.Context, string) (probe.Discovery, error) { panic("a malformed range was scanned") }
+	for _, cidr := range []string{"192.0.2.0", "192.0.2.0/16", "2001:db8::/120", "not-a-network"} {
+		var stdout, stderr bytes.Buffer
+		if code := run(context.Background(), []string{"discover", cidr}, strings.NewReader(""), &stdout, &stderr, app); code != int(install.ExitUsageError) {
+			t.Fatalf("%s: code = %d, want %d", cidr, code, install.ExitUsageError)
+		}
+		var response errorResponse
+		if err := json.Unmarshal(stdout.Bytes(), &response); err != nil || response.Command != "discover" || response.Status != "error" || !strings.Contains(response.Error, "/24 through /32") {
+			t.Fatalf("%s: stdout = %s (%v)", cidr, stdout.String(), err)
+		}
+		if !strings.Contains(stderr.String(), commandUsage["discover"]) {
+			t.Fatalf("%s: stderr omits discover's usage: %s", cidr, stderr.String())
+		}
+	}
+}
+
 func TestHumanAddAndConfigureUseConcisePlans(t *testing.T) {
 	for _, command := range []string{"add", "configure"} {
 		app := testApplication()

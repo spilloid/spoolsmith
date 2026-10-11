@@ -23,12 +23,22 @@ func Discover(ctx context.Context, cidr string) (Discovery, error) {
 	return discover(ctx, cidr, Collect)
 }
 
-func discover(ctx context.Context, cidr string, collect func(context.Context, string) (Result, error)) (Discovery, error) {
+// ParseDiscoveryPrefix validates a discovery range without probing anything,
+// so a caller can refuse a malformed or too-wide range as a usage mistake
+// before a scan starts. It returns the masked network.
+func ParseDiscoveryPrefix(cidr string) (netip.Prefix, error) {
 	prefix, err := netip.ParsePrefix(cidr)
 	if err != nil || !prefix.Addr().Is4() || prefix.Bits() < 24 {
-		return Discovery{}, fmt.Errorf("discover: supply an IPv4 CIDR from /24 through /32 (at most 256 addresses)")
+		return netip.Prefix{}, fmt.Errorf("discover: supply an IPv4 CIDR from /24 through /32 (at most 256 addresses)")
 	}
-	prefix = prefix.Masked()
+	return prefix.Masked(), nil
+}
+
+func discover(ctx context.Context, cidr string, collect func(context.Context, string) (Result, error)) (Discovery, error) {
+	prefix, err := ParseDiscoveryPrefix(cidr)
+	if err != nil {
+		return Discovery{}, err
+	}
 	result := Discovery{Network: prefix.String(), Candidates: []Result{}}
 	var targets []string
 	for addr := prefix.Addr(); prefix.Contains(addr); addr = addr.Next() {

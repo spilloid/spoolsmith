@@ -63,7 +63,7 @@
           <dt>--note &lt;text&gt;</dt><dd>Store a free-text note in the file.</dd>
         </dl></div>
       <div class="cmd"><h3 id="spoolsmith-copy-all-out-settings-only-note">spoolsmith copy --all [--out &lt;printers.zip&gt;] [--settings-only] [--note &lt;text&gt;]<a class="heading-anchor" href="#spoolsmith-copy-all-out-settings-only-note" aria-label="Link to this section">#</a></h3>
-        <p>Writes every copyable queue into one printer set, by default <code>SpoolSmith-printers-&lt;date&gt;-&lt;time&gt;.zip</code>. Uncopyable queues are skipped with a reason. Exits zero if at least one printer was saved, so check <code>failed</code> and <code>skipped</code> in the JSON.</p></div>
+        <p>Writes every copyable queue into one printer set, by default <code>SpoolSmith-printers-&lt;date&gt;-&lt;time&gt;.zip</code>. Uncopyable queues are skipped with a reason. Exits zero if at least one printer was saved, so check <code>failed</code> and <code>skipped</code> in the JSON. On a non-zero exit, its <code>error</code> field says why.</p></div>
       <div class="cmd"><h3 id="spoolsmith-apply-options">spoolsmith apply &lt;file.ssb|set.zip&gt; [options]<a class="heading-anchor" href="#spoolsmith-apply-options" aria-label="Link to this section">#</a></h3>
         <p>Sets up a printer from a file, after checking its identity and showing the plan. Each printer in a set gets its own plan and confirmation.</p>
         <dl>
@@ -80,7 +80,7 @@
       <h2 id="find-and-save-a-printer">Find and save a printer<a class="heading-anchor" href="#find-and-save-a-printer" aria-label="Link to this section">#</a></h2>
       <p>Walkthrough: <a href="profiles.html">Set up by address, and saved setups</a>.</p>
       <div class="cmd"><h3 id="spoolsmith-discover">spoolsmith discover &lt;IPv4-CIDR&gt;<a class="heading-anchor" href="#spoolsmith-discover" aria-label="Link to this section">#</a></h3>
-        <p>Scans <code>/24</code> through <code>/32</code> for printer candidates.</p></div>
+        <p>Scans <code>/24</code> through <code>/32</code> for printer candidates. Any other range is refused as invalid arguments (exit <code>2</code>) before anything is scanned.</p></div>
       <div class="cmd"><h3 id="spoolsmith-inspect">spoolsmith inspect &lt;target&gt;<a class="heading-anchor" href="#spoolsmith-inspect" aria-label="Link to this section">#</a></h3>
         <p>Shows what an IP address, fixture file or <code>.ssb</code> reports, and where each piece of evidence came from.</p></div>
       <div class="cmd"><h3 id="spoolsmith-profile-capture-name-driver">spoolsmith profile capture &lt;target&gt; &lt;file&gt; --name &lt;queue&gt; --driver &lt;name&gt;<a class="heading-anchor" href="#spoolsmith-profile-capture-name-driver" aria-label="Link to this section">#</a></h3>

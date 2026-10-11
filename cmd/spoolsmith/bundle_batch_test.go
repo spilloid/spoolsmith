@@ -118,6 +118,10 @@ func TestCopyAllCancellationReturnsPartialJSONAndWritesNoSet(t *testing.T) {
 	if result.Requested != 3 || result.Written != 0 || result.Failed != 3 || len(result.Queues) != 3 || result.SetPath != "" {
 		t.Fatalf("cancellation lost accounting: %+v", result)
 	}
+	var output copyAllOutput
+	if err := json.Unmarshal(stdout.Bytes(), &output); err != nil || output.Error == "" {
+		t.Fatalf("a canceled copy --all must say why in its error field: %v %s", err, stdout.String())
+	}
 	if !slices.Equal(all.requestedPrinters, []string{"Office", "Warehouse"}) || probes != 2 || len(env.ran) != 0 {
 		t.Fatalf("lookups = %v; probes = %d; Windows mutations = %v", all.requestedPrinters, probes, env.ran)
 	}

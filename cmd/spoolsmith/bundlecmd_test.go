@@ -349,7 +349,10 @@ func TestCloneAllFailsWhenNothingIsCopyable(t *testing.T) {
 	if code == 0 {
 		t.Fatalf("expected a non-zero exit when nothing was copied:\n%s", stderr.String())
 	}
-	assertValidJSON(t, stdout.Bytes())
+	var output copyAllOutput
+	if err := json.Unmarshal(stdout.Bytes(), &output); err != nil || output.Error == "" || output.Requested != 1 {
+		t.Fatalf("a failed copy --all must say why in its error field: %v %s", err, stdout.String())
+	}
 	if _, err := os.Stat(setPath); !os.IsNotExist(err) {
 		t.Fatalf("wrote a set with no printers: %v", err)
 	}

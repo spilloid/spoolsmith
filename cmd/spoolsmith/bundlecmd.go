@@ -164,6 +164,17 @@ func runClone(ctx context.Context, args []string, input io.Reader, stdout, stder
 type copyAllResult = bundle.AllResult
 type copyAllQueue = bundle.QueueResult
 
+// copyAllOutput is copy --all's JSON on stdout: the shared result, plus an
+// error field, set whenever the command exits non-zero with that result
+// (nothing copied, the set could not be written, or the run was cut short),
+// so a script reads the reason from the same field as every other command's
+// error output. A failure before any queue was listed uses the standard
+// {command,status,error} shape instead.
+type copyAllOutput struct {
+	copyAllResult
+	Error string `json:"error,omitempty"`
+}
+
 func runCloneAll(ctx context.Context, setPath string, settingsOnly bool, note string, stdout, stderr io.Writer, app application) int {
 	result, err := bundle.CreateAll(ctx, app.environment, bundle.Collector(app.collect), bundle.AllOptions{
 		SetPath: setPath, SettingsOnly: settingsOnly, Note: note,
@@ -192,18 +203,21 @@ func runCloneAll(ctx context.Context, setPath string, settingsOnly bool, note st
 	}
 
 	code := install.ExitSuccess
+	output := copyAllOutput{copyAllResult: result}
 	switch {
 	case err != nil:
 		fmt.Fprintf(stderr, "spoolsmith copy --all: %v\n", err)
+		output.Error = err.Error()
 		code = install.ExitGeneralError
 	case result.Written == 0:
-		fmt.Fprintln(stderr, "spoolsmith copy --all: no printers were copied, so no file was written")
+		output.Error = "no printers were copied, so no file was written"
+		fmt.Fprintf(stderr, "spoolsmith copy --all: %s\n", output.Error)
 		code = install.ExitGeneralError
 	default:
 		fmt.Fprintf(stderr, "Saved %d of %d printers to %s (%d skipped, %d failed).\n", result.Written, result.Requested, result.SetPath, result.Skipped, result.Failed)
 		fmt.Fprintf(stderr, "Take %s to the other PC and preview it with: spoolsmith apply %s --dry-run\n", filepath.Base(result.SetPath), filepath.Base(result.SetPath))
 	}
-	if err := encodeJSON(stdout, result); err != nil {
+	if err := encodeJSON(stdout, output); err != nil {
 		fmt.Fprintf(stderr, "spoolsmith copy: encode result: %v\n", err)
 		return int(install.ExitGeneralError)
 	}

@@ -13,12 +13,18 @@ import (
 	"github.com/spilloid/spoolsmith/internal/bundle"
 	"github.com/spilloid/spoolsmith/internal/inspect"
 	"github.com/spilloid/spoolsmith/internal/install"
+	"github.com/spilloid/spoolsmith/internal/probe"
 	"github.com/spilloid/spoolsmith/internal/profileset"
 )
 
 func runDiscover(ctx context.Context, args []string, stdout, stderr io.Writer, app application) int {
 	if len(args) != 1 {
 		return usageError(stdout, stderr, "discover", errors.New("discover requires one explicit IPv4 CIDR, such as 192.168.1.0/24"))
+	}
+	// A malformed or too-wide range is how the command was typed, not a scan
+	// that failed: refuse it before scanning, with the usage-error shape.
+	if _, err := probe.ParseDiscoveryPrefix(args[0]); err != nil {
+		return usageError(stdout, stderr, "discover", err)
 	}
 	if app.discover == nil {
 		return commandError(stdout, stderr, "discover", errors.New("discovery unavailable"), 1)
