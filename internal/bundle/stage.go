@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // StageDirName is the extraction directory's base name, derived only from the
@@ -77,7 +78,7 @@ func (b *Bundle) EnsureExtracted(dir string) error {
 		if copyErr != nil {
 			return copyErr
 		}
-		if written != file.Size || hex.EncodeToString(digest.Sum(nil)) != file.SHA256 {
+		if written != file.Size || !strings.EqualFold(hex.EncodeToString(digest.Sum(nil)), file.SHA256) {
 			return fmt.Errorf("bundle: staged file %q does not match the bundle; remove %q and retry", file.Path, dir)
 		}
 	}

@@ -275,6 +275,27 @@ func TestEnsureExtractedReusesAndRefusesMismatch(t *testing.T) {
 	}
 }
 
+func TestEnsureExtractedAcceptsUppercaseManifestDigests(t *testing.T) {
+	path := writeBundle(t, true)
+	opened, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer opened.Close()
+	// Hex case is not part of a digest; extraction already compares it
+	// case-insensitively, so reuse of the staged copy must too.
+	for i := range opened.Manifest.Driver.Files {
+		opened.Manifest.Driver.Files[i].SHA256 = strings.ToUpper(opened.Manifest.Driver.Files[i].SHA256)
+	}
+	dest := filepath.Join(t.TempDir(), "stage")
+	if err := opened.EnsureExtracted(dest); err != nil {
+		t.Fatalf("first EnsureExtracted() = %v", err)
+	}
+	if err := opened.EnsureExtracted(dest); err != nil {
+		t.Fatalf("second EnsureExtracted() = %v, want reuse", err)
+	}
+}
+
 func TestWriteRejectsMismatchedPayloadDeclaration(t *testing.T) {
 	if err := Write(filepath.Join(t.TempDir(), "a.ssb"), Manifest{Profile: testProfile()}, writePayload(t)); err == nil {
 		t.Fatal("Write() accepted a payload directory with no declared driver payload")
