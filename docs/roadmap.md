@@ -69,11 +69,17 @@ product hardening, with additional protocols as future scope.
   can leave an unused port; retry safely reuses it. Validate interruption/retry
   and make residual resources and recovery guidance clearer. Repoint intentionally
   retains the old port.
-- **Keep long local operations responsive.** *(v1.5.0.)* Desktop local
-  status and printer-file verification now run off the UI thread with a time bound
-  (status) and a title-bar "checking" notice (file), and a result that arrives after
-  the dialog closed is dropped. Still open: a Cancel button and a progress bar for
-  very large driver bundles, and exercising close/cancel on real hardware.
+- **Keep long local operations responsive.** *(partly done in v1.5.0.)* Desktop local
+  status and the printer-file verification behind opening a file now run off the UI
+  thread with a time bound (status) and a title-bar "checking" notice (file), and a
+  result that arrives after the dialog closed is dropped. Not everything has moved:
+  a few places still hash a driver-carrying printer file on the UI thread, notably
+  the Saved setups page's labels and the Intune package page as its file paths are
+  typed (it also hashes the CLI binary there), so a large driver bundle can still
+  stall the window. Still open:
+  move that hashing off the UI thread (or cache it per file), a Cancel button and a
+  progress bar for very large driver bundles, and exercising close/cancel on real
+  hardware.
 - **Improve library portability.** *(v1.5.0.)* The saved-setups folder is
   now the one the operator last chose (remembered per user in
   `%APPDATA%\SpoolSmith\library-folder.txt`), else `profiles` beside the app when
