@@ -59,3 +59,26 @@ func TestHelpNamesASubcommand(t *testing.T) {
 		t.Fatalf("help profile edit = %q, want %q", stdout.String(), profileEditUsage)
 	}
 }
+
+func TestRemoveAndUninstallShareOneCompleteUsage(t *testing.T) {
+	var removeHelp, uninstallHelp bytes.Buffer
+	for args, out := range map[string]*bytes.Buffer{"remove": &removeHelp, "uninstall": &uninstallHelp} {
+		if code := run(context.Background(), []string{args, "--help"}, strings.NewReader(""), out, &bytes.Buffer{}, testApplication()); code != 0 {
+			t.Fatalf("%s --help code = %d", args, code)
+		}
+	}
+	if removeHelp.String() != uninstallHelp.String() {
+		t.Fatalf("remove and uninstall help differ:\n%s\n%s", removeHelp.String(), uninstallHelp.String())
+	}
+	// Every flag parseUninstallArgs accepts is documented.
+	for _, flag := range []string{"<printer-name>", "--profile", "--purge-driver", "--dry-run", "--what-if", "--yes", "--non-interactive", "--json"} {
+		if !strings.Contains(removeHelp.String(), flag) {
+			t.Errorf("remove --help omits %s:\n%s", flag, removeHelp.String())
+		}
+	}
+	var full bytes.Buffer
+	printUsage(&full)
+	if !strings.Contains(full.String(), "--windows-driver\n") || !strings.Contains(full.String(), "uninstall|remove --profile") {
+		t.Fatalf("full listing omits profile capture --windows-driver or remove --profile:\n%s", full.String())
+	}
+}

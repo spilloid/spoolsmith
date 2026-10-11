@@ -82,7 +82,7 @@
       <div class="cmd"><h3 id="spoolsmith-inspect">spoolsmith inspect &lt;target&gt;<a class="heading-anchor" href="#spoolsmith-inspect" aria-label="Link to this section">#</a></h3>
         <p>Shows what an IP address, fixture file or <code>.ssb</code> reports, and where each piece of evidence came from.</p></div>
       <div class="cmd"><h3 id="spoolsmith-profile-capture-name-driver">spoolsmith profile capture &lt;target&gt; &lt;file&gt; --name &lt;queue&gt; --driver &lt;name&gt;<a class="heading-anchor" href="#spoolsmith-profile-capture-name-driver" aria-label="Link to this section">#</a></h3>
-        <p>Probes the printer and writes a printer file with the queue name and exact registered driver you give it. Use <code>--windows-driver</code> instead of <code>--driver</code> for Windows automatic IPP setup. Never overwrites a file.</p></div>
+        <p>Probes the printer and writes a printer file with the queue name and exact registered driver you give it. Use <code>--windows-driver</code> instead of <code>--driver</code> for Windows automatic IPP setup (<code>profile capture &lt;ip&gt; &lt;file.ssb&gt; --name &lt;queue&gt; --windows-driver</code>). Never overwrites a file.</p></div>
       <div class="cmd"><h3 id="spoolsmith-profile-edit-options">spoolsmith profile edit &lt;file&gt; [options]<a class="heading-anchor" href="#spoolsmith-profile-edit-options" aria-label="Link to this section">#</a></h3>
         <p>Changes saved settings, keeping a backup under <code>.backups\</code>.</p>
         <dl>
@@ -103,13 +103,17 @@
         <p>Creates the queue from a printer file. Matching settings are reused; conflicting ones stop the operation. <code>install --profile</code> is an alias.</p></div>
       <div class="cmd"><h3 id="spoolsmith-configure-profile-usb-queue-offline-dry-run-yes-json">spoolsmith configure --profile &lt;file&gt; [--usb-queue &lt;name&gt;] [--offline] [--dry-run] [--yes] [--json]<a class="heading-anchor" href="#spoolsmith-configure-profile-usb-queue-offline-dry-run-yes-json" aria-label="Link to this section">#</a></h3>
         <p>Updates an existing queue to match its file.</p></div>
-      <div class="cmd"><h3 id="spoolsmith-remove-profile-dry-run-json">spoolsmith remove --profile &lt;file&gt; [--dry-run] [--json]<a class="heading-anchor" href="#spoolsmith-remove-profile-dry-run-json" aria-label="Link to this section">#</a></h3>
-        <p>Removes the queue after checking its address and driver against the file. Shared ports and drivers are kept.</p></div>
+      <div class="cmd"><h3 id="spoolsmith-remove-profile-options">spoolsmith remove --profile &lt;file&gt; [--purge-driver] [options]<a class="heading-anchor" href="#spoolsmith-remove-profile-options" aria-label="Link to this section">#</a></h3>
+        <p>Removes the queue after checking its address and driver against the file. Shared ports and drivers are kept. <code>remove</code> and <code>uninstall</code> are the same command: both take a printer name or <code>--profile</code>, and the same options.</p></div>
       <div class="cmd"><h3 id="spoolsmith-repoint-dry-run-yes-non-interactive-json">spoolsmith repoint &lt;queue&gt; &lt;new-ip&gt; [--dry-run] [--yes] [--non-interactive] [--json]<a class="heading-anchor" href="#spoolsmith-repoint-dry-run-yes-non-interactive-json" aria-label="Link to this section">#</a></h3>
         <p>Moves an existing queue to a new address, keeping its name and driver. The old port stays.</p></div>
       <div class="cmd"><h3 id="spoolsmith-uninstall-purge-driver-options">spoolsmith uninstall &lt;printer-name&gt; [--purge-driver] [options]<a class="heading-anchor" href="#spoolsmith-uninstall-purge-driver-options" aria-label="Link to this section">#</a></h3>
-        <p>Removes a queue by name. Ports and drivers still used by other queues are kept.</p>
-        <dl><dt>--purge-driver</dt><dd>Also remove the driver if nothing else uses it. See <a href="status.html#known-issues">known issues</a>.</dd></dl></div>
+        <p>Removes a queue by name. Ports and drivers still used by other queues are kept. <code>remove</code> is an alias.</p>
+        <dl>
+          <dt>--profile &lt;file&gt;</dt><dd>Name the queue by its printer file instead, and check its address and driver first.</dd>
+          <dt>--purge-driver</dt><dd>Also remove the driver if nothing else uses it. See <a href="status.html#known-issues">known issues</a>.</dd>
+          <dt>--dry-run|--what-if, --yes, --non-interactive, --json</dt><dd>As above.</dd>
+        </dl></div>
 
       <h2 id="package-for-intune">Package for Intune<a class="heading-anchor" href="#package-for-intune" aria-label="Link to this section">#</a></h2>
       <p>Walkthrough: <a href="intune.html">Intune packaging</a>. Local only; never contacts a tenant.</p>

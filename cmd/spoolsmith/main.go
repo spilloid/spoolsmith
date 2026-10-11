@@ -487,8 +487,8 @@ var commandUsage = map[string]string{
 	"configure":          "spoolsmith configure --profile <file> [--usb-queue <name>] [--offline] [--dry-run] [--yes] [--json]\n",
 	"install":            "spoolsmith install <ip> --windows-driver --name <queue> [--dry-run] [--yes] [--json]\nspoolsmith install <ip> [--force-family <id>] [--dry-run|--what-if] [--yes] [--non-interactive] [--json]\n",
 	"repoint":            "spoolsmith repoint <queue> <new-ip> [--dry-run] [--yes] [--non-interactive] [--json]\n",
-	"remove":             "spoolsmith remove --profile <file> [--dry-run] [--json]\n",
-	"uninstall":          "spoolsmith uninstall <printer-name> [--purge-driver] [--dry-run|--what-if] [--yes] [--non-interactive] [--json]\n",
+	"remove":             uninstallUsage,
+	"uninstall":          uninstallUsage,
 	"intune":             intuneWizardUsage + intuneBuildUsage,
 	"intune wizard":      intuneWizardUsage,
 	"intune build":       intuneBuildUsage,
@@ -505,6 +505,10 @@ const (
 		"spoolsmith profile capture <ip> <file.ssb> --name <queue> --windows-driver\n"
 	profileEditUsage = "spoolsmith profile edit <file> [--name <queue>] [--driver <name>] [--target <ip>]\n" +
 		"spoolsmith profile edit <file> [--package <recipe-id> --archive <local-file> | --clear-package]\n"
+	// uninstallUsage covers both names: remove and uninstall share one parser.
+	uninstallUsage = "spoolsmith uninstall|remove <printer-name> [--purge-driver] [--dry-run|--what-if] [--yes] [--non-interactive] [--json]\n" +
+		"spoolsmith uninstall|remove --profile <file> [--purge-driver] [--dry-run|--what-if] [--yes] [--non-interactive] [--json]\n" +
+		"--profile checks the queue's address and driver against the printer file before removing it.\n"
 	intuneWizardUsage = "spoolsmith intune wizard                   interactive, one export directory at a time\n"
 	intuneBuildUsage  = "spoolsmith intune build --profile <file> --binary <exe> [--revision <n>] [--dry-run]\n" +
 		"--binary-sha256, --id, --name, --description and --output are all derived from the profile\n" +
@@ -554,8 +558,7 @@ func printUsage(writer io.Writer) {
 	fmt.Fprintln(writer, "  Windows automatic setup requires verified IPP support. Windows creates the queue with its class driver, then SpoolSmith asks Windows for the printer's own driver; if none is found the class driver stays and setup still succeeds.")
 	fmt.Fprintln(writer, "  spoolsmith add|configure --profile <file> [--usb-queue <name>] [--offline] [--dry-run] [--yes] [--json]")
 	fmt.Fprintln(writer, "  spoolsmith repoint <queue> <new-ip> [--dry-run] [--yes] [--non-interactive] [--json]")
-	fmt.Fprintln(writer, "  spoolsmith remove --profile <file> [--dry-run] [--json]")
-	fmt.Fprintln(writer, "  spoolsmith uninstall <printer-name> [--purge-driver] [--dry-run|--what-if] [--yes] [--non-interactive] [--json]")
+	printIndented(writer, uninstallUsage)
 	fmt.Fprintln(writer, "")
 	fmt.Fprintln(writer, "Package a validated profile for Intune (local only; never contacts a tenant)")
 	printIndented(writer, intuneWizardUsage)
