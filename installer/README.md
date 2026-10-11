@@ -53,7 +53,7 @@ On Ubuntu or Debian:
 
 ```sh
 sudo apt-get install wixl msitools
-installer/build-msi.sh v1.3.0 <payload-dir> <out-dir>
+installer/build-msi.sh v1.5.0 <payload-dir> <out-dir>
 ```
 
 `<payload-dir>` holds exactly the four release files. Releases never build
