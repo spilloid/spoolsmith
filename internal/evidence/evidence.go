@@ -2,8 +2,10 @@
 package evidence
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 )
@@ -33,9 +35,16 @@ func LoadFixture(path string) (Evidence, error) {
 		return Evidence{}, fmt.Errorf("read fixture %q: %w", path, err)
 	}
 
+	// A misspelled field ("pjl_ld") would otherwise vanish silently and the
+	// fixture would resolve as if that evidence had never been observed.
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
 	var result Evidence
-	if err := json.Unmarshal(data, &result); err != nil {
+	if err := decoder.Decode(&result); err != nil {
 		return Evidence{}, fmt.Errorf("decode fixture %q: %w", path, err)
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		return Evidence{}, fmt.Errorf("decode fixture %q: trailing data after the evidence object", path)
 	}
 
 	switch result.Provenance {

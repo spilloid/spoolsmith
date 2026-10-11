@@ -76,3 +76,33 @@ func TestLoadFixtureRejectsMalformedJSON(t *testing.T) {
 		t.Fatalf("LoadFixture() error = %v, want clear decode error", err)
 	}
 }
+
+func TestLoadFixtureRejectsUnknownFieldsAndTrailingData(t *testing.T) {
+	for name, body := range map[string]string{
+		"misspelled field": `{"provenance":"captured","pjl_ld":"HP LaserJet Pro M404n"}`,
+		"trailing object":  `{"provenance":"captured"} {"provenance":"captured"}`,
+		"trailing brace":   `{"provenance":"captured"}}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "fixture.json")
+			if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+				t.Fatalf("WriteFile() error = %v", err)
+			}
+			if _, err := LoadFixture(path); err == nil || !strings.Contains(err.Error(), "decode fixture") {
+				t.Fatalf("LoadFixture() error = %v, want a decode error", err)
+			}
+		})
+	}
+}
+
+func TestEveryShippedFixtureStillLoads(t *testing.T) {
+	paths, err := filepath.Glob(filepath.Join("..", "..", "fixtures", "*.json"))
+	if err != nil || len(paths) == 0 {
+		t.Fatalf("no fixtures found: %v", err)
+	}
+	for _, path := range paths {
+		if _, err := LoadFixture(path); err != nil {
+			t.Errorf("LoadFixture(%s) error = %v", path, err)
+		}
+	}
+}
