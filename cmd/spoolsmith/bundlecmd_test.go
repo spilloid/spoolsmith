@@ -559,6 +559,41 @@ func TestApplySetWithYesStillShowsEveryPlan(t *testing.T) {
 	}
 }
 
+// TestApplySetRemovesEachMemberOnceApplied guards against a set's extracted
+// members (each possibly carrying a whole driver package) piling up in the
+// temp folder until the last printer is done: each is deleted as soon as its
+// own apply returns.
+func TestApplySetRemovesEachMemberOnceApplied(t *testing.T) {
+	setPath := writeTestSet(t)
+	temp := t.TempDir()
+	t.Setenv("TMPDIR", temp)
+	t.Setenv("TMP", temp)
+	t.Setenv("TEMP", temp)
+	app, _ := bundleTestApplication(t)
+	collect := app.workflow.Collect
+	var seen []int
+	app.workflow.Collect = func(ctx context.Context, target string) (probe.Result, error) {
+		members, err := filepath.Glob(filepath.Join(temp, "spoolsmith-apply-set-*", "*.ssb"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		seen = append(seen, len(members))
+		return collect(ctx, target)
+	}
+	var stdout, stderr bytes.Buffer
+	if code := run(context.Background(), []string{"apply", setPath, "--dry-run", "--json"}, strings.NewReader(""), &stdout, &stderr, app); code != 0 {
+		t.Fatalf("apply set --dry-run code=%d\n%s", code, stderr.String())
+	}
+	if len(seen) < 2 {
+		t.Fatalf("probed %d times, want each member to probe", len(seen))
+	}
+	for index, count := range seen {
+		if count != 1 {
+			t.Fatalf("probe %d saw %d extracted members on disk, want only the one being applied (%v)", index, count, seen)
+		}
+	}
+}
+
 func TestApplySetMemberSelectsOnePrinter(t *testing.T) {
 	setPath := writeTestSet(t)
 	app, _ := bundleTestApplication(t)

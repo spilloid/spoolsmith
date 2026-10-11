@@ -408,6 +408,9 @@ func runApplySet(ctx context.Context, path, only string, options install.Install
 			continue
 		}
 		outcome, code, setupErr := applyBundleFile(ctx, extracted, options, reader, stderr, app)
+		// Done with this member: a set of driver-carrying files must not pile
+		// up in the temp folder until the last printer is done.
+		os.Remove(extracted)
 		if setupErr != nil {
 			fmt.Fprintf(stderr, "spoolsmith apply: %s: %v\n", name, setupErr)
 			result.Members = append(result.Members, applySetMember{Member: name, Status: "error", Error: setupErr.Error()})
