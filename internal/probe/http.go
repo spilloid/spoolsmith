@@ -6,6 +6,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -44,18 +45,25 @@ func probeHTTP(ctx context.Context, host string) (string, error) {
 	return title, nil
 }
 
+// titleOpen and titleClose match case-insensitively against the original
+// bytes; lowering a copy first changes byte lengths on invalid UTF-8 and
+// characters such as U+0130, so its offsets cannot index the original.
+var (
+	titleOpen  = regexp.MustCompile(`(?i)<title(?:\s[^>]*)?>`)
+	titleClose = regexp.MustCompile(`(?i)</title\s*>`)
+)
+
 func extractHTTPTitle(document string) (string, error) {
-	lower := strings.ToLower(document)
-	start := strings.Index(lower, "<title>")
-	if start < 0 {
+	open := titleOpen.FindStringIndex(document)
+	if open == nil {
 		return "", fmt.Errorf("opening tag not found")
 	}
-	start += len("<title>")
-	endOffset := strings.Index(lower[start:], "</title>")
-	if endOffset < 0 {
+	start := open[1]
+	end := titleClose.FindStringIndex(document[start:])
+	if end == nil {
 		return "", fmt.Errorf("closing tag not found")
 	}
-	title := strings.TrimSpace(document[start : start+endOffset])
+	title := strings.TrimSpace(document[start : start+end[0]])
 	if title == "" {
 		return "", fmt.Errorf("title is empty")
 	}
