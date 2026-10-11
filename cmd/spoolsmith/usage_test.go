@@ -3,10 +3,15 @@ package main
 import (
 	"bytes"
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/spilloid/spoolsmith/internal/bundle"
+	"github.com/spilloid/spoolsmith/internal/evidence"
 	"github.com/spilloid/spoolsmith/internal/install"
+	"github.com/spilloid/spoolsmith/internal/probe"
 )
 
 func TestUsageErrorsShowOnlyTheCommandsOwnSyntax(t *testing.T) {
@@ -80,5 +85,58 @@ func TestRemoveAndUninstallShareOneCompleteUsage(t *testing.T) {
 	printUsage(&full)
 	if !strings.Contains(full.String(), "--windows-driver\n") || !strings.Contains(full.String(), "uninstall|remove --profile") {
 		t.Fatalf("full listing omits profile capture --windows-driver or remove --profile:\n%s", full.String())
+	}
+}
+
+func TestTakeValue(t *testing.T) {
+	args := []string{"--out", "file.ssb", "--note", "--settings-only", "--name", " ", "--last"}
+	for _, tt := range []struct {
+		index int
+		want  string
+		ok    bool
+	}{{0, "file.ssb", true}, {2, "", false}, {4, "", false}, {6, "", false}} {
+		if got, ok := takeValue(args, tt.index); got != tt.want || ok != tt.ok {
+			t.Errorf("takeValue(%s) = %q, %v; want %q, %v", args[tt.index], got, ok, tt.want, tt.ok)
+		}
+	}
+}
+
+func TestValueFlagsRefuseTheNextFlagAsTheirValue(t *testing.T) {
+	app := testApplication()
+	app.collect = func(context.Context, string) (probe.Result, error) { panic("a usage error probed the network") }
+	dir := t.TempDir()
+	saved := filepath.Join(dir, "saved.ssb")
+	if err := bundle.SaveProfile(saved, install.Profile{Version: 1, PrinterName: "Accounting", DriverName: "Verified Windows Driver", Target: "192.0.2.10", Evidence: evidence.Evidence{IP: "192.0.2.10", Provenance: "captured", HTTPTitle: "Test Model"}}); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.ReadFile(saved)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{
+		{"copy", "Accounting", "--out", "--settings-only"},
+		{"copy", "Accounting", "--note", "--settings-only"},
+		{"copy", "--all", "--out", "--settings-only"},
+		{"apply", saved, "--plan-hash", "--yes"},
+		{"apply", saved, "--member", "--dry-run"},
+		{"profile", "capture", "192.0.2.10", filepath.Join(dir, "new.ssb"), "--name", "--driver", "D"},
+		{"profile", "capture", "192.0.2.10", filepath.Join(dir, "new.ssb"), "--name", "Q", "--driver", "--windows-driver"},
+		{"profile", "edit", saved, "--name", "--driver", "D"},
+		{"profile", "edit", saved, "--target", "--name"},
+	} {
+		var stdout, stderr bytes.Buffer
+		if code := run(context.Background(), args, strings.NewReader(""), &stdout, &stderr, app); code != int(install.ExitUsageError) {
+			t.Errorf("%v: code = %d, want %d; stderr=%q", args, code, install.ExitUsageError, stderr.String())
+		}
+		if !strings.Contains(stderr.String(), "requires") {
+			t.Errorf("%v: stderr does not say what the flag requires: %q", args, stderr.String())
+		}
+	}
+	after, err := os.ReadFile(saved)
+	if err != nil || !bytes.Equal(before, after) {
+		t.Fatalf("a refused edit changed the saved file (err %v)", err)
+	}
+	if entries, _ := os.ReadDir(dir); len(entries) != 1 {
+		t.Fatalf("a refused command wrote files: %v", entries)
 	}
 }

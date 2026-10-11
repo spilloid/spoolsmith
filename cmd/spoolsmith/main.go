@@ -406,6 +406,21 @@ func parseUninstallArgs(args []string) (install.UninstallOptions, error) {
 	return options, nil
 }
 
+// takeValue returns the value following a value-taking flag at args[index].
+// A missing or blank value, or one that starts with "-", is refused: it is
+// far more likely to be the next flag (`copy Foo --out --settings-only`) than
+// a value, and silently taking it would write a file named "--settings-only".
+func takeValue(args []string, index int) (string, bool) {
+	if index+1 >= len(args) {
+		return "", false
+	}
+	value := args[index+1]
+	if strings.TrimSpace(value) == "" || strings.HasPrefix(value, "-") {
+		return "", false
+	}
+	return value, true
+}
+
 func encodeSuccess(stdout, stderr io.Writer, command string, value any) int {
 	if err := encodeJSON(stdout, value); err != nil {
 		fmt.Fprintf(stderr, "spoolsmith %s: encode result: %v\n", command, err)

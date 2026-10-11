@@ -72,14 +72,18 @@ func runProfile(ctx context.Context, args []string, stdout, stderr io.Writer, ap
 			i--
 			continue
 		}
-		if (flag != "--name" && flag != "--driver") || seen[flag] || i+1 >= len(args) || strings.TrimSpace(args[i+1]) == "" {
+		if (flag != "--name" && flag != "--driver") || seen[flag] {
 			return usageError(stdout, stderr, "profile", fmt.Errorf("invalid or duplicate profile option %q", flag))
+		}
+		value, ok := takeValue(args, i)
+		if !ok {
+			return usageError(stdout, stderr, "profile", fmt.Errorf("%s requires a value", flag))
 		}
 		seen[flag] = true
 		if flag == "--name" {
-			p.PrinterName = args[i+1]
+			p.PrinterName = value
 		} else {
-			p.DriverName = args[i+1]
+			p.DriverName = value
 		}
 	}
 	if !seen["--name"] || seen["--driver"] == seen["--windows-driver"] {
@@ -175,17 +179,26 @@ func runProfileEdit(args []string, stdout, stderr io.Writer) int {
 			i--
 			continue
 		}
-		if seen[flag] || i+1 >= len(args) || strings.TrimSpace(args[i+1]) == "" {
+		switch flag {
+		case "--name", "--driver", "--target", "--package", "--archive":
+		default:
+			return usageError(stdout, stderr, "profile edit", fmt.Errorf("unknown option %q", flag))
+		}
+		if seen[flag] {
 			return usageError(stdout, stderr, "profile edit", fmt.Errorf("invalid or duplicate option %q", flag))
+		}
+		value, ok := takeValue(args, i)
+		if !ok {
+			return usageError(stdout, stderr, "profile edit", fmt.Errorf("%s requires a value", flag))
 		}
 		seen[flag] = true
 		switch flag {
 		case "--name":
-			p.PrinterName = args[i+1]
+			p.PrinterName = value
 		case "--driver":
-			p.DriverName = args[i+1]
+			p.DriverName = value
 		case "--target":
-			p.Target = args[i+1]
+			p.Target = value
 		case "--package", "--archive":
 			if seen["--clear-package"] {
 				return usageError(stdout, stderr, "profile edit", errors.New("--clear-package cannot be combined with package options"))
@@ -194,12 +207,10 @@ func runProfileEdit(args []string, stdout, stderr io.Writer) int {
 				p.DriverPackage = &install.PackageSelection{}
 			}
 			if flag == "--package" {
-				p.DriverPackage.ID = args[i+1]
+				p.DriverPackage.ID = value
 			} else {
-				p.DriverPackage.Archive = args[i+1]
+				p.DriverPackage.Archive = value
 			}
-		default:
-			return usageError(stdout, stderr, "profile edit", fmt.Errorf("unknown option %q", flag))
 		}
 	}
 	backup, err := bundle.EditProfile(args[0], p)

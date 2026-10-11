@@ -63,19 +63,21 @@ func runClone(ctx context.Context, args []string, input io.Reader, stdout, stder
 		case "--all":
 			includeAll = true
 		case "--out":
-			if index+1 >= len(args) || strings.TrimSpace(args[index+1]) == "" {
+			value, ok := takeValue(args, index)
+			if !ok {
 				return usageError(stdout, stderr, "copy", errors.New("--out requires a file name"))
 			}
 			if outPath != "" {
 				return usageError(stdout, stderr, "copy", errors.New("--out given more than once"))
 			}
-			outPath = args[index+1]
+			outPath = value
 			index++
 		case "--note":
-			if index+1 >= len(args) || strings.TrimSpace(args[index+1]) == "" {
-				return usageError(stdout, stderr, "copy", errors.New("--note requires a value"))
+			value, ok := takeValue(args, index)
+			if !ok {
+				return usageError(stdout, stderr, "copy", errors.New("--note requires a value that does not start with -"))
 			}
-			note = args[index+1]
+			note = value
 			index++
 		default:
 			if strings.HasPrefix(args[index], "-") {
@@ -235,16 +237,18 @@ func runApply(ctx context.Context, args []string, input io.Reader, stdout, stder
 			index++
 			options.USBQueue = args[index]
 		case "--plan-hash":
-			if index+1 >= len(args) || strings.TrimSpace(args[index+1]) == "" {
+			value, ok := takeValue(args, index)
+			if !ok {
 				return usageError(stdout, stderr, "apply", errors.New("--plan-hash requires the reviewed plan's fingerprint"))
 			}
-			planHash = strings.TrimSpace(args[index+1])
+			planHash = strings.TrimSpace(value)
 			index++
 		case "--member":
-			if index+1 >= len(args) || strings.TrimSpace(args[index+1]) == "" {
+			value, ok := takeValue(args, index)
+			if !ok {
 				return usageError(stdout, stderr, "apply", errors.New("--member requires a printer file name from the set"))
 			}
-			only = args[index+1]
+			only = value
 			index++
 		default:
 			if strings.HasPrefix(args[index], "-") {
