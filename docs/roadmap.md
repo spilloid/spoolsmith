@@ -28,7 +28,7 @@ product hardening, with additional protocols as future scope.
 3. **Broaden hardware coverage.** Validate the HP LaserJet Pro M4xx family and
    additional explicitly configured drivers. Brother HL-L2315D evidence does not
    establish compatibility for every member of a catalog family.
-4. **Check the native desktop on real displays.** *(partly done, v1.5 unreleased.)* A FlaUI
+4. **Check the native desktop on real displays.** *(partly done in v1.5.0.)* A FlaUI
    audit at 125% scaling (`AccessibilityTests`, `dist/gui-accessibility.txt`) found and fixed a
    real defect: Tab did not move focus in the main window; it now walks every control on every
    page. All interactive controls have accessible names and keyboard focus, but the names are
@@ -69,18 +69,18 @@ product hardening, with additional protocols as future scope.
   can leave an unused port; retry safely reuses it. Validate interruption/retry
   and make residual resources and recovery guidance clearer. Repoint intentionally
   retains the old port.
-- **Keep long local operations responsive.** *(v1.5, unreleased.)* Desktop local
+- **Keep long local operations responsive.** *(v1.5.0.)* Desktop local
   status and printer-file verification now run off the UI thread with a time bound
   (status) and a title-bar "checking" notice (file), and a result that arrives after
   the dialog closed is dropped. Still open: a Cancel button and a progress bar for
   very large driver bundles, and exercising close/cancel on real hardware.
-- **Improve library portability.** *(v1.5, unreleased.)* The saved-setups folder is
+- **Improve library portability.** *(v1.5.0.)* The saved-setups folder is
   now the one the operator last chose (remembered per user in
   `%APPDATA%\SpoolSmith\library-folder.txt`), else `profiles` beside the app when
   that is writable, else `%LOCALAPPDATA%\SpoolSmith\profiles` (the machine-wide MSI
   under Program Files). `SPOOLSMITH_PROFILES_DIR` still overrides all of these.
   Still open: clearer recovery when a referenced driver archive is missing.
-- **Interrupted operations: guidance shipped, rollback not.** *(v1.5, unreleased.)*
+- **Interrupted operations: guidance shipped, rollback not.** *(v1.5.0.)*
   A failed step now says earlier steps may already have been applied and that
   adding the same printer again reuses what exists; a native-driver switch that could not be restored is drawn
   as a failure with the queue's state, not a quiet skip. Nothing is rolled back

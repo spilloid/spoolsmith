@@ -1,6 +1,6 @@
 # Dev Process Log
 
-## 2026-10-02: v1.5 (unreleased) — best-effort native driver for IPP setups
+## 2026-10-02: v1.5 (since released as v1.5.0) — best-effort native driver for IPP setups
 
 Claude orchestrated and implemented (contract tests first); Codex `gpt-6-sol`/high ran one
 read-only adversarial review of the whole diff (Sol/high rung: Windows OS mutation). Task type:
