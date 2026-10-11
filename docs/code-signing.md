@@ -269,8 +269,9 @@ Only then was the release promoted to Latest. Doing it in that order is worth ke
 next release: a failure between publish and verify leaves a prerelease to fix and re-run with
 `workflow_dispatch`, not a broken "Latest" that `releases/latest` sends everyone to.
 
-The CLI has no `--version` flag; the stamp is visible only in bundle metadata. That is a gap,
-not part of this change.
+At the time the CLI had no `--version` flag and the stamp was visible only in bundle metadata.
+It has one now: `spoolsmith --version` (or `spoolsmith version`) prints the stamp, and an
+unstamped build prints `(development build)`.
 
 ## Signing by hand
 

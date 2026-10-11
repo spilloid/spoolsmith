@@ -214,3 +214,24 @@ func TestStatusFlagOrderDoesNotMatter(t *testing.T) {
 		assertValidJSON(t, stdout.Bytes())
 	}
 }
+
+func TestVersionPrintsTheBuildStamp(t *testing.T) {
+	saved := version
+	defer func() { version = saved }()
+	for _, stamp := range []string{"", "v1.5.0"} {
+		version = stamp
+		for _, command := range []string{"version", "--version"} {
+			var stdout, stderr bytes.Buffer
+			if code := run(context.Background(), []string{command}, strings.NewReader(""), &stdout, &stderr, testApplication()); code != 0 {
+				t.Fatalf("%s: code = %d; stderr=%q", command, code, stderr.String())
+			}
+			if stdout.String() != versionString()+"\n" || stderr.Len() != 0 {
+				t.Fatalf("%s: stdout = %q stderr = %q, want %q", command, stdout.String(), stderr.String(), versionString())
+			}
+		}
+	}
+	var stdout bytes.Buffer
+	if code := run(context.Background(), []string{"version", "extra"}, strings.NewReader(""), &stdout, &bytes.Buffer{}, testApplication()); code != int(install.ExitUsageError) {
+		t.Fatalf("version extra: code = %d", code)
+	}
+}

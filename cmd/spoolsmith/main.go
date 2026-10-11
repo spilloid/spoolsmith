@@ -113,6 +113,12 @@ func run(ctx context.Context, args []string, input io.Reader, stdout, stderr io.
 			return commandError(stdout, stderr, "drivers", err, 1)
 		}
 		return encodeSuccess(stdout, stderr, "drivers", names)
+	case "version", "--version":
+		if len(args) != 1 {
+			return usageError(stdout, stderr, "version", fmt.Errorf("%s accepts no arguments", args[0]))
+		}
+		fmt.Fprintln(stdout, versionString())
+		return 0
 	case "--help", "-h", "help":
 		if len(args) > 2 {
 			if usage, ok := commandUsage[args[1]+" "+args[2]]; ok {
@@ -530,6 +536,8 @@ var commandUsage = map[string]string{
 	"profile edit":       profileEditUsage,
 	"profile capture":    profileCaptureUsage,
 	"help":               "spoolsmith help [<command>]                every command, or one command's syntax\n",
+	"version":            versionUsage,
+	"--version":          versionUsage,
 	"add":                "spoolsmith add <ip> --windows-driver --name <queue> [--dry-run] [--yes] [--json]\nspoolsmith add --profile <file> [--usb-queue <name>] [--offline] [--dry-run] [--yes] [--json]\n",
 	"configure":          "spoolsmith configure --profile <file> [--usb-queue <name>] [--offline] [--dry-run] [--yes] [--json]\n",
 	"install":            "spoolsmith install <ip> --windows-driver --name <queue> [--dry-run] [--yes] [--json]\nspoolsmith install <ip> [--force-family <id>] [--dry-run|--what-if] [--yes] [--non-interactive] [--json]\n",
@@ -544,6 +552,7 @@ var commandUsage = map[string]string{
 // The subcommand syntax below is shared by the subcommand's own entry, its
 // parent command's entry and the full listing, so they cannot drift apart.
 const (
+	versionUsage          = "spoolsmith version | spoolsmith --version  this build's version\n"
 	bundleInspectUsage    = "spoolsmith bundle inspect <file.ssb|set.zip>  read a printer file or printer set, touching nothing\n"
 	profileExportAllUsage = "spoolsmith profile export-all <folder> <set.zip> [--dry-run]\n"
 	profileImportAllUsage = "spoolsmith profile import-all <set.zip> <folder> [--dry-run]\n"
@@ -587,6 +596,7 @@ func printUsage(writer io.Writer) {
 	fmt.Fprintln(writer, "  spoolsmith printers [--copyable] [--json]   installed queues, and which can be copied")
 	fmt.Fprintln(writer, "  spoolsmith drivers                         exact registered Windows driver names")
 	fmt.Fprintln(writer, "  spoolsmith status --profile <file> [--json] local configuration only, no network")
+	printIndented(writer, versionUsage)
 	fmt.Fprintln(writer, "")
 	fmt.Fprintln(writer, "Copy a printer from one PC to another")
 	printIndented(writer, copyUsage)
