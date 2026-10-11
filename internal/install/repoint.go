@@ -151,13 +151,13 @@ func (w Workflow) RunRepoint(ctx context.Context, env Environment, input io.Read
 	outcome.Confirmed = true
 
 	result := Result{Plan: plan}
-	for _, command := range plan.Commands {
+	for i, command := range plan.Commands {
 		output, runErr := env.Run(ctx, command)
 		result.Ran = append(result.Ran, CommandResult{Command: command, Output: output, Err: runErr})
 		if runErr != nil {
 			outcome.Result = &result
 			writeCommandResults(interactive, result.Ran)
-			return failOutcome(outcome, fmt.Errorf("repoint: run %q: %w", command, runErr), ExitGeneralError)
+			return failOutcome(outcome, commandFailure("repoint", i, len(plan.Commands), output, runErr), ExitGeneralError)
 		}
 	}
 	outcome.Result = &result

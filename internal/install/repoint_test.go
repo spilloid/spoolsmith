@@ -143,3 +143,18 @@ func TestRepointRejectsQueueMovedAfterPreview(t *testing.T) {
 		t.Fatalf("moved queue mutated: %#v", outcome)
 	}
 }
+
+// TestRepointFailureNamesTheStepNotItsText matches Install: the error says
+// which command failed, not the whole generated command.
+func TestRepointFailureNamesTheStepNotItsText(t *testing.T) {
+	env := environmentFailingCommand(0)
+	outcome, code := NewWorkflow().RunRepoint(t.Context(), env, strings.NewReader(""), discardWriter{}, false, RepointOptions{
+		PrinterName: "Test Printer", NewAddress: "192.0.2.50", Yes: true,
+	})
+	if code != ExitGeneralError || !strings.HasPrefix(outcome.Error, "repoint: command 1 of ") || !strings.HasSuffix(outcome.Error, " failed: simulated command failure") {
+		t.Fatalf("RunRepoint() = %q / %d", outcome.Error, code)
+	}
+	if strings.Contains(outcome.Error, "Add-PrinterPort") {
+		t.Fatalf("error repeats the command: %s", outcome.Error)
+	}
+}

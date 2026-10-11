@@ -239,7 +239,11 @@ func Install(ctx context.Context, env Environment, plan Plan, confirmed bool) (R
 		if native {
 			// The queue already works; a native driver is an upgrade, not a requirement.
 			if err != nil {
-				result.NativeDriver = "skipped " + strings.TrimSpace(err.Error()) + "; keeping " + plan.DriverName
+				why := strings.TrimSpace(err.Error())
+				if line := firstLine(output); line != "" {
+					why += ": " + line
+				}
+				result.NativeDriver = "skipped " + why + "; keeping " + plan.DriverName
 			} else {
 				result.NativeDriver = NativeDriverOutcome(output)
 			}
@@ -249,10 +253,37 @@ func Install(ctx context.Context, env Environment, plan Plan, confirmed bool) (R
 			continue
 		}
 		if err != nil {
-			return result, fmt.Errorf("install: run %q: %w", command, err)
+			return result, commandFailure("install", i, len(plan.Commands), output, err)
 		}
 	}
 	return result, nil
+}
+
+// maxFirstLine caps how much of a command's output an error message quotes.
+const maxFirstLine = 300
+
+// firstLine returns the first non-empty line of a command's output, trimmed
+// and capped so a long error record cannot swamp the message.
+func firstLine(output string) string {
+	for _, line := range strings.Split(output, "\n") {
+		if line = strings.TrimSpace(line); line != "" {
+			if runes := []rune(line); len(runes) > maxFirstLine {
+				return string(runes[:maxFirstLine]) + "..."
+			}
+			return line
+		}
+	}
+	return ""
+}
+
+// commandFailure reports which plan command failed and what it said. The
+// command itself is not repeated: it can run to kilobytes, and it is already
+// in Result.Ran beside its full output.
+func commandFailure(operation string, index, total int, output string, err error) error {
+	if line := firstLine(output); line != "" {
+		return fmt.Errorf("%s: command %d of %d failed: %s: %w", operation, index+1, total, line, err)
+	}
+	return fmt.Errorf("%s: command %d of %d failed: %w", operation, index+1, total, err)
 }
 
 // LookupPrinter reads the installed port and driver associated with printerName.
@@ -327,11 +358,11 @@ func Uninstall(ctx context.Context, env Environment, printerName, portName, driv
 	if _, err := PreflightUninstall(ctx, env); err != nil {
 		return result, err
 	}
-	for _, command := range plan.Commands {
+	for i, command := range plan.Commands {
 		output, err := env.Run(ctx, command)
 		result.Ran = append(result.Ran, CommandResult{Command: command, Output: output, Err: err})
 		if err != nil {
-			return result, fmt.Errorf("install: run %q: %w", command, err)
+			return result, commandFailure("install", i, len(plan.Commands), output, err)
 		}
 	}
 	return result, nil

@@ -218,3 +218,36 @@ func TestNativeDriverStepIsTimeBoundedAndAttentionIsAnError(t *testing.T) {
 		t.Fatalf("a failed restore must not read as success: err=%v native=%q", err, result.NativeDriver)
 	}
 }
+
+// TestNativeDriverSkipQuotesTheStepsOutput: a skipped step says what it
+// printed, not only how it exited.
+func TestNativeDriverSkipQuotesTheStepsOutput(t *testing.T) {
+	plan := nativeTestPlan(t)
+	env := &nativeFailEnv{err: map[int]error{1: errors.New("exit status 1")}, out: map[int]string{1: "\r\n  Windows Update service is not running\r\nmore detail\r\n"}}
+	result, err := Install(context.Background(), env, plan, true)
+	if err != nil || result.NativeDriver != "skipped exit status 1: Windows Update service is not running; keeping Microsoft IPP Class Driver" {
+		t.Fatalf("err = %v; native = %q", err, result.NativeDriver)
+	}
+}
+
+// TestFailedCommandNamesItsPositionAndOutputNotItsText: the generated command
+// can run to kilobytes; the error says which one failed and what it printed,
+// and the command stays in Result.Ran.
+func TestFailedCommandNamesItsPositionAndOutputNotItsText(t *testing.T) {
+	plan := nativeTestPlan(t)
+	denied := errors.New("exit status 1")
+	env := &nativeFailEnv{err: map[int]error{0: denied}, out: map[int]string{0: "\n Add-Printer : Access is denied.\r\n    + CategoryInfo : x\n"}}
+	result, err := Install(context.Background(), env, plan, true)
+	if err == nil || err.Error() != "install: command 1 of 2 failed: Add-Printer : Access is denied.: exit status 1" || !errors.Is(err, denied) {
+		t.Fatalf("err = %v", err)
+	}
+	if len(result.Ran) != 1 || result.Ran[0].Command != plan.Commands[0] {
+		t.Fatalf("ran = %+v", result.Ran)
+	}
+	if err := commandFailure("install", 0, 1, "  \r\n", denied); err.Error() != "install: command 1 of 1 failed: exit status 1" {
+		t.Fatalf("no output: %v", err)
+	}
+	if got := firstLine(strings.Repeat("x", maxFirstLine+50)); len(got) != maxFirstLine+3 || !strings.HasSuffix(got, "...") {
+		t.Fatalf("long line not capped: %d", len(got))
+	}
+}
