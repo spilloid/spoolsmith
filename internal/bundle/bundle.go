@@ -174,6 +174,9 @@ func validatePayloadPath(name string) error {
 		if part == "" || part == "." || part == ".." {
 			return fmt.Errorf("bundle: payload entry %q contains a traversal or empty segment", name)
 		}
+		if problem := windowsNameProblem(part); problem != "" {
+			return fmt.Errorf("bundle: payload entry %q %s", name, problem)
+		}
 	}
 	for _, r := range name {
 		if r < 0x20 || r == 0x7f {
@@ -181,4 +184,26 @@ func validatePayloadPath(name string) error {
 		}
 	}
 	return nil
+}
+
+// windowsNameProblem reports why one path segment cannot be created on
+// Windows as the plain file it names, or "" when it can. A colon names an
+// alternate data stream (or a drive); a reserved device name opens the device
+// whatever its extension; and Windows silently strips a trailing dot or space,
+// so the file on disk would not be the name that was checked. Payload entries
+// and set member names share this one rule.
+func windowsNameProblem(segment string) string {
+	if strings.Contains(segment, ":") {
+		return "contains a colon (alternate data stream or drive)"
+	}
+	if strings.HasSuffix(segment, ".") || strings.HasSuffix(segment, " ") {
+		return "ends with a dot or space"
+	}
+	stem := strings.ToUpper(strings.TrimRight(strings.SplitN(segment, ".", 2)[0], " "))
+	reserved := stem == "CON" || stem == "PRN" || stem == "AUX" || stem == "NUL" ||
+		(len(stem) == 4 && (strings.HasPrefix(stem, "COM") || strings.HasPrefix(stem, "LPT")) && stem[3] >= '0' && stem[3] <= '9')
+	if reserved {
+		return "uses a reserved Windows device name"
+	}
+	return ""
 }

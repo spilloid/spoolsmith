@@ -382,3 +382,27 @@ func copyArchive(t *testing.T, source, dest string, replace func(string) ([]byte
 		t.Fatal(err)
 	}
 }
+
+func TestValidatePayloadPathRejectsNamesWindowsCannotCreatePlainly(t *testing.T) {
+	for _, name := range []string{"a/b:stream", "x.dll:evil", "NUL", "dir/CON.txt", "trail.", "sp ace ", "a/COM1", "lpt9.inf", "driver/aux"} {
+		if err := validatePayloadPath(name); err == nil {
+			t.Errorf("validatePayloadPath(%q) = nil, want an error", name)
+		}
+	}
+	for _, name := range []string{"driver/x64/foo.inf", "foo.inf", "CONSOLE.dll", "com10.cat", "nul-free/a.b.c", "COM.inf"} {
+		if err := validatePayloadPath(name); err != nil {
+			t.Errorf("validatePayloadPath(%q) = %v, want nil", name, err)
+		}
+	}
+}
+
+func TestValidateMemberNameSharesWindowsNameRules(t *testing.T) {
+	for _, name := range []string{"CON.ssb", "com1.ssb", "a:b.ssb", "Office.ssb ", " Office.ssb"} {
+		if err := validateMemberName(name); err == nil {
+			t.Errorf("validateMemberName(%q) = nil, want an error", name)
+		}
+	}
+	if err := validateMemberName("Office.ssb"); err != nil {
+		t.Fatalf("validateMemberName(Office.ssb) = %v", err)
+	}
+}

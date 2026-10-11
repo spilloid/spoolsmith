@@ -52,10 +52,7 @@ func validateMemberName(name string) error {
 			return fmt.Errorf("bundle: unsafe member filename %q", name)
 		}
 	}
-	stem := strings.ToUpper(strings.SplitN(name, ".", 2)[0])
-	reserved := stem == "CON" || stem == "PRN" || stem == "AUX" || stem == "NUL" ||
-		(len(stem) == 4 && (strings.HasPrefix(stem, "COM") || strings.HasPrefix(stem, "LPT")) && stem[3] >= '0' && stem[3] <= '9')
-	if reserved {
+	if windowsNameProblem(name) != "" {
 		return fmt.Errorf("bundle: unsafe member filename %q", name)
 	}
 	if !strings.HasSuffix(strings.ToLower(name), ".ssb") {
