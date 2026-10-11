@@ -26,6 +26,28 @@ type ProbeOutcome struct {
 	Duration time.Duration `json:"duration"`
 }
 
+// Unanswered reports that the device itself answered none of the probes that
+// contact it: no SNMP, HTTP or PJL reply and no open port. The OUI and
+// hostname probes read the local ARP cache and DNS, not the device, so they do
+// not count. Collect still returns a nil error then; this is how a caller
+// tells "the printer is off or unreachable" from "it answered without a
+// recognizable identity". A result with no probe records (a fixture, or a
+// fake) is never reported as unanswered.
+func (r Result) Unanswered() bool {
+	if len(r.Probes) == 0 {
+		return false
+	}
+	for _, outcome := range r.Probes {
+		switch outcome.Name {
+		case "snmp", "http", "pjl":
+			if outcome.Success {
+				return false
+			}
+		}
+	}
+	return len(r.Evidence.OpenPorts) == 0
+}
+
 // Collect resolves target, runs all independent probes concurrently, and
 // assembles every value that was actually observed.
 func Collect(ctx context.Context, target string) (Result, error) {

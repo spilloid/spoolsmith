@@ -2,6 +2,7 @@ package inspect
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -60,4 +61,19 @@ func loadInspectFixture(t *testing.T, name string) evidence.Evidence {
 		t.Fatalf("LoadFixture(%q) error = %v", name, err)
 	}
 	return e
+}
+
+// TestTargetReportsAMissingFixtureFile: a path that does not exist is a
+// missing file, not a host name to look up.
+func TestTargetReportsAMissingFixtureFile(t *testing.T) {
+	for _, target := range []string{
+		filepath.Join(t.TempDir(), "missing.json"),
+		"missing-fixture.JSON",
+		`fixtures\missing`,
+	} {
+		_, err := Target(context.Background(), target)
+		if err == nil || err.Error() != "inspect: "+target+": file not found" {
+			t.Fatalf("Target(%q) = %v, want a file-not-found error", target, err)
+		}
+	}
 }

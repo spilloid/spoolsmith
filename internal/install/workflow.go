@@ -250,7 +250,7 @@ func (w Workflow) RunInstall(ctx context.Context, env Environment, input io.Read
 		} else {
 			resolution, err = options.Profile.resolution(probeResult.Evidence)
 			if errors.Is(err, errIdentityUnavailable) {
-				fmt.Fprintln(interactive, "Identity probes were unavailable; retrying once for a sleeping printer.")
+				fmt.Fprintf(interactive, "Identity probes were unavailable%s; retrying once for a sleeping printer.\n", noAnswerHint(probeResult))
 				retryResult, retryErr := w.Collect(ctx, options.Target)
 				if ctx.Err() != nil {
 					return failOutcome(outcome, ctx.Err(), ExitGeneralError)
@@ -264,7 +264,7 @@ func (w Workflow) RunInstall(ctx context.Context, env Environment, input io.Read
 				}
 			}
 			if errors.Is(err, errIdentityUnavailable) {
-				fmt.Fprintln(interactive, "Still no identity answer after retrying. Setting up offline from the saved profile instead; reachability and printing will need to be checked once it answers.")
+				fmt.Fprintf(interactive, "Still no identity answer after retrying%s. Setting up offline from the saved profile instead; reachability and printing will need to be checked once it answers.\n", noAnswerHint(probeResult))
 				options.Offline = true
 				autoOffline = true
 				resolution = options.Profile.selectedResolution()
@@ -279,10 +279,15 @@ func (w Workflow) RunInstall(ctx context.Context, env Environment, input io.Read
 	} else {
 		resolution = w.Resolve(probeResult.Evidence)
 		if resolution.Family == nil || resolution.Driver == nil {
+			if probeResult.Unanswered() {
+				// Said first: a family cannot be resolved from a printer that
+				// never answered, whatever else the resolver reports.
+				resolution.Uncertain = append([]string{noAnswerReason(probeResult)}, resolution.Uncertain...)
+			}
 			outcome.Uncertain = append([]string(nil), resolution.Uncertain...)
 			mayPrompt := inputIsTerminal && !options.NonInteractive && !options.Yes && !options.JSON
 			if !mayPrompt {
-				return failOutcome(outcome, errors.New("install: printer family could not be resolved and no forced override was given"), ExitUnresolved)
+				return failOutcome(outcome, fmt.Errorf("install: printer family could not be resolved and no forced override was given%s", noAnswerHint(probeResult)), ExitUnresolved)
 			}
 			family, selected, selectErr := SelectFamily(reader, interactive, resolution.Uncertain, w.Families())
 			if errors.Is(selectErr, ErrInvalidFamilyChoice) {
@@ -653,6 +658,22 @@ func forcedResolution(family catalog.Family, driver catalog.DriverPackage, ip st
 		Confidence:      0,
 		Uncertain:       []string{"printer family was manually selected"},
 	}
+}
+
+// noAnswerReason says that the device answered none of the probes that
+// contact it, so a dead or unreachable printer does not read as an
+// unrecognized one.
+func noAnswerReason(result probe.Result) string {
+	return "no probe received an answer from " + result.Evidence.IP
+}
+
+// noAnswerHint is noAnswerReason as a "; ..." suffix, or empty when the
+// printer answered something.
+func noAnswerHint(result probe.Result) string {
+	if !result.Unanswered() {
+		return ""
+	}
+	return "; " + noAnswerReason(result)
 }
 
 func failOutcome(outcome Outcome, err error, code ExitCode) (Outcome, ExitCode) {

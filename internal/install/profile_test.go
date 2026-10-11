@@ -80,6 +80,28 @@ func TestProfileInstallIdentityAndConfirmation(t *testing.T) {
 	}
 }
 
+// TestProfileFallbackSaysWhenNothingAnswered: the offline fallback names a
+// printer that answered nothing, rather than only "no identity".
+func TestProfileFallbackSaysWhenNothingAnswered(t *testing.T) {
+	p := sampleProfile()
+	w := testWorkflow(true)
+	w.Collect = func(_ context.Context, target string) (probe.Result, error) { return deadProbeResult(target), nil }
+	env := &offlineEnvironment{fakeEnvironment: workflowEnvironment(true, true), actual: matchingLocal(p)}
+	var interactive strings.Builder
+	outcome, code := w.RunInstall(context.Background(), env, panicReader{}, &interactive, false, InstallOptions{Profile: &p, DryRun: true})
+	if code != ExitSuccess || outcome.Resolution != "offline-fallback-operator-profile" {
+		t.Fatalf("code=%d outcome=%#v", code, outcome)
+	}
+	for _, want := range []string{
+		"Identity probes were unavailable; no probe received an answer from " + p.Target + "; retrying",
+		"Still no identity answer after retrying; no probe received an answer from " + p.Target + ". Setting up offline",
+	} {
+		if !strings.Contains(interactive.String(), want) {
+			t.Fatalf("output missing %q:\n%s", want, interactive.String())
+		}
+	}
+}
+
 func TestProfileRejectsMixedSelectionBeforeProbe(t *testing.T) {
 	w := testWorkflow(true)
 	w.Collect = func(context.Context, string) (probe.Result, error) { panic("must validate before probe") }

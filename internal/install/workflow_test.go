@@ -112,6 +112,35 @@ func TestInteractivePickerAbortExitsNotConfirmed(t *testing.T) {
 	}
 }
 
+// deadProbeResult is what Collect returns for a printer that is off: no error,
+// but nothing from the device itself.
+func deadProbeResult(ip string) probe.Result {
+	return probe.Result{
+		Evidence: evidence.Evidence{IP: ip, Provenance: "captured"},
+		Probes:   []probe.ProbeOutcome{{Name: "snmp"}, {Name: "http"}, {Name: "pjl"}, {Name: "ports", Success: true}, {Name: "oui"}, {Name: "hostname"}},
+	}
+}
+
+// TestUnresolvedFamilySaysWhenNothingAnswered: a dead printer must not read
+// as an unrecognized one.
+func TestUnresolvedFamilySaysWhenNothingAnswered(t *testing.T) {
+	for _, dead := range []bool{true, false} {
+		w := testWorkflow(false)
+		w.Collect = func(_ context.Context, target string) (probe.Result, error) {
+			result := deadProbeResult(target)
+			if !dead {
+				result.Probes[1].Success = true
+			}
+			return result, nil
+		}
+		outcome, code := w.RunInstall(context.Background(), workflowEnvironment(true, true), strings.NewReader(""), io.Discard, false, InstallOptions{Target: "192.0.2.10"})
+		hint := "no probe received an answer from 192.0.2.10"
+		if code != ExitUnresolved || strings.Contains(outcome.Error, hint) != dead || (len(outcome.Uncertain) > 0 && outcome.Uncertain[0] == hint) != dead {
+			t.Fatalf("dead=%v: code=%d outcome=%#v", dead, code, outcome)
+		}
+	}
+}
+
 // TestInteractivePickerInvalidAnswerIsNotAnAbort: a mistyped choice runs
 // nothing, but says so instead of reading as a deliberate abort.
 func TestInteractivePickerInvalidAnswerIsNotAnAbort(t *testing.T) {
