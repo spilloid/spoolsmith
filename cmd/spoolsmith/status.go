@@ -12,13 +12,32 @@ import (
 )
 
 func runStatus(ctx context.Context, args []string, stdout, stderr io.Writer, app application) int {
-	if len(args) == 3 && args[2] == "--json" {
-		args = args[:2]
+	// --json is accepted in any position and changes nothing: the result on
+	// stdout is always JSON.
+	var path string
+	jsonSeen := false
+	for index := 0; index < len(args); index++ {
+		switch args[index] {
+		case "--json":
+			if jsonSeen {
+				return usageError(stdout, stderr, "status", errors.New("duplicate flag --json"))
+			}
+			jsonSeen = true
+		case "--profile":
+			value, ok := takeValue(args, index)
+			if !ok || path != "" {
+				return usageError(stdout, stderr, "status", errors.New("status requires --profile <file> [--json]"))
+			}
+			path = value
+			index++
+		default:
+			return usageError(stdout, stderr, "status", fmt.Errorf("unexpected argument %q; status requires --profile <file> [--json]", args[index]))
+		}
 	}
-	if len(args) != 2 || args[0] != "--profile" {
+	if path == "" {
 		return usageError(stdout, stderr, "status", errors.New("status requires --profile <file> [--json]"))
 	}
-	p, err := bundle.LoadProfile(args[1])
+	p, err := bundle.LoadProfile(path)
 	if err != nil {
 		return commandError(stdout, stderr, "status", err, int(install.ExitUsageError))
 	}

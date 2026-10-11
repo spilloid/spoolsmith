@@ -186,3 +186,31 @@ func TestHelpAsAFlagValueIsNotAHelpRequest(t *testing.T) {
 		t.Error("intune build --help was intercepted instead of listing every flag")
 	}
 }
+
+func TestStatusFlagOrderDoesNotMatter(t *testing.T) {
+	saved := filepath.Join(t.TempDir(), "saved.ssb")
+	if err := bundle.SaveProfile(saved, install.Profile{Version: 1, PrinterName: "Test Printer", DriverName: "Verified Windows Driver", Target: "192.0.2.10", Evidence: evidence.Evidence{IP: "192.0.2.10", Provenance: "captured", HTTPTitle: "Test Model"}}); err != nil {
+		t.Fatal(err)
+	}
+	var first, second, stderr bytes.Buffer
+	codeFirst := run(context.Background(), []string{"status", "--profile", saved, "--json"}, strings.NewReader(""), &first, &stderr, testApplication())
+	codeSecond := run(context.Background(), []string{"status", "--json", "--profile", saved}, strings.NewReader(""), &second, &stderr, testApplication())
+	if codeFirst == int(install.ExitUsageError) || codeFirst != codeSecond || first.String() != second.String() {
+		t.Fatalf("status depends on flag order: %d %q vs %d %q; stderr=%q", codeFirst, first.String(), codeSecond, second.String(), stderr.String())
+	}
+	for _, args := range [][]string{
+		{"status"},
+		{"status", "--json"},
+		{"status", "--profile"},
+		{"status", "--profile", "--json"},
+		{"status", "--profile", saved, "--profile", saved},
+		{"status", "--profile", saved, "--json", "--json"},
+		{"status", "--profile", saved, "extra"},
+	} {
+		var stdout bytes.Buffer
+		if code := run(context.Background(), args, strings.NewReader(""), &stdout, &bytes.Buffer{}, testApplication()); code != int(install.ExitUsageError) {
+			t.Errorf("%v: code = %d, want %d", args, code, install.ExitUsageError)
+		}
+		assertValidJSON(t, stdout.Bytes())
+	}
+}
