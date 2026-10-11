@@ -235,3 +235,31 @@ func TestVersionPrintsTheBuildStamp(t *testing.T) {
 		t.Fatalf("version extra: code = %d", code)
 	}
 }
+
+func TestInstallArgumentErrorsComeBeforeLoadingThePrinterFile(t *testing.T) {
+	// The file does not exist: if it were loaded during parsing, every one of
+	// these would fail with "no such file" instead of naming the bad argument.
+	missing := filepath.Join(t.TempDir(), "big.ssb")
+	for _, tt := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"--profile", missing, "--bogus"}, "unknown flag --bogus"},
+		{[]string{"--profile", missing, "192.0.2.10"}, "cannot be combined with a target"},
+		{[]string{"--profile", missing, "--force-family", "test-family"}, "cannot be combined with a target or --force-family"},
+		{[]string{"--profile", missing, "--profile", missing}, "--profile requires one file"},
+		{[]string{"--profile", missing, "--name", "Q"}, "--name requires --windows-driver"},
+		{[]string{"192.0.2.10", "--windows-driver", "--name", "Q", "--profile", missing}, "cannot combine"},
+	} {
+		_, err := parseInstallArgs(tt.args)
+		if err == nil || !strings.Contains(err.Error(), tt.want) {
+			t.Errorf("%v: err = %v, want %q", tt.args, err, tt.want)
+		}
+	}
+	// Accepted arguments still load the file, in either order.
+	for _, args := range [][]string{{"--profile", missing, "--dry-run"}, {"--dry-run", "--profile", missing}} {
+		if _, err := parseInstallArgs(args); err == nil || !strings.Contains(err.Error(), "big.ssb") {
+			t.Errorf("%v: err = %v, want the file's own error", args, err)
+		}
+	}
+}

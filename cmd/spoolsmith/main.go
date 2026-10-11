@@ -244,6 +244,11 @@ func runCatalog(ctx context.Context, args []string, stdout, stderr io.Writer, ap
 
 func parseInstallArgs(args []string) (install.InstallOptions, error) {
 	var options install.InstallOptions
+	// The printer file is only named while parsing and is loaded once every
+	// argument has been accepted: loading verifies (and stages) its whole
+	// driver payload, which a mistyped flag or a refused combination should
+	// never pay for, and the result must not depend on argument order.
+	var profilePath string
 	seen := make(map[string]bool)
 	for index := 0; index < len(args); index++ {
 		arg := args[index]
@@ -285,12 +290,7 @@ func parseInstallArgs(args []string) (install.InstallOptions, error) {
 			}
 			seen[arg] = true
 			index++
-			p, driver, err := loadProfileFile(args[index])
-			if err != nil {
-				return options, err
-			}
-			options.Profile = &p
-			options.BundleDriver = driver
+			profilePath = args[index]
 		case "--usb-queue":
 			if seen[arg] || index+1 >= len(args) || strings.TrimSpace(args[index+1]) == "" || strings.HasPrefix(args[index+1], "-") {
 				return options, errors.New("--usb-queue requires one Windows USB printer queue name")
@@ -330,7 +330,7 @@ func parseInstallArgs(args []string) (install.InstallOptions, error) {
 		}
 	}
 	if options.WindowsDriver {
-		if options.Target == "" || options.PrinterName == "" || options.Profile != nil || options.ForceFamily != "" || options.Offline || options.USBQueue != "" {
+		if options.Target == "" || options.PrinterName == "" || profilePath != "" || options.ForceFamily != "" || options.Offline || options.USBQueue != "" {
 			return options, errors.New("use add <ip> --windows-driver --name <queue>; cannot combine with profile, offline, USB, or family options")
 		}
 		return options, nil
@@ -338,10 +338,16 @@ func parseInstallArgs(args []string) (install.InstallOptions, error) {
 	if options.PrinterName != "" {
 		return options, errors.New("--name requires --windows-driver")
 	}
-	if options.Profile != nil {
+	if profilePath != "" {
 		if options.Target != "" || options.ForceFamily != "" {
 			return options, errors.New("--profile cannot be combined with a target or --force-family")
 		}
+		p, driver, err := loadProfileFile(profilePath)
+		if err != nil {
+			return options, err
+		}
+		options.Profile = &p
+		options.BundleDriver = driver
 		return options, nil
 	}
 	if options.USBQueue != "" {
