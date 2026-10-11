@@ -94,7 +94,7 @@ func TestProfileRejectsMixedSelectionBeforeProbe(t *testing.T) {
 
 func TestProfilePlanQuotesOperatorInput(t *testing.T) {
 	p := sampleProfile()
-	p.PrinterName = "Printer $(Write-Output injected) \u201d ` \""
+	p.PrinterName = "Printer $(Write-Output injected) \u201d \u201e \u201a ` \""
 	r, err := p.resolution(p.Evidence)
 	if err != nil {
 		t.Fatal(err)
@@ -103,7 +103,7 @@ func TestProfilePlanQuotesOperatorInput(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(plan.Commands[1], "`$(Write-Output injected)") || !strings.Contains(plan.Commands[1], "`\u201d") {
+	if !strings.Contains(plan.Commands[1], "`$(Write-Output injected)") || !strings.Contains(plan.Commands[1], "`\u201d") || !strings.Contains(plan.Commands[1], "`\u201e") || !strings.Contains(plan.Commands[1], "`\u201a") {
 		t.Fatalf("unescaped: %s", plan.Commands[1])
 	}
 }

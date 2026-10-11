@@ -162,6 +162,18 @@ func TestPowerShellStringEscapesSmartQuoteInjection(t *testing.T) {
 	}
 }
 
+func TestPowerShellStringEscapesEveryQuoteCharacterPowerShellRecognizes(t *testing.T) {
+	// PowerShell treats U+2018/2019/201A/201B as single quotes and
+	// U+201C/201D/201E as double quotes; every one must be escaped.
+	for _, quote := range []string{"\"", "‘", "’", "‚", "‛", "“", "”", "„"} {
+		value := "safe" + quote + "; Remove-Printer -Name owned; " + quote
+		want := "\"safe`" + quote + "; Remove-Printer -Name owned; `" + quote + "\""
+		if got := powerShellString(value); got != want {
+			t.Errorf("powerShellString(%q) = %q, want %q", value, got, want)
+		}
+	}
+}
+
 func TestGeneratedCmdletsStopAndTranslateNonTerminatingErrors(t *testing.T) {
 	plan := mustPlan(t)
 	uninstall, err := BuildUninstallPlan("printer", "port", "driver", true)

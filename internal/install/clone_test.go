@@ -116,13 +116,13 @@ func TestCloneCommandsRejectInjectionAttempts(t *testing.T) {
 	if _, err := exportDriverCommand("driver\nname", "C:\\temp"); err == nil {
 		t.Fatal("exportDriverCommand() accepted a control character")
 	}
-	command, err := exportDriverCommand("Brother \u201cHL\u201d series", "C:\\temp\\export")
+	command, err := exportDriverCommand("Brother \u201cHL\u201d \u201eL2\u201b series", "C:\\temp\\export")
 	if err != nil {
 		t.Fatal(err)
 	}
 	// Smart quotes are real string delimiters to PowerShell; they must be
 	// escaped rather than passed through into a generated command.
-	if strings.Contains(command, "\u201cHL\u201d") && !strings.Contains(command, "`\u201cHL`\u201d") {
+	if !strings.Contains(command, "`\u201cHL`\u201d `\u201eL2`\u201b") {
 		t.Fatalf("exportDriverCommand() did not escape smart quotes: %s", command)
 	}
 	if !strings.Contains(command, "pnputil.exe /export-driver") || !strings.Contains(command, "/enum-drivers") {
