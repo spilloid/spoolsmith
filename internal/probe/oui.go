@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -85,9 +86,19 @@ func findARPAddress(file io.Reader, ip string) (net.HardwareAddr, error) {
 		if len(fields) < 4 || fields[0] != ip {
 			continue
 		}
+		// The kernel lists a neighbor it is still resolving with flags lacking
+		// ATF_COM (0x2) and an all-zero MAC. That is not an answer yet; keep
+		// looking so the caller's retry loop gets another chance.
+		flags, err := strconv.ParseUint(strings.TrimPrefix(fields[2], "0x"), 16, 32)
+		if err != nil || flags&0x2 == 0 {
+			continue
+		}
 		mac, err := net.ParseMAC(fields[3])
 		if err != nil {
 			return nil, fmt.Errorf("ARP cache has invalid MAC for %s: %w", ip, err)
+		}
+		if isZeroMAC(mac) {
+			continue
 		}
 		return mac, nil
 	}
@@ -95,6 +106,15 @@ func findARPAddress(file io.Reader, ip string) (net.HardwareAddr, error) {
 		return nil, fmt.Errorf("read ARP cache: %w", err)
 	}
 	return nil, fmt.Errorf("%w: IP %s is not present in ARP cache", errARPEntryNotFound, ip)
+}
+
+func isZeroMAC(mac net.HardwareAddr) bool {
+	for _, b := range mac {
+		if b != 0 {
+			return false
+		}
+	}
+	return true
 }
 
 func lookupOUI(mac net.HardwareAddr) (string, bool) {
