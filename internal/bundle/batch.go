@@ -153,11 +153,6 @@ func CreateAll(ctx context.Context, env install.Environment, collect Collector, 
 				}
 			},
 		})
-		if created.ExportDir != "" {
-			// The payload now lives inside the member; the working export
-			// is not worth keeping per queue in a batch.
-			os.RemoveAll(created.ExportDir)
-		}
 		if err != nil {
 			outcome.Status, outcome.Reason = "error", err.Error()
 			result.Failed++

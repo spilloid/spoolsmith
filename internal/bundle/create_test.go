@@ -209,6 +209,59 @@ func TestCreatePrefersTheDriverAndFallsBackToSettingsOnly(t *testing.T) {
 	}
 }
 
+// TestCreateRemovesItsDriverExport guards against a single-queue copy leaving
+// its spoolsmith-export-* working directory (up to a bundle's worth of driver
+// files) in the temp folder: the payload lives inside the bundle once it is
+// written, so nothing outside it is worth keeping, on success or failure.
+func TestCreateRemovesItsDriverExport(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		prepare func(env *batchEnvironment, path string)
+		wantErr bool
+	}{
+		{name: "written"},
+		{name: "write fails", wantErr: true, prepare: func(_ *batchEnvironment, path string) {
+			// Another file takes the name after the preflight, so both the
+			// driver write and the settings-only fallback fail.
+			if err := os.WriteFile(path, []byte("raced"), 0600); err != nil {
+				panic(err)
+			}
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			temp := isolateTemp(t)
+			env := newBatchEnvironment(t, "Front Desk")
+			path := filepath.Join(t.TempDir(), "front-desk.ssb")
+			collect := batchCollect
+			if tc.prepare != nil {
+				collect = func(ctx context.Context, address string) (probe.Result, error) {
+					tc.prepare(env, path)
+					return batchCollect(ctx, address)
+				}
+			}
+			result, err := Create(context.Background(), env, collect, CreateOptions{QueueName: "Front Desk", Path: path})
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("Create() = %v, wantErr %v", err, tc.wantErr)
+			}
+			if !tc.wantErr && result.Manifest.Driver == nil {
+				t.Fatal("driver was not embedded; the test would not exercise an export")
+			}
+			if len(env.exports) != 1 {
+				t.Fatalf("exports = %v, want one", env.exports)
+			}
+			entries, err := os.ReadDir(temp)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, entry := range entries {
+				if strings.HasPrefix(entry.Name(), "spoolsmith-export-") {
+					t.Fatalf("Create() left %s behind in the temp folder", entry.Name())
+				}
+			}
+		})
+	}
+}
+
 func TestCopyWarningsKeepsEveryWarning(t *testing.T) {
 	cloned := install.ClonedQueue{
 		USB: true, DriverName: "Brother HL-L2315D series", HostAddress: "192.0.2.10",

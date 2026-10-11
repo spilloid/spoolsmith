@@ -41,9 +41,6 @@ type CreateOptions struct {
 type CreateResult struct {
 	Manifest Manifest
 	Warning  string
-	// ExportDir is the retained driver-export working directory, empty when no
-	// driver was carried.
-	ExportDir string
 	// DriverNotIncluded is empty when the driver is embedded in the bundle.
 	// Otherwise it says, in plain words, why it is not and what the other PC
 	// therefore needs.
@@ -215,10 +212,14 @@ func Create(ctx context.Context, env install.Environment, collect Collector, opt
 	payloadRoot := ""
 	if tryDriver {
 		root, driver, exportErr := exportDriver(ctx, env, cloned.DriverName, report)
+		if root != "" {
+			// The export is only a working copy: once the bundle is written
+			// and read back, the payload lives inside it. Removed on every
+			// return, success or failure, so a copy never leaves up to a
+			// bundle's worth of driver files behind in the temp folder.
+			defer os.RemoveAll(root)
+		}
 		if err := ctx.Err(); err != nil {
-			if root != "" {
-				os.RemoveAll(root)
-			}
 			return CreateResult{}, err
 		}
 		if exportErr != nil {
@@ -233,9 +234,6 @@ func Create(ctx context.Context, env install.Environment, collect Collector, opt
 
 	report("Writing the file...")
 	if err := ctx.Err(); err != nil {
-		if payloadRoot != "" {
-			os.RemoveAll(payloadRoot)
-		}
 		return CreateResult{}, err
 	}
 	if err := Write(opts.Path, manifest, payloadRoot); err != nil {
@@ -245,15 +243,12 @@ func Create(ctx context.Context, env install.Environment, collect Collector, opt
 		// The export succeeded but could not be packaged (for example, a
 		// driver package above the bundle size limit). Fall back to the
 		// settings rather than failing the copy.
-		os.RemoveAll(payloadRoot)
-		payloadRoot = ""
 		manifest.Driver = nil
 		notIncluded(fmt.Sprintf("the driver could not be packaged (%v)", err))
 		if err := Write(opts.Path, manifest, ""); err != nil {
 			return CreateResult{}, err
 		}
 	}
-	result.ExportDir = payloadRoot
 
 	// Read back what was just written rather than trusting the write.
 	report("Checking the file can be read back...")
@@ -271,7 +266,8 @@ func Create(ctx context.Context, env install.Environment, collect Collector, opt
 
 // exportDriver copies the named driver's package out of the Windows driver
 // store into a fresh working directory and describes it for the manifest. On
-// failure the working directory is removed and root is empty.
+// failure the working directory is removed and root is empty; on success the
+// caller owns root and removes it once the bundle is written.
 func exportDriver(ctx context.Context, env install.Environment, driverName string, report func(string)) (root string, driver *DriverPayload, err error) {
 	exportRoot, err := os.MkdirTemp("", "spoolsmith-export-")
 	if err != nil {
@@ -295,8 +291,6 @@ func exportDriver(ctx context.Context, env install.Environment, driverName strin
 	if err != nil {
 		return "", nil, err
 	}
-	// Retained rather than deleted on success, matching how the existing
-	// driver-staging path treats its own working directory.
 	return exportRoot, &DriverPayload{
 		WindowsDriverName: driverName,
 		INF:               infRelative,
