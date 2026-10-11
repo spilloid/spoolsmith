@@ -655,11 +655,6 @@ func executableDir() []string {
 	return nil
 }
 
-func isTerminal(file *os.File) bool {
-	info, err := file.Stat()
-	return err == nil && info.Mode()&os.ModeCharDevice != 0
-}
-
 // pendingDeprecationNote is appended to the help of commands that belong to
 // the original catalog-driven design. SpoolSmith copies a printer that
 // already works instead of identifying a model and choosing its OEM driver;
