@@ -285,6 +285,9 @@ func (w Workflow) RunInstall(ctx context.Context, env Environment, input io.Read
 				return failOutcome(outcome, errors.New("install: printer family could not be resolved and no forced override was given"), ExitUnresolved)
 			}
 			family, selected, selectErr := SelectFamily(reader, interactive, resolution.Uncertain, w.Families())
+			if errors.Is(selectErr, ErrInvalidFamilyChoice) {
+				return failOutcome(outcome, fmt.Errorf("%w; no commands were run", selectErr), ExitUsageError)
+			}
 			if selectErr != nil {
 				return failOutcome(outcome, fmt.Errorf("install: select family: %w", selectErr), ExitGeneralError)
 			}
@@ -581,7 +584,13 @@ func (w Workflow) RunUninstall(ctx context.Context, env Environment, input io.Re
 	return outcome, ExitSuccess
 }
 
+// ErrInvalidFamilyChoice is an answer to the family picker that is neither a
+// listed number nor an abort. It is reported as such, never read as an abort.
+var ErrInvalidFamilyChoice = errors.New("install: not a valid choice")
+
 // SelectFamily prints an unresolved result and a single-choice catalog picker.
+// An empty answer (or end of input) and 'a' abort; any other answer that is
+// not a listed number returns ErrInvalidFamilyChoice.
 func SelectFamily(input io.Reader, interactive io.Writer, uncertain []string, families []catalog.Family) (catalog.Family, bool, error) {
 	fmt.Fprintln(interactive, "Uncertain")
 	for _, reason := range uncertain {
@@ -595,12 +604,12 @@ func SelectFamily(input io.Reader, interactive io.Writer, uncertain []string, fa
 	if err != nil {
 		return catalog.Family{}, false, err
 	}
-	if strings.EqualFold(answer, "a") {
+	if answer == "" || strings.EqualFold(answer, "a") {
 		return catalog.Family{}, false, nil
 	}
 	choice, err := strconv.Atoi(answer)
 	if err != nil || choice < 1 || choice > len(families) {
-		return catalog.Family{}, false, nil
+		return catalog.Family{}, false, fmt.Errorf("%w: %q; enter a number from 1 to %d, or 'a' to abort", ErrInvalidFamilyChoice, answer, len(families))
 	}
 	return families[choice-1], true, nil
 }

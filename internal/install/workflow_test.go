@@ -57,20 +57,29 @@ func TestForceFamilyValidAndInvalid(t *testing.T) {
 func TestSelectFamilyAbortAndSelection(t *testing.T) {
 	families := testWorkflow(true).Families()
 	tests := []struct {
-		name       string
-		input      string
-		wantChosen bool
-		wantID     string
+		name        string
+		input       string
+		wantChosen  bool
+		wantID      string
+		wantInvalid bool
 	}{
 		{name: "abort", input: "a\n"},
-		{name: "invalid", input: "99\n"},
+		{name: "empty answer aborts", input: "\n"},
+		{name: "end of input aborts", input: ""},
+		{name: "out of range", input: "99\n", wantInvalid: true},
+		{name: "zero", input: "0\n", wantInvalid: true},
+		{name: "not a number", input: "first\n", wantInvalid: true},
 		{name: "select", input: "1\n", wantChosen: true, wantID: "test-family"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var interactive bytes.Buffer
 			family, chosen, err := SelectFamily(strings.NewReader(tt.input), &interactive, []string{"no exact match"}, families)
-			if err != nil || chosen != tt.wantChosen || family.ID != tt.wantID {
+			if tt.wantInvalid {
+				if !errors.Is(err, ErrInvalidFamilyChoice) || chosen || !strings.Contains(err.Error(), "not a valid choice") {
+					t.Fatalf("SelectFamily(%q) = (%#v, %t, %v), want ErrInvalidFamilyChoice", tt.input, family, chosen, err)
+				}
+			} else if err != nil || chosen != tt.wantChosen || family.ID != tt.wantID {
 				t.Fatalf("SelectFamily() = (%#v, %t, %v)", family, chosen, err)
 			}
 			if !strings.Contains(interactive.String(), "no exact match") || !strings.Contains(interactive.String(), "Select a family by number, or 'a' to abort:") {
@@ -99,6 +108,16 @@ func TestInteractivePickerAbortExitsNotConfirmed(t *testing.T) {
 	env := workflowEnvironment(true, true)
 	outcome, code := testWorkflow(false).RunInstall(context.Background(), env, strings.NewReader("a\n"), io.Discard, true, InstallOptions{Target: "192.0.2.10"})
 	if code != ExitNotConfirmed || outcome.Status != "not-confirmed" || len(env.ran) != 0 {
+		t.Fatalf("RunInstall() = code %d, outcome %#v, ran %#v", code, outcome, env.ran)
+	}
+}
+
+// TestInteractivePickerInvalidAnswerIsNotAnAbort: a mistyped choice runs
+// nothing, but says so instead of reading as a deliberate abort.
+func TestInteractivePickerInvalidAnswerIsNotAnAbort(t *testing.T) {
+	env := workflowEnvironment(true, true)
+	outcome, code := testWorkflow(false).RunInstall(context.Background(), env, strings.NewReader("7\n"), io.Discard, true, InstallOptions{Target: "192.0.2.10"})
+	if code != ExitUsageError || outcome.Status == "not-confirmed" || !strings.Contains(outcome.Error, "not a valid choice") || len(env.ran) != 0 {
 		t.Fatalf("RunInstall() = code %d, outcome %#v, ran %#v", code, outcome, env.ran)
 	}
 }
