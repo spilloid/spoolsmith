@@ -207,7 +207,10 @@ func (w Workflow) RunInstall(ctx context.Context, env Environment, input io.Read
 	if err != nil {
 		return failOutcome(outcome, fmt.Errorf("install: collect evidence: %w", err), ExitGeneralError)
 	}
-	if options.Profile != nil && options.Profile.Evidence.IPPModel != "" {
+	// An offline run never contacts the printer, IPP included. Online, an IPP
+	// profile that cannot be reached fails here outright: it skipped the
+	// legacy probes above, so it never takes their generic offline fallback.
+	if !options.Offline && options.Profile != nil && options.Profile.Evidence.IPPModel != "" {
 		discover := w.DiscoverIPP
 		if discover == nil {
 			discover = DiscoverIPPEndpoint

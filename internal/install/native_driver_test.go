@@ -144,6 +144,27 @@ func TestWorkflowIPPPlanRequestsNativeDriverUnlessOffline(t *testing.T) {
 	}
 }
 
+func TestWorkflowOfflineIPPProfileSkipsLiveIPPDiscovery(t *testing.T) {
+	p, err := windowsIPPProfile("192.0.2.10", "Office", "ipp://192.0.2.10/ipp/print", "Example Printer 100")
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := testWorkflow(true)
+	called := false
+	w.DiscoverIPP = func(context.Context, string) (string, string, error) {
+		called = true
+		return "", "", errors.New("printer unreachable")
+	}
+	env := &offlineEnvironment{fakeEnvironment: workflowEnvironment(true, false)}
+	out, code := w.RunInstall(context.Background(), env, strings.NewReader(""), io.Discard, false, InstallOptions{Profile: &p, DryRun: true, Offline: true})
+	if code != ExitSuccess || out.Plan == nil || out.Plan.NativeDriver {
+		t.Fatalf("offline IPP profile must plan without a live probe: %+v code=%d", out, code)
+	}
+	if called {
+		t.Fatal("--offline must not contact the printer for IPP discovery")
+	}
+}
+
 func TestNormalizationIsASCIIOnlyAndRejectsUnusableModels(t *testing.T) {
 	for model, want := range map[string]string{"Example Printer-100": "exampleprinter100", "打印机": "", "İPrinter 100": "printer100", "  ": ""} {
 		if got := normalizeDriverName(model); got != want {
