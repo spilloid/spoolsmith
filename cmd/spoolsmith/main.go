@@ -159,9 +159,11 @@ func run(ctx context.Context, args []string, input io.Reader, stdout, stderr io.
 		}
 		// A printer file (.ssb) or printer set (.zip) is the same job `bundle
 		// inspect` already does -- one command name, not two commands that
-		// overlap on one file type. runBundle itself dispatches on content.
+		// overlap on one file type. inspectPrinterFile dispatches on content;
+		// it reports under this command's name, and a file that cannot be
+		// opened exits 1 like any other missing inspect target.
 		if ext := filepath.Ext(args[1]); strings.EqualFold(ext, ".ssb") || strings.EqualFold(ext, bundle.SetExt) {
-			return runBundle([]string{"inspect", args[1]}, stdout, stderr)
+			return inspectPrinterFile("inspect", args[1], install.ExitGeneralError, stdout, stderr)
 		}
 		result, err := inspect.Target(ctx, args[1])
 		if err != nil {

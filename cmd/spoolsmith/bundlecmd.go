@@ -486,23 +486,31 @@ func runBundle(args []string, stdout, stderr io.Writer) int {
 	if len(args) != 2 || args[0] != "inspect" {
 		return usageError(stdout, stderr, "bundle", errors.New("bundle requires inspect <file.ssb|set.zip>"))
 	}
-	isSet, err := bundle.IsSet(args[1])
+	return inspectPrinterFile("bundle inspect", args[1], install.ExitUsageError, stdout, stderr)
+}
+
+// inspectPrinterFile backs both `bundle inspect` and `inspect <file.ssb>`.
+// command names the command in the output, and openFailure is the exit code
+// for a file that cannot be opened at all, so `inspect` reports a missing
+// .ssb the same way as any other missing inspect target.
+func inspectPrinterFile(command, path string, openFailure install.ExitCode, stdout, stderr io.Writer) int {
+	isSet, err := bundle.IsSet(path)
 	if err != nil {
-		return commandError(stdout, stderr, "bundle inspect", err, int(install.ExitUsageError))
+		return commandError(stdout, stderr, command, err, int(openFailure))
 	}
 	if isSet {
-		return inspectSet(args[1], stdout, stderr)
+		return inspectSet(command, path, openFailure, stdout, stderr)
 	}
-	opened, err := bundle.Open(args[1])
+	opened, err := bundle.Open(path)
 	if err != nil {
-		return commandError(stdout, stderr, "bundle inspect", err, int(install.ExitUsageError))
+		return commandError(stdout, stderr, command, err, int(openFailure))
 	}
 	defer opened.Close()
 	if err := opened.Verify(); err != nil {
-		return commandError(stdout, stderr, "bundle inspect", err, int(install.ExitGeneralError))
+		return commandError(stdout, stderr, command, err, int(install.ExitGeneralError))
 	}
 	m := opened.Manifest
-	fmt.Fprintf(stderr, "Printer file: %s\n  Created: %s by %s\n  Source machine: %s\n", args[1], m.Created, shown(m.CreatedBy), shown(m.SourceHost))
+	fmt.Fprintf(stderr, "Printer file: %s\n  Created: %s by %s\n  Source machine: %s\n", path, m.Created, shown(m.CreatedBy), shown(m.SourceHost))
 	if m.Note != "" {
 		fmt.Fprintf(stderr, "  Note: %s\n", m.Note)
 	}
@@ -529,7 +537,7 @@ func runBundle(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "  All payload files match the manifest's hashes.")
 	}
 	fmt.Fprintln(stderr, "  This checks the file's integrity, not the printer. Preview against a real target with: spoolsmith apply <file> --dry-run")
-	return encodeSuccess(stdout, stderr, "bundle inspect", m)
+	return encodeSuccess(stdout, stderr, command, m)
 }
 
 // setInspectMember describes one member of a printer set.
@@ -554,15 +562,15 @@ type setInspectResult struct {
 // inspectSet lists a printer set's members, each verified as its own printer
 // file. Members are extracted to a private working folder that is removed
 // afterwards; nothing is applied.
-func inspectSet(path string, stdout, stderr io.Writer) int {
+func inspectSet(command, path string, openFailure install.ExitCode, stdout, stderr io.Writer) int {
 	set, err := bundle.OpenSet(path)
 	if err != nil {
-		return commandError(stdout, stderr, "bundle inspect", err, int(install.ExitUsageError))
+		return commandError(stdout, stderr, command, err, int(openFailure))
 	}
 	defer set.Close()
 	work, err := os.MkdirTemp("", "spoolsmith-inspect-set-")
 	if err != nil {
-		return commandError(stdout, stderr, "bundle inspect", err, int(install.ExitGeneralError))
+		return commandError(stdout, stderr, command, err, int(install.ExitGeneralError))
 	}
 	defer os.RemoveAll(work)
 
@@ -616,11 +624,11 @@ func inspectSet(path string, stdout, stderr io.Writer) int {
 	fmt.Fprintln(stderr, "  This checks each file's integrity, not the printers. Preview against a real target with: spoolsmith apply <set.zip> --dry-run")
 	if invalid > 0 {
 		if err := encodeJSON(stdout, result); err != nil {
-			fmt.Fprintf(stderr, "spoolsmith bundle inspect: encode result: %v\n", err)
+			fmt.Fprintf(stderr, "spoolsmith %s: encode result: %v\n", command, err)
 		}
 		return int(install.ExitGeneralError)
 	}
-	return encodeSuccess(stdout, stderr, "bundle inspect", result)
+	return encodeSuccess(stdout, stderr, command, result)
 }
 
 func shown(value string) string {

@@ -447,6 +447,29 @@ func TestInspectRoutesABundleTargetToBundleInspect(t *testing.T) {
 	}
 }
 
+func TestInspectReportsAMissingPrinterFileLikeAnyMissingTarget(t *testing.T) {
+	dir := t.TempDir()
+	codes := map[string]int{}
+	for _, target := range []string{"missing.ssb", "missing.zip", "missing.json"} {
+		var stdout, stderr bytes.Buffer
+		code := run(context.Background(), []string{"inspect", filepath.Join(dir, target)}, strings.NewReader(""), &stdout, &stderr, testApplication())
+		var response errorResponse
+		if err := json.Unmarshal(stdout.Bytes(), &response); err != nil || response.Command != "inspect" {
+			t.Fatalf("inspect %s: stdout = %s (%v)", target, stdout.String(), err)
+		}
+		codes[target] = code
+	}
+	if codes["missing.ssb"] != int(install.ExitGeneralError) || codes["missing.zip"] != codes["missing.json"] || codes["missing.ssb"] != codes["missing.json"] {
+		t.Fatalf("inspect exit codes differ by target type: %v", codes)
+	}
+	// bundle inspect keeps its own name and its usage-error code for an
+	// unopenable file.
+	var stdout bytes.Buffer
+	if code := run(context.Background(), []string{"bundle", "inspect", filepath.Join(dir, "missing.ssb")}, strings.NewReader(""), &stdout, &bytes.Buffer{}, testApplication()); code != int(install.ExitUsageError) || !strings.Contains(stdout.String(), `"bundle inspect"`) {
+		t.Fatalf("bundle inspect missing: code %d %s", code, stdout.String())
+	}
+}
+
 func TestCopyReportsWhyTheDriverWasNotIncluded(t *testing.T) {
 	for _, tc := range []struct {
 		name  string
