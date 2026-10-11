@@ -116,6 +116,12 @@ func run(ctx context.Context, args []string, input io.Reader, stdout, stderr io.
 		}
 		return encodeSuccess(stdout, stderr, "drivers", names)
 	case "--help", "-h", "help":
+		if len(args) > 2 {
+			if usage, ok := commandUsage[args[1]+" "+args[2]]; ok {
+				fmt.Fprint(stdout, usage)
+				return 0
+			}
+		}
 		if len(args) > 1 {
 			if usage, ok := commandUsage[args[1]]; ok {
 				fmt.Fprint(stdout, usage)
@@ -423,12 +429,26 @@ func usageError(stdout, stderr io.Writer, command string, err error) int {
 	// Show the one command's own syntax, not the entire catalog, whenever a
 	// mistake can be attributed to a specific command; fall back to the full
 	// listing only for a genuinely unknown or unnamed command.
-	if usage, ok := commandUsage[command]; ok {
+	if usage, ok := lookupUsage(command); ok {
 		fmt.Fprint(stderr, usage)
 	} else {
 		printUsage(stderr)
 	}
 	return code
+}
+
+// lookupUsage finds a command's own syntax. A subcommand ("profile edit")
+// without an entry of its own falls back to its parent command ("profile")
+// rather than to the whole catalog.
+func lookupUsage(command string) (string, bool) {
+	if usage, ok := commandUsage[command]; ok {
+		return usage, true
+	}
+	if first, _, found := strings.Cut(command, " "); found {
+		usage, ok := commandUsage[first]
+		return usage, ok
+	}
+	return "", false
 }
 
 func encodeJSON(writer io.Writer, value any) error {
@@ -455,28 +475,44 @@ var commandUsage = map[string]string{
 		"                                [--plan-hash <fingerprint>] [--yes] [--non-interactive] [--json]\n" +
 		"A .ssb is one printer; a .zip is a printer set. Each printer in a set gets its own plan and\n" +
 		"its own confirmation; --member applies just one of them.\n",
-	"bundle": "spoolsmith bundle inspect <file.ssb|set.zip>  read a printer file or printer set, touching nothing\n",
-	"profile": "spoolsmith profile export-all <folder> <set.zip> [--dry-run]\n" +
-		"spoolsmith profile import-all <set.zip> <folder> [--dry-run]\n" +
-		"--dry-run reviews filenames, printer settings and destination conflicts without writing files.\n" +
-		"spoolsmith profile capture <target> <file> --name <queue> --driver <installed-driver-name>\n" +
-		"spoolsmith profile capture <ip> <file.ssb> --name <queue> --windows-driver\n" +
-		"spoolsmith profile edit <file> [--name <queue>] [--driver <name>] [--target <ip>]\n" +
-		"spoolsmith profile edit <file> [--package <recipe-id> --archive <local-file>] [--clear-package]\n",
-	"add":       "spoolsmith add <ip> --windows-driver --name <queue> [--dry-run] [--yes] [--json]\nspoolsmith add --profile <file> [--usb-queue <name>] [--offline] [--dry-run] [--yes] [--json]\n",
-	"configure": "spoolsmith configure --profile <file> [--usb-queue <name>] [--offline] [--dry-run] [--yes] [--json]\n",
-	"install":   "spoolsmith install <ip> --windows-driver --name <queue> [--dry-run] [--yes] [--json]\nspoolsmith install <ip> [--force-family <id>] [--dry-run|--what-if] [--yes] [--non-interactive] [--json]\n",
-	"repoint":   "spoolsmith repoint <queue> <new-ip> [--dry-run] [--yes] [--non-interactive] [--json]\n",
-	"remove":    "spoolsmith remove --profile <file> [--dry-run] [--json]\n",
-	"uninstall": "spoolsmith uninstall <printer-name> [--purge-driver] [--dry-run|--what-if] [--yes] [--non-interactive] [--json]\n",
-	"intune": "spoolsmith intune wizard                   interactive, one export directory at a time\n" +
-		"spoolsmith intune build --profile <file> --binary <exe> [--revision <n>] [--dry-run]\n" +
+	"bundle":         bundleInspectUsage,
+	"bundle inspect": bundleInspectUsage,
+	"profile": profileExportAllUsage + profileImportAllUsage + transferDryRunNote +
+		profileCaptureUsage + profileEditUsage,
+	"profile export-all": profileExportAllUsage + transferDryRunNote,
+	"profile import-all": profileImportAllUsage + transferDryRunNote,
+	"profile edit":       profileEditUsage,
+	"help":               "spoolsmith help [<command>]                every command, or one command's syntax\n",
+	"add":                "spoolsmith add <ip> --windows-driver --name <queue> [--dry-run] [--yes] [--json]\nspoolsmith add --profile <file> [--usb-queue <name>] [--offline] [--dry-run] [--yes] [--json]\n",
+	"configure":          "spoolsmith configure --profile <file> [--usb-queue <name>] [--offline] [--dry-run] [--yes] [--json]\n",
+	"install":            "spoolsmith install <ip> --windows-driver --name <queue> [--dry-run] [--yes] [--json]\nspoolsmith install <ip> [--force-family <id>] [--dry-run|--what-if] [--yes] [--non-interactive] [--json]\n",
+	"repoint":            "spoolsmith repoint <queue> <new-ip> [--dry-run] [--yes] [--non-interactive] [--json]\n",
+	"remove":             "spoolsmith remove --profile <file> [--dry-run] [--json]\n",
+	"uninstall":          "spoolsmith uninstall <printer-name> [--purge-driver] [--dry-run|--what-if] [--yes] [--non-interactive] [--json]\n",
+	"intune":             intuneWizardUsage + intuneBuildUsage,
+	"intune wizard":      intuneWizardUsage,
+	"intune build":       intuneBuildUsage,
+}
+
+// The subcommand syntax below is shared by the subcommand's own entry, its
+// parent command's entry and the full listing, so they cannot drift apart.
+const (
+	bundleInspectUsage    = "spoolsmith bundle inspect <file.ssb|set.zip>  read a printer file or printer set, touching nothing\n"
+	profileExportAllUsage = "spoolsmith profile export-all <folder> <set.zip> [--dry-run]\n"
+	profileImportAllUsage = "spoolsmith profile import-all <set.zip> <folder> [--dry-run]\n"
+	transferDryRunNote    = "--dry-run reviews filenames, printer settings and destination conflicts without writing files.\n"
+	profileCaptureUsage   = "spoolsmith profile capture <target> <file> --name <queue> --driver <installed-driver-name>\n" +
+		"spoolsmith profile capture <ip> <file.ssb> --name <queue> --windows-driver\n"
+	profileEditUsage = "spoolsmith profile edit <file> [--name <queue>] [--driver <name>] [--target <ip>]\n" +
+		"spoolsmith profile edit <file> [--package <recipe-id> --archive <local-file> | --clear-package]\n"
+	intuneWizardUsage = "spoolsmith intune wizard                   interactive, one export directory at a time\n"
+	intuneBuildUsage  = "spoolsmith intune build --profile <file> --binary <exe> [--revision <n>] [--dry-run]\n" +
 		"--binary-sha256, --id, --name, --description and --output are all derived from the profile\n" +
 		"when omitted; give them explicitly only to override the suggested value.\n" +
 		"If Microsoft's IntuneWinAppUtil.exe is beside spoolsmith.exe it also creates the .intunewin\n" +
 		"(--content-prep-tool/--content-prep-output override it; --no-content-prep skips it).\n" +
-		"Never signs in to a tenant or uploads anything; `intune build --help` lists every flag.\n",
-}
+		"Never signs in to a tenant or uploads anything; `intune build --help` lists every flag.\n"
+)
 
 // copyUsage is shared by `copy --help` and the full listing.
 const copyUsage = "spoolsmith copy [<queue>] [--out <file.ssb>] [--settings-only] [--note <text>]\n" +
@@ -502,22 +538,16 @@ func printUsage(writer io.Writer) {
 	fmt.Fprintln(writer, "  spoolsmith status --profile <file> [--json] local configuration only, no network")
 	fmt.Fprintln(writer, "")
 	fmt.Fprintln(writer, "Copy a printer from one PC to another")
-	for _, line := range strings.Split(strings.TrimSuffix(copyUsage, "\n"), "\n") {
-		fmt.Fprintln(writer, "  "+line)
-	}
+	printIndented(writer, copyUsage)
 	fmt.Fprintln(writer, "  spoolsmith apply <file.ssb|set.zip> [--member <name>] [--usb-queue <name>] [--dry-run] [--offline] [--update]")
 	fmt.Fprintln(writer, "                                 [--plan-hash <fingerprint>] [--yes] [--non-interactive] [--json]")
-	fmt.Fprintln(writer, "  spoolsmith bundle inspect <file.ssb|set.zip>  read a printer file or printer set, touching nothing")
+	printIndented(writer, bundleInspectUsage)
 	fmt.Fprintln(writer, "  Each printer in a set gets its own plan and its own confirmation.")
 	fmt.Fprintln(writer, "")
 	fmt.Fprintln(writer, "Find and save a printer")
 	fmt.Fprintln(writer, "  spoolsmith discover <IPv4-CIDR>            /24 through /32")
 	fmt.Fprintln(writer, "  spoolsmith inspect <target>")
-	fmt.Fprintln(writer, "  spoolsmith profile export-all <folder> <set.zip> [--dry-run]")
-	fmt.Fprintln(writer, "  spoolsmith profile import-all <set.zip> <folder> [--dry-run]")
-	fmt.Fprintln(writer, "  spoolsmith profile capture <target> <file> --name <queue> --driver <installed-driver-name>")
-	fmt.Fprintln(writer, "  spoolsmith profile edit <file> [--name <queue>] [--driver <name>] [--target <ip>]")
-	fmt.Fprintln(writer, "  spoolsmith profile edit <file> [--package <recipe-id> --archive <local-file> | --clear-package]")
+	printIndented(writer, profileExportAllUsage+profileImportAllUsage+profileCaptureUsage+profileEditUsage)
 	fmt.Fprintln(writer, "")
 	fmt.Fprintln(writer, "Map, change, and remove queues")
 	fmt.Fprintln(writer, "  spoolsmith add <ip> --windows-driver --name <queue> [--dry-run] [--yes] [--json]")
@@ -528,7 +558,7 @@ func printUsage(writer io.Writer) {
 	fmt.Fprintln(writer, "  spoolsmith uninstall <printer-name> [--purge-driver] [--dry-run|--what-if] [--yes] [--non-interactive] [--json]")
 	fmt.Fprintln(writer, "")
 	fmt.Fprintln(writer, "Package a validated profile for Intune (local only; never contacts a tenant)")
-	fmt.Fprintln(writer, "  spoolsmith intune wizard                   interactive, one export directory at a time")
+	printIndented(writer, intuneWizardUsage)
 	fmt.Fprintln(writer, "  spoolsmith intune build --profile <file> --binary <exe> [--revision <n>] [--dry-run]")
 	fmt.Fprintln(writer, "  --binary-sha256, --id, --name, --description and --output are all derived from the")
 	fmt.Fprintln(writer, "  profile when omitted; give them explicitly only to override the suggested value.")
@@ -544,6 +574,14 @@ func printUsage(writer io.Writer) {
 	fmt.Fprintln(writer, "")
 	fmt.Fprintln(writer, "--dry-run/--what-if takes precedence over --yes and never prompts or mutates.")
 	fmt.Fprintln(writer, "--offline skips the live identity check; the plan says so before you confirm it.")
+}
+
+// printIndented writes a shared usage block into the full listing, indented
+// like the rest of it.
+func printIndented(writer io.Writer, usage string) {
+	for _, line := range strings.Split(strings.TrimSuffix(usage, "\n"), "\n") {
+		fmt.Fprintln(writer, "  "+line)
+	}
 }
 
 // executableDir is the folder holding this program, where an administrator
