@@ -31,13 +31,14 @@
       <h1>Command-line reference</h1>
       <p class="lead">Every <code>spoolsmith.exe</code> command, grouped the way <code>spoolsmith help</code> groups them. Run <code>spoolsmith help &lt;command&gt;</code> or <code>spoolsmith &lt;command&gt; --help</code> for one command's syntax.</p>
 
-      <h2 id="options-that-work-everywhere">Options that work everywhere<a class="heading-anchor" href="#options-that-work-everywhere" aria-label="Link to this section">#</a></h2>
+      <h2 id="options-that-work-everywhere">Common options<a class="heading-anchor" href="#options-that-work-everywhere" aria-label="Link to this section">#</a></h2>
+      <p>These mean the same thing on every command that takes them, but not every command takes them. "Commands that change Windows" are <code>add</code>, <code>configure</code>, <code>install</code>, <code>apply</code>, <code>repoint</code> and <code>remove</code>/<code>uninstall</code>; each command's own syntax below lists exactly what it accepts.</p>
       <div class="cmd"><dl>
-        <dt>--dry-run</dt><dd>Show the plan and change nothing. It overrides <code>--yes</code> and never prompts. <code>--what-if</code> is an alias on <code>install</code> and <code>uninstall</code>.</dd>
-        <dt>--yes</dt><dd>Accept the plan this PC computes without prompting. On <code>apply</code>, prefer <code>--plan-hash</code>, which accepts only a plan you've reviewed.</dd>
-        <dt>--non-interactive</dt><dd>Never prompt. Anything that would need an answer fails instead.</dd>
-        <dt>--json</dt><dd>Write the machine-readable result to stdout. With <code>--dry-run</code>, it includes the complete plan.</dd>
-        <dt>--offline</dt><dd>Skip the live printer identity check from the start. The plan says so before you confirm.</dd>
+        <dt>--dry-run</dt><dd>Show the plan and change nothing. It overrides <code>--yes</code> and never prompts. On the commands that change Windows, and as a preview on <code>profile export-all</code>, <code>profile import-all</code> and <code>intune build</code>. <code>--what-if</code> is an alias on the commands that change Windows.</dd>
+        <dt>--yes</dt><dd>Commands that change Windows: accept the plan this PC computes without prompting. On <code>apply</code>, prefer <code>--plan-hash</code>, which accepts only a plan you've reviewed.</dd>
+        <dt>--non-interactive</dt><dd>Commands that change Windows: never prompt. Anything that would need an answer fails instead.</dd>
+        <dt>--json</dt><dd>Write the machine-readable result to stdout even at a terminal: on the commands that change Windows, <code>printers</code> and <code>status</code>. With <code>--dry-run</code>, it includes the complete plan.</dd>
+        <dt>--offline</dt><dd><code>apply</code>, <code>add --profile</code>, <code>configure</code> and <code>intune build</code> only: skip the live printer identity check from the start. The plan says so before you confirm.</dd>
       </dl></div>
       <p>Redirected stdout is always JSON, apart from help and version text. Prompts and human-readable summaries go to stderr.</p>
 
