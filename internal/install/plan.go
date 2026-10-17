@@ -249,7 +249,7 @@ func Install(ctx context.Context, env Environment, plan Plan, confirmed bool) (R
 			continue
 		}
 		if err != nil {
-			return result, fmt.Errorf("install: run %q: %w", command, err)
+			return result, newStepError("install", len(plan.Commands), result.Ran)
 		}
 	}
 	return result, nil
@@ -331,7 +331,7 @@ func Uninstall(ctx context.Context, env Environment, printerName, portName, driv
 		output, err := env.Run(ctx, command)
 		result.Ran = append(result.Ran, CommandResult{Command: command, Output: output, Err: err})
 		if err != nil {
-			return result, fmt.Errorf("install: run %q: %w", command, err)
+			return result, newStepError("remove", len(plan.Commands), result.Ran)
 		}
 	}
 	return result, nil

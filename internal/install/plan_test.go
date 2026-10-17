@@ -317,6 +317,9 @@ func (f *fakeEnvironment) Run(_ context.Context, command string) (string, error)
 	if err := f.runErrors[index]; err != nil {
 		return f.runOutputs[index], err
 	}
+	if output, ok := f.runOutputs[index]; ok {
+		return output, nil
+	}
 	return "output: " + command, nil
 }
 

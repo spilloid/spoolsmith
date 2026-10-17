@@ -98,7 +98,7 @@
       <h2 id="known-issues">Known issues<a class="heading-anchor" href="#known-issues" aria-label="Link to this section">#</a></h2>
       <ul>
         <li><strong><code>uninstall --purge-driver</code> can keep a driver that's actually unused.</strong> Windows removes queues asynchronously, so the in-use check can still see the queue that was just deleted. Removing the driver afterwards can need a spooler restart. SpoolSmith never restarts the spooler itself, because that would interrupt other printing.</li>
-        <li><strong>Operations aren't transactions.</strong> If a step fails, earlier steps may already be applied; for example, an unused port can be left behind. Adding the same printer again reuses what exists.</li>
+        <li><strong>Operations aren't transactions.</strong> If a step fails, earlier steps may already be applied; for example, an unused port can be left behind. Adding the same printer again reuses what exists. The error names the failed step ("step 2 of 2"), the reason Windows gave, and what the earlier steps already did (for example "step 1: Created port"); the same text goes to <code>--json</code>'s <code>error</code> field and the desktop's action log.</li>
         <li><strong>A broken Windows print provider blocks changes.</strong> Inventory errors stop the operation instead of being read as "no printer present".</li>
         <li><strong>Desktop accessible names are internal IDs</strong>, not readable labels. Every control is reachable by keyboard, but a screen reader will announce IDs.</li>
       </ul>

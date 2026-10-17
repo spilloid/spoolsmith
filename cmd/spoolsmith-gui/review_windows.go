@@ -394,6 +394,11 @@ func friendlyOperationError(message string) string {
 
 func friendlyErrorLead(message string) (string, bool) {
 	switch {
+	// A failed step carries Windows' own reason, which can contain words the
+	// cases below key on ("already exists", "administrator"). What matters
+	// first is that the run stopped part-way, so this case is checked first.
+	case strings.Contains(message, "install: step ") || strings.Contains(message, "repoint: step "):
+		return "A step failed part-way. Some earlier steps may already have been applied, such as a port or driver. Open This PC to see what is there before trying again; adding the same printer again reuses what already exists.", true
 	case strings.Contains(message, "administrator") || strings.Contains(message, "Administrator"):
 		return "Administrator access is needed. Use the button with the shield to continue as administrator; Windows will ask first.", true
 	case strings.Contains(message, "driver not found"):
@@ -406,8 +411,6 @@ func friendlyErrorLead(message string) (string, bool) {
 		return "The printer could not be reached. Check that it's powered on and connected to the network, then try again.", true
 	case strings.Contains(message, "native driver change left the queue"):
 		return "The printer was added, but Windows changed its driver and the previous one could not be put back, so the queue needs a look. Open this PC, check the printer prints, and if it doesn't, run Add printer again to review it.", true
-	case strings.Contains(message, "install: run \""):
-		return "A step failed part-way. Some earlier steps may already have been applied, such as a port or driver. Open This PC to see what is there before trying again; adding the same printer again reuses what already exists.", true
 	case strings.Contains(message, "bundle:") || strings.Contains(message, "zip:"):
 		return "This file could not be read as a printer file. It may be damaged, or not a SpoolSmith printer file at all.", true
 	default:

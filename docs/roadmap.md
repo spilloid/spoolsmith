@@ -66,6 +66,14 @@ Fixes from an adversarial pass over failure paths and untrusted input; see the
   preview's driver check, before any confirmation and elevated if the session was.
   Every PowerShell quote character is now escaped, and a test runs hostile names
   through the real PowerShell tokenizer.
+- **A failed step says what failed and what already changed.** The one-line error used to
+  be `install: run "<the whole generated PowerShell command>": exit status 1`, so the
+  desktop dialog, `--json`'s `error` field and the desktop action log lost the reason
+  Windows gave. It is now, for example, `install: step 2 of 2 failed: The spooler service
+  is not reachable. (exit status 1). Already done before it: step 1: Created port`. The
+  same applies to removal and repoint. Full commands and output stay in the result's
+  `ran` list. The desktop's "step failed part-way" guidance is now checked first, so a
+  Windows reason containing "already exists" no longer gets the "file already exists" lead.
 
 ## Known behavior to harden
 
