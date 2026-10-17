@@ -80,6 +80,10 @@ Fixes from an adversarial pass over failure paths and untrusted input; see the
   `--dry-run` said "Preview complete" and the real apply then failed after confirmation.
   Preflight now reads the same inventory, read-only, and fails the preview and the apply
   the same way (exit 1) before anything is confirmed. IPP and USB plans are unchanged.
+- **The CLI's action-log entry says why a run failed.** The desktop always recorded its
+  error text; the CLI recorded only `"status":"error","exit_code":1`. The CLI now records the
+  `spoolsmith <command>: ...` error lines it wrote to stderr. The log's location is now in
+  the Safety and limits guide.
 
 ## Known behavior to harden
 
