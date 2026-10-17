@@ -323,9 +323,17 @@ func (f *fakeEnvironment) Run(_ context.Context, command string) (string, error)
 	return "output: " + command, nil
 }
 
-func (f *fakeEnvironment) LookupPrinter(context.Context, string) (PrinterConfiguration, error) {
+func (f *fakeEnvironment) LookupPrinter(_ context.Context, name string) (PrinterConfiguration, error) {
 	f.lookupCalls++
-	return f.configuration, f.lookupErr
+	if f.lookupErr != nil {
+		return PrinterConfiguration{}, f.lookupErr
+	}
+	// Windows looks queues up by name; a fake that answered every name with
+	// the same queue would invent conflicts for plans that name another one.
+	if f.configuration.PrinterName != "" && !strings.EqualFold(name, f.configuration.PrinterName) {
+		return PrinterConfiguration{}, ErrPrinterNotFound
+	}
+	return f.configuration, nil
 }
 
 func mustPlan(t *testing.T) Plan {

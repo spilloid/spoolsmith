@@ -28,6 +28,9 @@ func (f *cloneFakeEnvironment) ResolveWSDPort(context.Context, string, string) (
 }
 
 func (f *cloneFakeEnvironment) LookupPort(context.Context, string) (PortConfiguration, error) {
+	if f.portErr == nil && f.port == (PortConfiguration{}) {
+		return PortConfiguration{}, ErrPortNotFound
+	}
 	return f.port, f.portErr
 }
 

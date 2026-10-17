@@ -74,6 +74,12 @@ Fixes from an adversarial pass over failure paths and untrusted input; see the
   same applies to removal and repoint. Full commands and output stay in the result's
   `ran` list. The desktop's "step failed part-way" guidance is now checked first, so a
   Windows reason containing "already exists" no longer gets the "file already exists" lead.
+- **The preview predicts the conflicts the apply would stop on.** A TCP/IP plan's own
+  commands refuse a same-named queue with another driver or port (without `--update`) and a
+  `RAW9100-<ip>` port that is not RAW 9100 at that address, but only at mutation time:
+  `--dry-run` said "Preview complete" and the real apply then failed after confirmation.
+  Preflight now reads the same inventory, read-only, and fails the preview and the apply
+  the same way (exit 1) before anything is confirmed. IPP and USB plans are unchanged.
 
 ## Known behavior to harden
 

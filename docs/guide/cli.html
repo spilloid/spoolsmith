@@ -33,7 +33,7 @@
 
       <h2 id="options-that-work-everywhere">Options that work everywhere<a class="heading-anchor" href="#options-that-work-everywhere" aria-label="Link to this section">#</a></h2>
       <div class="cmd"><dl>
-        <dt>--dry-run</dt><dd>Show the plan and change nothing. It overrides <code>--yes</code> and never prompts. <code>--what-if</code> is an alias on <code>install</code> and <code>uninstall</code>.</dd>
+        <dt>--dry-run</dt><dd>Show the plan and change nothing. It overrides <code>--yes</code> and never prompts. <code>--what-if</code> is an alias on <code>install</code> and <code>uninstall</code>. For a TCP/IP plan it also reads the existing queue and port with the same name and fails (exit <code>1</code>) if the apply would stop on them, so a preview never promises a plan that cannot run.</dd>
         <dt>--yes</dt><dd>Accept the plan this PC computes without prompting. On <code>apply</code>, prefer <code>--plan-hash</code>, which accepts only a plan you've reviewed.</dd>
         <dt>--non-interactive</dt><dd>Never prompt. Anything that would need an answer fails instead.</dd>
         <dt>--json</dt><dd>Write the machine-readable result to stdout. With <code>--dry-run</code>, it includes the complete plan.</dd>
