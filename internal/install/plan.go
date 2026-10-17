@@ -337,6 +337,14 @@ func Uninstall(ctx context.Context, env Environment, printerName, portName, driv
 	return result, nil
 }
 
+// powerShellString quotes value as a PowerShell double-quoted string literal.
+// PowerShell's tokenizer treats four characters as double-quote delimiters
+// (" U+201C U+201D U+201E), so every one of them is escaped; missing U+201E
+// (low double quote) let a printer or driver name in an emailed bundle break
+// out and run code during preview. The single smart quotes are harmless inside
+// a double-quoted string and are escaped only for belt and braces.
+// TestPowerShellStringRoundTripsHostileValuesThroughRealPowerShell checks this
+// against the real tokenizer.
 func powerShellString(value string) string {
 	replacer := strings.NewReplacer(
 		"`", "``",
@@ -344,8 +352,11 @@ func powerShellString(value string) string {
 		"\"", "`\"",
 		"\u2018", "`\u2018",
 		"\u2019", "`\u2019",
+		"\u201a", "`\u201a",
+		"\u201b", "`\u201b",
 		"\u201c", "`\u201c",
 		"\u201d", "`\u201d",
+		"\u201e", "`\u201e",
 	)
 	return "\"" + replacer.Replace(value) + "\""
 }

@@ -55,6 +55,18 @@ product hardening, with additional protocols as future scope.
    (settings-only with its reason), an Explorer-made zip, and a cancelled
    `copy --all` (no set written).
 
+## Unreleased: hardening pass (2026-10-16)
+
+Fixes from an adversarial pass over failure paths and untrusted input; see the
+2026-10-16 entry in [the dev log](development/dev-process.md). Not in any release yet.
+
+- **PowerShell quoting closed for U+201E.** PowerShell treats the low double quote
+  `„` as a string delimiter. A printer or driver name containing it, in a `.ssb`
+  someone emailed, could end the quoted value and run its own PowerShell during the
+  preview's driver check, before any confirmation and elevated if the session was.
+  Every PowerShell quote character is now escaped, and a test runs hostile names
+  through the real PowerShell tokenizer.
+
 ## Known behavior to harden
 
 - **Drivers from another PC are trusted as that PC is.** Copies now carry drivers
