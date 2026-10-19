@@ -1,5 +1,60 @@
 # Dev Process Log
 
+## 2026-10-19: adversarial hardening pass (unreleased, branch `hardening/battle-pass`)
+
+Claude, one session (interrupted once by a usage limit and resumed), read-only on the
+operator's work PC: no driver install, queue, port or spooler change was made. Task type:
+adversarial review of OS-mutation safety, untrusted input, hostile environments,
+observability and GUI/CLI parity. STD-001: every fix below had a test that failed first.
+No Go toolchain was installed on the PC; a portable go1.27.2 zip (SHA-256 checked against
+go.dev) was unpacked into the session scratch folder and used with GOTOOLCHAIN=local. The
+session was not elevated, so any unshadowed cmdlet a harness test reached would have
+failed rather than changed the machine.
+
+Fixed, test first:
+
+- **PowerShell injection through U+201E (critical).** `powerShellString` escaped `"`, `“`
+  and `”` but not `„`, which PowerShell also treats as a double-quote delimiter. A driver
+  name containing it in an emailed `.ssb` ran its own PowerShell inside preflight's driver
+  check, i.e. during `apply --dry-run` and the desktop preview, before any confirmation and
+  elevated when the session was. Proven with a `$`-free payload that set a global variable
+  through real PowerShell. The old test compared the escaper's output with its author's
+  expectations; the new ones go through the real tokenizer.
+- **Failed steps lost Windows' reason.** The one-line error was `install: run "<the whole
+  generated script>": exit status 1`; the GUI dialog, `--json` error and action log never
+  saw the reason, and nothing said what earlier steps had changed. Now `StepError`: "step
+  2 of 2 failed: <reason> (exit status 1). Already done before it: step 1: Created port".
+  The GUI's part-way guidance is matched first (a reason containing "already exists"
+  previously got the "file already exists" lead).
+- **Dry-run promised plans the guards would stop.** A same-named queue with another
+  driver/port, or a `RAW9100-<ip>` port that is not RAW 9100 at that IP, passed preview
+  and failed after confirmation. Preflight now reads the same inventory read-only.
+- **CLI action log had no error text** (the desktop's did). stderr error lines are now
+  recorded. The log's location, including `C:\Windows\Temp` under SYSTEM, is documented.
+- **Shield button from a mapped drive.** The elevated relaunch got `Z:\...`, which the
+  elevated token cannot see; paths are now handed over as UNC.
+- **Stopped spooler misdiagnosed.** The driver check returned ~1,000 characters of echoed
+  script ending in "driver not found -- install it via Windows Update", and the desktop said
+  the driver was not installed; removal's lookup said only "exit status 1". Both now quote
+  Windows' reason, verified against real PowerShell output.
+
+Suspected, not fixed (reasoning in the session report; need the operator or hardware):
+driver staging reuses a pre-existing, hash-matching `%TEMP%\SpoolSmith-bundle-<digest>`
+directory, which under SYSTEM is `C:\Windows\Temp`, where standard users can create
+folders, leaving a swap window before `pnputil` (a design change, not made here);
+publisher trust adds any Valid catalog signer to `TrustedPublisher` without naming it in
+the plan the operator confirms; no timeout on spooler calls outside Intune's 10-minute
+wrapper, so a hung spooler hangs the CLI and the desktop sheet; exit code 1 does not tell
+"nothing changed" from "partly changed"; a same-named driver at another version counts as
+present ("Unchanged driver"); preview extracts the payload to TEMP, so "changes nothing"
+means nothing in Windows' printer configuration.
+
+Verified: gofmt, `go vet ./...`, `go test ./... -count=1` on Windows 11 (non-elevated),
+including the PowerShell harness tests. **Not verified:** any real mutation, a real mapped
+share, a real stopped spooler (simulated by throwing the same message from stubbed
+cmdlets), the FlaUI desktop suite. Adversarial review of this diff by a second model:
+pending. Cost data was not logged.
+
 ## 2026-10-02: v1.5 (unreleased) — best-effort native driver for IPP setups
 
 Claude orchestrated and implemented (contract tests first); Codex `gpt-6-sol`/high ran one
