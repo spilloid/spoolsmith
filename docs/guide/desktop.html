@@ -82,7 +82,7 @@
       <h2 id="where-the-app-and-the-cli-differ">Where the app and the CLI differ<a class="heading-anchor" href="#where-the-app-and-the-cli-differ" aria-label="Link to this section">#</a></h2>
       <p>They run the same workflow, so plans and checks are identical. The differences are deliberate:</p>
       <ul>
-        <li><strong>Elevation.</strong> The desktop asks Windows for permission and reopens elevated. The CLI stops and asks you to use an administrator prompt.</li>
+        <li><strong>Elevation.</strong> The desktop asks Windows for permission and reopens elevated. A printer file opened from a mapped network drive is handed over by its <code>\\server\share</code> path, because the elevated window cannot see your drive letters. The CLI stops and asks you to use an administrator prompt; from an elevated prompt, open files by UNC path for the same reason.</li>
         <li><strong>Confirmation.</strong> The desktop always asks. Flags for unattended runs (<code>--yes</code>, <code>--plan-hash</code>, <code>--non-interactive</code>) exist only on the CLI.</li>
         <li><strong>Deprecated catalog commands</strong> (<code>install &lt;ip&gt;</code>, <code>--force-family</code>, <code>catalog</code>) exist only on the CLI.</li>
       </ul>

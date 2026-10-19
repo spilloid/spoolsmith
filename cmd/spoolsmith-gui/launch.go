@@ -178,3 +178,20 @@ func printerFileCandidates(paths []string) (candidates []string, rejected []stri
 	}
 	return candidates, rejected
 }
+
+// handOverPaths rewrites the operation's file paths for an elevated relaunch.
+// resolve returns the UNC form of a path on a mapped network drive, or "" for
+// anything else. UAC's elevated token does not see the unelevated session's
+// drive mappings (unless EnableLinkedConnections is set), so "Z:\..." would
+// not exist in the instance that has to open it.
+func handOverPaths(op operation, resolve func(string) string) operation {
+	for _, field := range []*string{&op.BundlePath, &op.ProfilePath} {
+		if *field == "" || resolve == nil {
+			continue
+		}
+		if unc := resolve(*field); unc != "" {
+			*field = unc
+		}
+	}
+	return op
+}

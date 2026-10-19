@@ -84,6 +84,11 @@ Fixes from an adversarial pass over failure paths and untrusted input; see the
   error text; the CLI recorded only `"status":"error","exit_code":1`. The CLI now records the
   `spoolsmith <command>: ...` error lines it wrote to stderr. The log's location is now in
   the Safety and limits guide.
+- **Shield button from a mapped drive.** The elevated relaunch handed over the printer
+  file's path verbatim, so a file opened from `Z:` was "not found" in the elevated window
+  (UAC's elevated token does not see the session's drive mappings), after the original
+  window had closed. Mapped-drive paths are now handed over as UNC. Unit-tested with a fake
+  resolver; the real `WNetGetUniversalName` call still needs a run against a real share.
 
 ## Known behavior to harden
 

@@ -358,6 +358,7 @@ func (a *app) relaunchElevated(op operation) {
 		showErr(a.mw, "Continue as administrator", err)
 		return
 	}
+	op = handOverPaths(op, universalName)
 	arg, err := encodeReview(op)
 	if err != nil {
 		showErr(a.mw, "Continue as administrator", err)
@@ -641,4 +642,34 @@ func (k windowKeys) OnPreTranslate(msg *win.MSG) bool {
 		return false
 	}
 	return true
+}
+
+var procWNetGetUniversalNameW = windows.NewLazySystemDLL("mpr.dll").NewProc("WNetGetUniversalNameW")
+
+// universalName returns the UNC path for a file on a mapped network drive, or
+// "" when the path is local, already UNC, or cannot be resolved.
+func universalName(path string) string {
+	if len(path) < 3 || path[1] != ':' {
+		return ""
+	}
+	root, err := windows.UTF16PtrFromString(path[:3])
+	if err != nil || windows.GetDriveType(root) != windows.DRIVE_REMOTE {
+		return ""
+	}
+	name, err := windows.UTF16PtrFromString(path)
+	if err != nil {
+		return ""
+	}
+	const universalNameInfoLevel = 1
+	size := uint32(4096)
+	buffer := make([]byte, size)
+	if ret, _, _ := procWNetGetUniversalNameW.Call(uintptr(unsafe.Pointer(name)), universalNameInfoLevel, uintptr(unsafe.Pointer(&buffer[0])), uintptr(unsafe.Pointer(&size))); ret != 0 {
+		return ""
+	}
+	// UNIVERSAL_NAME_INFOW is a single LPWSTR pointing into the buffer.
+	unc := windows.UTF16PtrToString(*(**uint16)(unsafe.Pointer(&buffer[0])))
+	if !strings.HasPrefix(unc, `\`) {
+		return ""
+	}
+	return unc
 }
