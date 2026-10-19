@@ -401,6 +401,11 @@ func friendlyErrorLead(message string) (string, bool) {
 		return "A step failed part-way. Some earlier steps may already have been applied, such as a port or driver. Open This PC to see what is there before trying again; adding the same printer again reuses what already exists.", true
 	case strings.Contains(message, "administrator") || strings.Contains(message, "Administrator"):
 		return "Administrator access is needed. Use the button with the shield to continue as administrator; Windows will ask first.", true
+	// The check itself failed (usually the Print Spooler). Its message ends
+	// with the "driver not found" guidance, so it must be matched first or it
+	// reads as a missing driver.
+	case strings.Contains(message, "driver presence check failed"):
+		return "Windows could not list its printer drivers, so nothing was changed. Check that the Print Spooler service is running (services.msc), then try again.", true
 	case strings.Contains(message, "driver not found"):
 		return "This driver is not installed on this computer. Install the exact compatible Windows driver, then check again.", true
 	case strings.Contains(message, "already exists"):

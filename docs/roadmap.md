@@ -89,6 +89,11 @@ Fixes from an adversarial pass over failure paths and untrusted input; see the
   (UAC's elevated token does not see the session's drive mappings), after the original
   window had closed. Mapped-drive paths are now handed over as UNC. Unit-tested with a fake
   resolver; the real `WNetGetUniversalName` call still needs a run against a real share.
+- **A stopped spooler reads as a stopped spooler.** The preflight driver check reported a
+  1,000-character echo of its own script and error record, followed by "driver not found
+  — install it via Windows Update", and the desktop led with "This driver is not
+  installed". Removal's queue lookup discarded the output and said only "exit status 1".
+  Both now quote Windows' reason, and the desktop says to check the Print Spooler service.
 
 ## Known behavior to harden
 

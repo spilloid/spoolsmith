@@ -26,6 +26,7 @@ func TestFriendlyOperationErrorTranslatesCommonCasesAndKeepsTheDetail(t *testing
 		{"driver switch not restored", "install: native driver change left the queue in an unverified state: attention endpoint changed", "queue needs a look"},
 		{"interrupted run", `install: step 2 of 2 failed: The spooler service is not reachable. (exit status 1). Already done before it: step 1: Created port`, "Some earlier steps may already have been applied"},
 		{"step failure whose Windows reason says already exists", `install: step 1 of 2 failed: The specified port already exists. (exit status 1). No earlier step had run`, "A step failed part-way"},
+		{"spooler down during the driver check", `install: driver presence check failed: install: check for driver "OEM": The spooler service is not reachable.  Ensure the spooler service is running. (exit status 1); guidance: install: driver not found — install it via Windows Update or run the vendor package manually first, then retry`, "Print Spooler"},
 		{"corrupt bundle", `bundle: decode manifest: invalid character 'P' looking for beginning of value`, "could not be read as a printer file"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
