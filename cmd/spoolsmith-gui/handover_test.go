@@ -14,7 +14,7 @@ import (
 func TestElevatedHandOverCarriesUNCPathsForMappedDrives(t *testing.T) {
 	resolve := func(path string) (string, error) {
 		if strings.HasPrefix(strings.ToUpper(path), `Z:\`) {
-			return `\fileserver\it` + path[2:], nil
+			return `\\fileserver\it` + path[2:], nil
 		}
 		return "", nil
 	}
@@ -23,13 +23,13 @@ func TestElevatedHandOverCarriesUNCPathsForMappedDrives(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.BundlePath != `\fileserver\it\printers\Accounting.ssb` {
+	if got.BundlePath != `\\fileserver\it\printers\Accounting.ssb` {
 		t.Fatalf("mapped-drive bundle path not rewritten: %q", got.BundlePath)
 	}
 	if got.ProfilePath != `C:\local\Front.ssb` {
 		t.Fatalf("local path changed: %q", got.ProfilePath)
 	}
-	unc := operation{Kind: opApply, BundlePath: `\fileserver\it\printers\Accounting.ssb`}
+	unc := operation{Kind: opApply, BundlePath: `\\fileserver\it\printers\Accounting.ssb`}
 	if got, err := handOverPaths(unc, resolve); err != nil || got.BundlePath != unc.BundlePath {
 		t.Fatalf("a UNC path must pass through unchanged: %q, %v", got.BundlePath, err)
 	}
@@ -49,7 +49,7 @@ func TestElevatedHandOverReportsAMappedDriveItCouldNotResolve(t *testing.T) {
 		case strings.HasPrefix(path, `Z:\`):
 			return "", cause
 		case strings.HasPrefix(path, `Y:\`):
-			return `\fileserver\profiles` + path[2:], nil
+			return `\\fileserver\profiles` + path[2:], nil
 		}
 		return "", nil
 	}
@@ -58,7 +58,7 @@ func TestElevatedHandOverReportsAMappedDriveItCouldNotResolve(t *testing.T) {
 	if !errors.Is(err, cause) || !strings.Contains(err.Error(), `Z:\printers\Accounting.ssb`) {
 		t.Fatalf("unresolved drive not reported with its path and reason: %v", err)
 	}
-	if got.BundlePath != `Z:\printers\Accounting.ssb` || got.ProfilePath != `\fileserver\profiles\Front.ssb` {
+	if got.BundlePath != `Z:\printers\Accounting.ssb` || got.ProfilePath != `\\fileserver\profiles\Front.ssb` {
 		t.Fatalf("got %q, %q", got.BundlePath, got.ProfilePath)
 	}
 }

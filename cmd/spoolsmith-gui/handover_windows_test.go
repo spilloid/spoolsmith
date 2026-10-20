@@ -13,7 +13,7 @@ import (
 // and without error. (A mapped drive needs a real share; see the hardware
 // checklist in the dev log.)
 func TestUniversalNameLeavesLocalAndUNCPathsAlone(t *testing.T) {
-	for _, path := range []string{`C:\Windows\notepad.exe`, `\server\share\a.ssb`, `\?\UNC\server\share\a.ssb`, `relative.ssb`, ``} {
+	for _, path := range []string{`C:\Windows\notepad.exe`, `\\server\share\a.ssb`, `\\?\UNC\server\share\a.ssb`, `relative.ssb`, ``} {
 		if got, err := universalName(path); got != "" || err != nil {
 			t.Errorf("universalName(%q) = %q, %v; want unchanged", path, got, err)
 		}
