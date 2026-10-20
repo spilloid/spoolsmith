@@ -60,18 +60,41 @@ func newStepError(op string, total int, ran []CommandResult) *StepError {
 
 const maxDiagnosticRunes = 400
 
+// reasonMarker starts the line every generated command's catch block prints
+// with the exception message (see powerShellCommand). The reason is read from
+// that line, not from PowerShell's error view, whose position header ("At
+// line:", "In Zeile:", "Au caractère") is in the display language. The catch
+// block builds the marker from two literals, so the script text PowerShell
+// echoes with the error never contains it.
+const reasonMarker = "SPOOLSMITH-REASON: "
+
 // stepDiagnostic extracts the reason from a failed generated command's output.
 //
-// Every generated command ends `catch { Write-Error $_.Exception.Message; exit
-// 1 }`. Windows PowerShell 5.1 prints such an error as the echoed script line
-// (wrapped at the console width), " : ", the message (also wrapped), then an
-// "At line:" position block. The message is recovered by unwrapping the text
-// before "At line:" and taking what follows the echoed catch block. Anything
-// else falls back to the last non-empty output line.
+// The marker line wins. Output without one (a command that died before its
+// catch block, or text from an older build) falls back to the layout of
+// Windows PowerShell 5.1's error view: the echoed script line (wrapped at the
+// console width), " : ", the message (also wrapped), a position header line,
+// then "+"-prefixed lines (the caret, CategoryInfo, FullyQualifiedErrorId).
+// Those are found by their shape, so a localized header does not matter.
+// Anything else gives the last non-empty line that is not error-record
+// metadata.
 func stepDiagnostic(output string) string {
-	text := strings.ReplaceAll(output, "\r\n", "\n")
-	if index := strings.Index(text, "\nAt line:"); index >= 0 {
-		head := strings.ReplaceAll(text[:index], "\n", "")
+	lines := strings.Split(strings.ReplaceAll(output, "\r\n", "\n"), "\n")
+	reason := ""
+	for _, line := range lines {
+		if rest, ok := strings.CutPrefix(line, reasonMarker); ok {
+			reason = rest
+		}
+	}
+	if reason = strings.TrimSpace(reason); reason != "" {
+		return clampDiagnostic(reason)
+	}
+	for index := 2; index < len(lines); index++ {
+		if !strings.HasPrefix(strings.TrimSpace(lines[index]), "+") {
+			continue
+		}
+		// lines[index-1] is the position header; the message ends just above it.
+		head := strings.Join(lines[:index-1], "")
 		const echoEnd = "exit 1 } : "
 		if at := strings.LastIndex(head, echoEnd); at >= 0 {
 			return clampDiagnostic(head[at+len(echoEnd):])
@@ -79,11 +102,11 @@ func stepDiagnostic(output string) string {
 		if at := strings.LastIndex(head, " : "); at >= 0 {
 			return clampDiagnostic(head[at+len(" : "):])
 		}
-		text = text[:index]
+		lines = lines[:index-1]
+		break
 	}
-	lines := strings.Split(text, "\n")
 	for index := len(lines) - 1; index >= 0; index-- {
-		if line := strings.TrimSpace(lines[index]); line != "" {
+		if line := strings.TrimSpace(lines[index]); line != "" && !strings.HasPrefix(line, "+") {
 			return clampDiagnostic(line)
 		}
 	}

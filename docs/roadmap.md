@@ -72,7 +72,10 @@ Fixes from an adversarial pass over failure paths and untrusted input; see the
   Windows gave. It is now, for example, `install: step 2 of 2 failed: The spooler service
   is not reachable. (exit status 1). Already done before it: step 1: Created port`. The
   same applies to removal and repoint. Full commands and output stay in the result's
-  `ran` list. The desktop's "step failed part-way" guidance is now checked first, so a
+  `ran` list. The reason comes from a `SPOOLSMITH-REASON:` line each generated command's
+  error handler prints, not from PowerShell's error layout, so it is found on Windows in
+  any display language (tested with German and French layouts, and through real
+  PowerShell). The desktop's "step failed part-way" guidance is now checked first, so a
   Windows reason containing "already exists" no longer gets the "file already exists" lead.
 - **The preview predicts the conflicts the apply would stop on.** A TCP/IP plan's own
   commands refuse a same-named queue with another driver or port (without `--update`) and a

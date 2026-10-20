@@ -182,7 +182,7 @@ func TestGeneratedCmdletsStopAndTranslateNonTerminatingErrors(t *testing.T) {
 		for _, fragment := range []string{
 			"$ErrorActionPreference = 'Stop'; try { ",
 			"-ErrorAction Stop",
-			" } catch { Write-Error $_.Exception.Message; exit 1 }",
+			` } catch { [Console]::Out.WriteLine('SPOOLSMITH' + '-REASON: ' + ($_.Exception.Message -replace '\s+', ' ')); Write-Error $_.Exception.Message; exit 1 }`,
 		} {
 			if !strings.Contains(command, fragment) {
 				t.Errorf("command %q does not contain %q", command, fragment)
@@ -372,5 +372,5 @@ func resolvedResult(t *testing.T, familyID, model string) catalog.ResolutionResu
 }
 
 func wrappedForTest(command string) string {
-	return "$ErrorActionPreference = 'Stop'; try { " + command + " } catch { Write-Error $_.Exception.Message; exit 1 }"
+	return "$ErrorActionPreference = 'Stop'; try { " + command + " }" + catchBlock
 }

@@ -361,9 +361,16 @@ func powerShellString(value string) string {
 	return "\"" + replacer.Replace(value) + "\""
 }
 
+// powerShellCommand wraps a generated command so any error stops it with exit
+// code 1. The catch block first prints the exception message on a line of its
+// own after reasonMarker (whitespace folded, so it is one line), which is how
+// stepDiagnostic finds Windows' reason in any display language, then reports
+// it with Write-Error as before.
 func powerShellCommand(command string) string {
-	return "$ErrorActionPreference = 'Stop'; try { " + command + " } catch { Write-Error $_.Exception.Message; exit 1 }"
+	return "$ErrorActionPreference = 'Stop'; try { " + command + " }" + catchBlock
 }
+
+const catchBlock = ` catch { [Console]::Out.WriteLine('SPOOLSMITH' + '-REASON: ' + ($_.Exception.Message -replace '\s+', ' ')); Write-Error $_.Exception.Message; exit 1 }`
 
 func validatePlanValue(field, value string) error {
 	for _, r := range value {

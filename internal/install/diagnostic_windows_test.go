@@ -43,3 +43,21 @@ func TestSpoolerFailureReasonReachesPreflightAndLookupErrors(t *testing.T) {
 	_, err = lookupPrinterWith(context.Background(), runner, "Accounting")
 	assertSpoolerReason(t, "printer lookup", err)
 }
+
+// The catch block's reason line, through real PowerShell: a multi-line,
+// non-English message arrives as one line, and the script text PowerShell
+// echoes with Write-Error never passes for the marker.
+func TestGeneratedCatchBlockPrintsTheReasonLineThroughRealPowerShell(t *testing.T) {
+	command := powerShellCommand(`throw ("Der Spoolerdienst ist nicht erreichbar." + [Environment]::NewLine + "Stellen Sie sicher, dass er ausgeführt wird.")`)
+	output, err := runPowerShell(context.Background(), command)
+	if err == nil {
+		t.Fatalf("expected exit 1, got output %q", output)
+	}
+	want := "Der Spoolerdienst ist nicht erreichbar. Stellen Sie sicher, dass er ausgeführt wird."
+	if got := stepDiagnostic(output); got != want {
+		t.Fatalf("stepDiagnostic = %q, want %q; output:\n%s", got, want, output)
+	}
+	if strings.Count(output, reasonMarker) != 1 {
+		t.Fatalf("marker should appear once, on its own line:\n%s", output)
+	}
+}
