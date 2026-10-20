@@ -75,8 +75,9 @@ Fixes from an adversarial pass over failure paths and untrusted input; see the
   `ran` list. The reason comes from a `SPOOLSMITH-REASON:` line each generated command's
   error handler prints, not from PowerShell's error layout, so it is found on Windows in
   any display language (tested with German and French layouts, and through real
-  PowerShell). The desktop's "step failed part-way" guidance is now checked first, so a
-  Windows reason containing "already exists" no longer gets the "file already exists" lead.
+  PowerShell). The desktop's "step failed part-way" guidance (adding and repoint; removal
+  with its own advice) is now checked first, so a Windows reason containing "already
+  exists" or "administrator" no longer gets the "file already exists" or elevation lead.
 - **The preview predicts the conflicts the apply would stop on.** A TCP/IP plan's own
   commands refuse a same-named queue with another driver or port (without `--update`) and a
   `RAW9100-<ip>` port that is not RAW 9100 at that address, but only at mutation time:

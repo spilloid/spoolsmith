@@ -399,6 +399,8 @@ func friendlyErrorLead(message string) (string, bool) {
 	// first is that the run stopped part-way, so this case is checked first.
 	case strings.Contains(message, "install: step ") || strings.Contains(message, "repoint: step "):
 		return "A step failed part-way. Some earlier steps may already have been applied, such as a port or driver. Open This PC to see what is there before trying again; adding the same printer again reuses what already exists.", true
+	case strings.Contains(message, "remove: step "):
+		return "A step failed part-way. Some earlier steps may already have been applied, such as removing the printer, which can leave its port or driver behind. Open This PC to see what is left before trying again.", true
 	case strings.Contains(message, "administrator") || strings.Contains(message, "Administrator"):
 		return "Administrator access is needed. Use the button with the shield to continue as administrator; Windows will ask first.", true
 	// The check itself failed (usually the Print Spooler). Its message ends
