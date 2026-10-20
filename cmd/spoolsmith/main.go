@@ -50,16 +50,18 @@ func main() {
 	}
 	args := os.Args[1:]
 	started := time.Now()
-	code := run(context.Background(), args, os.Stdin, os.Stdout, os.Stderr, app)
-	logRun(args, code, time.Since(started))
+	stderr := newErrorCapture(os.Stderr)
+	code := run(context.Background(), args, os.Stdin, os.Stdout, stderr, app)
+	recordRun(actionlog.Default(), args, code, time.Since(started), stderr.Error())
 	os.Exit(code)
 }
 
-// logRun records one best-effort observability entry per CLI invocation. It
-// wraps run() rather than instrumenting individual command branches, so the
+// recordRun records one best-effort observability entry per CLI invocation,
+// including the error lines the run wrote to stderr. It wraps run() rather
+// than instrumenting individual command branches, so the
 // already-reviewed command logic and its tests are untouched. Logging never
 // affects the command's own exit code.
-func logRun(args []string, code int, duration time.Duration) {
+func recordRun(logger *actionlog.Logger, args []string, code int, duration time.Duration, errorText string) {
 	op := "help"
 	var opArgs []string
 	if len(args) > 0 {
@@ -70,7 +72,8 @@ func logRun(args []string, code int, duration time.Duration) {
 	if code != 0 {
 		status = "error"
 	}
-	_ = actionlog.Default().Record(actionlog.Entry{
+	_ = logger.Record(actionlog.Entry{
+		Error:    errorText,
 		Source:   "cli",
 		Op:       op,
 		Args:     opArgs,

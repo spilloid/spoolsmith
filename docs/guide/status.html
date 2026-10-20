@@ -98,8 +98,9 @@
       <h2 id="known-issues">Known issues<a class="heading-anchor" href="#known-issues" aria-label="Link to this section">#</a></h2>
       <ul>
         <li><strong><code>uninstall --purge-driver</code> can keep a driver that's actually unused.</strong> Windows removes queues asynchronously, so the in-use check can still see the queue that was just deleted. Removing the driver afterwards can need a spooler restart. SpoolSmith never restarts the spooler itself, because that would interrupt other printing.</li>
-        <li><strong>Operations aren't transactions.</strong> If a step fails, earlier steps may already be applied; for example, an unused port can be left behind. Adding the same printer again reuses what exists.</li>
-        <li><strong>A broken Windows print provider blocks changes.</strong> Inventory errors stop the operation instead of being read as "no printer present".</li>
+        <li><strong>Operations aren't transactions.</strong> If a step fails, earlier steps may already be applied; for example, an unused port can be left behind. Adding the same printer again reuses what exists. The error names the failed step ("step 2 of 2"), the reason Windows gave, and what the earlier steps already did (for example "step 1: Created port"); the same text goes to <code>--json</code>'s <code>error</code> field and the action log.</li>
+        <li><strong>Where to look after a failure.</strong> Every CLI run and desktop action appends one JSON line to <code>%TEMP%\spoolsmith\actions.log</code> (for an elevated session that is the signed-in user's temp folder; under Intune's SYSTEM context, <code>C:\Windows\Temp\spoolsmith\actions.log</code>) with the command, its arguments, the exit code and the error text. The command's own output (or <code>--json</code>) has the full plan and every command's output.</li>
+        <li><strong>A broken Windows print provider blocks changes.</strong> Inventory errors stop the operation instead of being read as "no printer present". The error quotes Windows' reason, for example "The spooler service is not reachable".</li>
         <li><strong>Desktop accessible names are internal IDs</strong>, not readable labels. Every control is reachable by keyboard, but a screen reader will announce IDs.</li>
       </ul>
 
@@ -118,6 +119,6 @@
       <p id="copy-status" class="sr-only" role="status"></p>
     </main>
   </div>
-  <footer class="wrap"><a class="brand" href="../">SpoolSmith<span class="brand-dot">.</span></a><span>A Spillers Technology project</span><div><a href="https://github.com/spilloid/spoolsmith">Source</a><a href="https://github.com/spilloid/spoolsmith/issues">Feedback</a><a href="https://github.com/spilloid/spoolsmith/blob/main/LICENSE">MIT license</a></div></footer>
+  <footer class="wrap"><a class="brand" href="../">SpoolSmith<span class="brand-dot">.</span></a><span>By Joseph Spillers</span><div><a href="https://github.com/spilloid/spoolsmith">Source</a><a href="https://github.com/spilloid/spoolsmith/issues">Feedback</a><a href="https://github.com/spilloid/spoolsmith/blob/main/LICENSE">MIT license</a></div></footer>
 </body>
 </html>

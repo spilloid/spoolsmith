@@ -46,22 +46,7 @@ func (windowsEnvironment) Run(ctx context.Context, command string) (string, erro
 }
 
 func (windowsEnvironment) LookupPrinter(ctx context.Context, printerName string) (PrinterConfiguration, error) {
-	command, err := lookupPrinterCommand(printerName)
-	if err != nil {
-		return PrinterConfiguration{}, err
-	}
-	output, err := runPowerShell(ctx, command)
-	if err != nil {
-		return PrinterConfiguration{}, err
-	}
-	var configuration PrinterConfiguration
-	if strings.TrimSpace(output) == "null" {
-		return configuration, ErrPrinterNotFound
-	}
-	if err := json.Unmarshal([]byte(strings.TrimSpace(output)), &configuration); err != nil {
-		return PrinterConfiguration{}, fmt.Errorf("install: decode printer configuration: %w", err)
-	}
-	return configuration, nil
+	return lookupPrinterWith(ctx, runPowerShell, printerName)
 }
 
 func runPowerShell(ctx context.Context, command string) (string, error) {

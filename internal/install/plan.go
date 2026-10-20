@@ -249,7 +249,7 @@ func Install(ctx context.Context, env Environment, plan Plan, confirmed bool) (R
 			continue
 		}
 		if err != nil {
-			return result, fmt.Errorf("install: run %q: %w", command, err)
+			return result, newStepError("install", len(plan.Commands), result.Ran)
 		}
 	}
 	return result, nil
@@ -331,12 +331,20 @@ func Uninstall(ctx context.Context, env Environment, printerName, portName, driv
 		output, err := env.Run(ctx, command)
 		result.Ran = append(result.Ran, CommandResult{Command: command, Output: output, Err: err})
 		if err != nil {
-			return result, fmt.Errorf("install: run %q: %w", command, err)
+			return result, newStepError("remove", len(plan.Commands), result.Ran)
 		}
 	}
 	return result, nil
 }
 
+// powerShellString quotes value as a PowerShell double-quoted string literal.
+// PowerShell's tokenizer treats four characters as double-quote delimiters
+// (" U+201C U+201D U+201E), so every one of them is escaped; missing U+201E
+// (low double quote) let a printer or driver name in an emailed bundle break
+// out and run code during preview. The single smart quotes are harmless inside
+// a double-quoted string and are escaped only for belt and braces.
+// TestPowerShellStringRoundTripsHostileValuesThroughRealPowerShell checks this
+// against the real tokenizer.
 func powerShellString(value string) string {
 	replacer := strings.NewReplacer(
 		"`", "``",
@@ -344,15 +352,25 @@ func powerShellString(value string) string {
 		"\"", "`\"",
 		"\u2018", "`\u2018",
 		"\u2019", "`\u2019",
+		"\u201a", "`\u201a",
+		"\u201b", "`\u201b",
 		"\u201c", "`\u201c",
 		"\u201d", "`\u201d",
+		"\u201e", "`\u201e",
 	)
 	return "\"" + replacer.Replace(value) + "\""
 }
 
+// powerShellCommand wraps a generated command so any error stops it with exit
+// code 1. The catch block first prints the exception message on a line of its
+// own after reasonMarker (whitespace folded, so it is one line), which is how
+// stepDiagnostic finds Windows' reason in any display language, then reports
+// it with Write-Error as before.
 func powerShellCommand(command string) string {
-	return "$ErrorActionPreference = 'Stop'; try { " + command + " } catch { Write-Error $_.Exception.Message; exit 1 }"
+	return "$ErrorActionPreference = 'Stop'; try { " + command + " }" + catchBlock
 }
+
+const catchBlock = ` catch { [Console]::Out.WriteLine('SPOOLSMITH' + '-REASON: ' + ($_.Exception.Message -replace '\s+', ' ')); Write-Error $_.Exception.Message; exit 1 }`
 
 func validatePlanValue(field, value string) error {
 	for _, r := range value {

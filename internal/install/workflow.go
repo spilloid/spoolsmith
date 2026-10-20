@@ -399,6 +399,14 @@ func (w Workflow) RunInstall(ctx context.Context, env Environment, input io.Read
 	if err != nil {
 		return failOutcome(outcome, err, ExitPreflight)
 	}
+	if !plan.IPP && !plan.USB {
+		// Read-only: the same inventory the plan's own guards read at mutation
+		// time, so a preview never promises a plan that is certain to stop, and
+		// the operator is never asked to confirm one.
+		if err := predictRAWConflicts(ctx, env, plan); err != nil {
+			return failOutcome(outcome, err, ExitGeneralError)
+		}
+	}
 	if options.DryRun {
 		outcome.Status = "dry-run"
 		fmt.Fprintln(interactive, "Preview complete. No changes made.")
