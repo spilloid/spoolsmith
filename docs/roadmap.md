@@ -87,8 +87,12 @@ Fixes from an adversarial pass over failure paths and untrusted input; see the
 - **Shield button from a mapped drive.** The elevated relaunch handed over the printer
   file's path verbatim, so a file opened from `Z:` was "not found" in the elevated window
   (UAC's elevated token does not see the session's drive mappings), after the original
-  window had closed. Mapped-drive paths are now handed over as UNC. Unit-tested with a fake
-  resolver; the real `WNetGetUniversalName` call still needs a run against a real share.
+  window had closed. Mapped-drive paths are now handed over as UNC. A long network path no
+  longer defeats this (the lookup retries with the buffer size Windows asks for), and when
+  Windows cannot give the network path at all, the desktop says so and asks before
+  relaunching instead of handing over `Z:\...` silently. Unit-tested with a fake resolver
+  and a fake undersized call; the real `WNetGetUniversalName` call still needs a run
+  against a real share.
 - **A stopped spooler reads as a stopped spooler.** The preflight driver check reported a
   1,000-character echo of its own script and error record, followed by "driver not found
   — install it via Windows Update", and the desktop led with "This driver is not
