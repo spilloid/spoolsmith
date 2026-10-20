@@ -1,5 +1,46 @@
 # Dev Process Log
 
+## 2026-10-19: astra review of the hardening pass (branch `hardening/battle-pass`, PR #29)
+
+Codex `gpt-6-astra`/high, one static read-only review of the hardening diff: **ship after
+fixes**, three findings, test grade B-. Claude adjudicated each (STD-001: reproduced before
+fixing) and chose the fixes; same PC and constraints as the pass below (no driver install,
+queue, port or spooler change; non-elevated). The portable Go in the scratch folder turned
+out to be missing files (`src/image` had only its subfolders, so `internal/winres` and the
+icon tools failed to build); it was unpacked again from the same checked zip.
+
+- **Mapped-drive hand-over gave up on a long path (Medium, confirmed).**
+  `WNetGetUniversalNameW` got a fixed 4,096-byte buffer and any nonzero answer, including
+  `ERROR_MORE_DATA`, read as "not mapped", so the elevated copy was handed `Z:\...`
+  silently. Reproduced through `handOverPaths`: an unresolved mapped path passed through
+  unchanged with nothing reported. Fixed: the call retries with the size Windows asks for
+  (`callGrowing`, tested with a fake undersized call); a network drive that still cannot
+  be resolved is an error, and the desktop says so and asks (default No) before
+  relaunching, rather than refusing, since `EnableLinkedConnections` makes the drive letter
+  work. The UNC check now requires `\\`, and the hand-over tests use real `\\server\share`
+  fixtures (they had a single leading backslash, as the reviewer noted).
+- **A failed step's reason was found by the English "At line:" header (Medium,
+  confirmed).** Reproduced with German and French error-view fixtures: both returned the
+  `FullyQualifiedErrorId` line. Fixed at the source: every generated command's catch block
+  now prints `SPOOLSMITH-REASON: <message>` (whitespace folded) on its own line before
+  `Write-Error`, with the marker built from two literals so the echoed script never
+  matches; that line wins. Output without it falls back to the error view's shape (the
+  line above the first `+` line is the position header), never to metadata. A real
+  PowerShell run checks a two-line German message arrives as one line and the marker
+  appears once.
+- **Removal's part-way failures lost their guidance (Low, confirmed).** The desktop matched
+  `install: step` and `repoint: step` only; `remove: step 2 of 3 ...` got no lead, or the
+  elevation lead if Windows' reason said "administrator". Both reproduced as failing cases
+  in the classifier test; removal now has its own lead, matched before the substring
+  cases. The advice does not promise that removing again cleans up: with the queue gone,
+  removal stops at "already absent".
+
+Verified: gofmt, `go vet ./...` (also `GOOS=linux` for the portable packages), `go test
+./... -count=1` on Windows 11, non-elevated. **Not verified:** a real mapped share or an
+oversized universal name, a Windows display language other than English (the catch block
+was run in English PowerShell with a German message; the localized layouts are
+hand-built fixtures), the FlaUI desktop suite.
+
 ## 2026-10-19: adversarial hardening pass (unreleased, branch `hardening/battle-pass`)
 
 Claude, one session (interrupted once by a usage limit and resumed), read-only on the
@@ -53,7 +94,7 @@ Verified: gofmt, `go vet ./...`, `go test ./... -count=1` on Windows 11 (non-ele
 including the PowerShell harness tests. **Not verified:** any real mutation, a real mapped
 share, a real stopped spooler (simulated by throwing the same message from stubbed
 cmdlets), the FlaUI desktop suite. Adversarial review of this diff by a second model:
-pending. Cost data was not logged.
+see the astra entry above. Cost data was not logged.
 
 ## 2026-10-02: v1.5 (unreleased) — best-effort native driver for IPP setups
 
