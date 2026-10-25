@@ -60,7 +60,7 @@
       </ul>
       <figure class="shot doc-shot"><img src="../img/gui-review-and-apply.png" alt="Apply sheet for Accounting - 2nd Floor, copied from FRONTDESK-01, listing four steps and an Install as administrator button with the Windows shield." width="1200" height="800" loading="lazy" decoding="async"></figure>
       <p><strong>Details</strong> shows the full plan. <strong>More options</strong> holds offline setup, updating an existing queue and, for removals, removing the driver. The main button asks for the single confirmation. If SpoolSmith isn't elevated, it reads <strong>Install as administrator...</strong> with the Windows shield: Windows asks for permission, SpoolSmith reopens elevated on the same printer, prepares the plan again and asks you to confirm there.</p>
-      <p>When it's done, each step shows its result. <strong>Copy notes for the ticket</strong> puts a plain-text summary on the clipboard. If a step fails, the sheet says earlier steps may already have been applied, and that adding the same printer again reuses what exists.</p>
+      <p>When it's done, each step shows its result. <strong>Copy notes for the ticket</strong> puts a plain-text summary on the clipboard. If a step fails, the sheet says earlier steps may already have been applied, and that adding the same printer again reuses what exists. The details name the failed step, Windows' reason and what the earlier steps already did.</p>
 
       <h2 id="add-a-printer">Add a printer<a class="heading-anchor" href="#add-a-printer" aria-label="Link to this section">#</a></h2>
       <p>This page lists printers on the connected network, scanned when the app starts. <strong>Scan a different network or IP...</strong> takes another subnet, or one address with <strong>Use IP directly</strong>. Pick a printer, then either choose <strong>Windows automatic (IPP)</strong> or a compatible installed driver (<strong>Refresh drivers</strong> reloads the list), and choose <strong>Save and review</strong>. See <a href="profiles.html">Set up by address</a>.</p>
@@ -82,7 +82,7 @@
       <h2 id="where-the-app-and-the-cli-differ">Where the app and the CLI differ<a class="heading-anchor" href="#where-the-app-and-the-cli-differ" aria-label="Link to this section">#</a></h2>
       <p>They run the same workflow, so plans and checks are identical. The differences are deliberate:</p>
       <ul>
-        <li><strong>Elevation.</strong> The desktop asks Windows for permission and reopens elevated. The CLI stops and asks you to use an administrator prompt.</li>
+        <li><strong>Elevation.</strong> The desktop asks Windows for permission and reopens elevated. A printer file opened from a mapped network drive is handed over by its <code>\\server\share</code> path, because the elevated window cannot see your drive letters. The CLI stops and asks you to use an administrator prompt; from an elevated prompt, open files by UNC path for the same reason.</li>
         <li><strong>Confirmation.</strong> The desktop always asks. Flags for unattended runs (<code>--yes</code>, <code>--plan-hash</code>, <code>--non-interactive</code>) exist only on the CLI.</li>
         <li><strong>Deprecated catalog commands</strong> (<code>install &lt;ip&gt;</code>, <code>--force-family</code>, <code>catalog</code>) exist only on the CLI.</li>
       </ul>
@@ -93,6 +93,6 @@
       <p id="copy-status" class="sr-only" role="status"></p>
     </main>
   </div>
-  <footer class="wrap"><a class="brand" href="../">SpoolSmith<span class="brand-dot">.</span></a><span>A Spillers Technology project</span><div><a href="https://github.com/spilloid/spoolsmith">Source</a><a href="https://github.com/spilloid/spoolsmith/issues">Feedback</a><a href="https://github.com/spilloid/spoolsmith/blob/main/LICENSE">MIT license</a></div></footer>
+  <footer class="wrap"><a class="brand" href="../">SpoolSmith<span class="brand-dot">.</span></a><span>By Joseph Spillers</span><div><a href="https://github.com/spilloid/spoolsmith">Source</a><a href="https://github.com/spilloid/spoolsmith/issues">Feedback</a><a href="https://github.com/spilloid/spoolsmith/blob/main/LICENSE">MIT license</a></div></footer>
 </body>
 </html>

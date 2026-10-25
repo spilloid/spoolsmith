@@ -55,6 +55,54 @@ product hardening, with additional protocols as future scope.
    (settings-only with its reason), an Explorer-made zip, and a cancelled
    `copy --all` (no set written).
 
+## Unreleased: hardening pass (October 2026)
+
+Fixes from an adversarial pass over failure paths and untrusted input; see the
+2026-10-19 entry in [the dev log](development/dev-process.md). Not in any release yet.
+
+- **PowerShell quoting closed for U+201E.** PowerShell treats the low double quote
+  `„` as a string delimiter. A printer or driver name containing it, in a `.ssb`
+  someone emailed, could end the quoted value and run its own PowerShell during the
+  preview's driver check, before any confirmation and elevated if the session was.
+  Every PowerShell quote character is now escaped, and a test runs hostile names
+  through the real PowerShell tokenizer.
+- **A failed step says what failed and what already changed.** The one-line error used to
+  be `install: run "<the whole generated PowerShell command>": exit status 1`, so the
+  desktop dialog, `--json`'s `error` field and the desktop action log lost the reason
+  Windows gave. It is now, for example, `install: step 2 of 2 failed: The spooler service
+  is not reachable. (exit status 1). Already done before it: step 1: Created port`. The
+  same applies to removal and repoint. Full commands and output stay in the result's
+  `ran` list. The reason comes from a `SPOOLSMITH-REASON:` line each generated command's
+  error handler prints, not from PowerShell's error layout, so it is found on Windows in
+  any display language (tested with German and French layouts, and through real
+  PowerShell). The desktop's "step failed part-way" guidance (adding and repoint; removal
+  with its own advice) is now checked first, so a Windows reason containing "already
+  exists" or "administrator" no longer gets the "file already exists" or elevation lead.
+- **The preview predicts the conflicts the apply would stop on.** A TCP/IP plan's own
+  commands refuse a same-named queue with another driver or port (without `--update`) and a
+  `RAW9100-<ip>` port that is not RAW 9100 at that address, but only at mutation time:
+  `--dry-run` said "Preview complete" and the real apply then failed after confirmation.
+  Preflight now reads the same inventory, read-only, and fails the preview and the apply
+  the same way (exit 1) before anything is confirmed. IPP and USB plans are unchanged.
+- **The CLI's action-log entry says why a run failed.** The desktop always recorded its
+  error text; the CLI recorded only `"status":"error","exit_code":1`. The CLI now records the
+  `spoolsmith <command>: ...` error lines it wrote to stderr. The log's location is now in
+  the Safety and limits guide.
+- **Shield button from a mapped drive.** The elevated relaunch handed over the printer
+  file's path verbatim, so a file opened from `Z:` was "not found" in the elevated window
+  (UAC's elevated token does not see the session's drive mappings), after the original
+  window had closed. Mapped-drive paths are now handed over as UNC. A long network path no
+  longer defeats this (the lookup retries with the buffer size Windows asks for), and when
+  Windows cannot give the network path at all, the desktop says so and asks before
+  relaunching instead of handing over `Z:\...` silently. Unit-tested with a fake resolver
+  and a fake undersized call; the real `WNetGetUniversalName` call still needs a run
+  against a real share.
+- **A stopped spooler reads as a stopped spooler.** The preflight driver check reported a
+  1,000-character echo of its own script and error record, followed by "driver not found
+  — install it via Windows Update", and the desktop led with "This driver is not
+  installed". Removal's queue lookup discarded the output and said only "exit status 1".
+  Both now quote Windows' reason, and the desktop says to check the Print Spooler service.
+
 ## Known behavior to harden
 
 - **Drivers from another PC are trusted as that PC is.** Copies now carry drivers

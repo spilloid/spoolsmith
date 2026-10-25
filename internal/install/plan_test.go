@@ -182,7 +182,7 @@ func TestGeneratedCmdletsStopAndTranslateNonTerminatingErrors(t *testing.T) {
 		for _, fragment := range []string{
 			"$ErrorActionPreference = 'Stop'; try { ",
 			"-ErrorAction Stop",
-			" } catch { Write-Error $_.Exception.Message; exit 1 }",
+			` } catch { [Console]::Out.WriteLine('SPOOLSMITH' + '-REASON: ' + ($_.Exception.Message -replace '\s+', ' ')); Write-Error $_.Exception.Message; exit 1 }`,
 		} {
 			if !strings.Contains(command, fragment) {
 				t.Errorf("command %q does not contain %q", command, fragment)
@@ -317,12 +317,23 @@ func (f *fakeEnvironment) Run(_ context.Context, command string) (string, error)
 	if err := f.runErrors[index]; err != nil {
 		return f.runOutputs[index], err
 	}
+	if output, ok := f.runOutputs[index]; ok {
+		return output, nil
+	}
 	return "output: " + command, nil
 }
 
-func (f *fakeEnvironment) LookupPrinter(context.Context, string) (PrinterConfiguration, error) {
+func (f *fakeEnvironment) LookupPrinter(_ context.Context, name string) (PrinterConfiguration, error) {
 	f.lookupCalls++
-	return f.configuration, f.lookupErr
+	if f.lookupErr != nil {
+		return PrinterConfiguration{}, f.lookupErr
+	}
+	// Windows looks queues up by name; a fake that answered every name with
+	// the same queue would invent conflicts for plans that name another one.
+	if f.configuration.PrinterName != "" && !strings.EqualFold(name, f.configuration.PrinterName) {
+		return PrinterConfiguration{}, ErrPrinterNotFound
+	}
+	return f.configuration, nil
 }
 
 func mustPlan(t *testing.T) Plan {
@@ -361,5 +372,5 @@ func resolvedResult(t *testing.T, familyID, model string) catalog.ResolutionResu
 }
 
 func wrappedForTest(command string) string {
-	return "$ErrorActionPreference = 'Stop'; try { " + command + " } catch { Write-Error $_.Exception.Message; exit 1 }"
+	return "$ErrorActionPreference = 'Stop'; try { " + command + " }" + catchBlock
 }

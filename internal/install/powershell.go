@@ -2,7 +2,9 @@ package install
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 )
 
@@ -27,10 +29,7 @@ func checkDriverPresent(ctx context.Context, runner powerShellRunner, driverName
 	}
 	output, err := runner(ctx, command)
 	if err != nil {
-		if diagnostic := strings.TrimSpace(output); diagnostic != "" {
-			return false, fmt.Errorf("%s: %w", diagnostic, err)
-		}
-		return false, err
+		return false, powerShellFailure("install: check for driver "+strconv.Quote(driverName), output, err)
 	}
 	switch strings.ToLower(strings.TrimSpace(output)) {
 	case "true":
@@ -57,4 +56,35 @@ func lookupPrinterCommand(printerName string) (string, error) {
 		"if ($printers.Count -eq 0) { 'null' } elseif ($printers.Count -ne 1) { throw 'Multiple matching printers' } else { $printer = $printers[0]; " +
 		"[PSCustomObject]@{printer_name=$printer.Name;port_name=$printer.PortName;driver_name=$printer.DriverName} | ConvertTo-Json -Compress }"
 	return powerShellCommand(command), nil
+}
+
+func lookupPrinterWith(ctx context.Context, runner powerShellRunner, printerName string) (PrinterConfiguration, error) {
+	command, err := lookupPrinterCommand(printerName)
+	if err != nil {
+		return PrinterConfiguration{}, err
+	}
+	output, err := runner(ctx, command)
+	if err != nil {
+		// The output was discarded here, so removal and the preview's
+		// conflict check reported a bare "exit status 1".
+		return PrinterConfiguration{}, powerShellFailure("install: read printer "+strconv.Quote(printerName), output, err)
+	}
+	var configuration PrinterConfiguration
+	if strings.TrimSpace(output) == "null" {
+		return configuration, ErrPrinterNotFound
+	}
+	if err := json.Unmarshal([]byte(strings.TrimSpace(output)), &configuration); err != nil {
+		return PrinterConfiguration{}, fmt.Errorf("install: decode printer configuration: %w", err)
+	}
+	return configuration, nil
+}
+
+// powerShellFailure turns a failed read-only command into an error that
+// carries Windows' reason (see stepDiagnostic) rather than the echoed script
+// and error record, while still wrapping the process error.
+func powerShellFailure(what, output string, err error) error {
+	if diagnostic := stepDiagnostic(output); diagnostic != "" {
+		return fmt.Errorf("%s: %s (%w)", what, diagnostic, err)
+	}
+	return fmt.Errorf("%s: %w", what, err)
 }

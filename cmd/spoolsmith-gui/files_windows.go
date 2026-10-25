@@ -358,6 +358,14 @@ func (a *app) relaunchElevated(op operation) {
 		showErr(a.mw, "Continue as administrator", err)
 		return
 	}
+	op, err = handOverPaths(op, universalName)
+	if err != nil {
+		msg := err.Error() + "\r\n\r\nThe administrator copy of SpoolSmith may not see this drive letter, and would then report the file as not found. " +
+			`To be sure, copy the file to a local folder, or open it by its \\server\share path, and try again.` + "\r\n\r\nContinue anyway?"
+		if walk.MsgBox(a.mw, "Continue as administrator", msg, walk.MsgBoxYesNo|walk.MsgBoxDefButton2|walk.MsgBoxIconWarning) != walk.DlgCmdYes {
+			return
+		}
+	}
 	arg, err := encodeReview(op)
 	if err != nil {
 		showErr(a.mw, "Continue as administrator", err)
@@ -641,4 +649,58 @@ func (k windowKeys) OnPreTranslate(msg *win.MSG) bool {
 		return false
 	}
 	return true
+}
+
+var procWNetGetUniversalNameW = windows.NewLazySystemDLL("mpr.dll").NewProc("WNetGetUniversalNameW")
+
+// universalName returns the UNC path for a file on a mapped network drive, ""
+// when the path is not on one (local, already UNC, relative), or an error when
+// it is on a network drive Windows could not resolve.
+func universalName(path string) (string, error) {
+	if len(path) < 3 || path[1] != ':' {
+		return "", nil
+	}
+	root, err := windows.UTF16PtrFromString(path[:3])
+	if err != nil || windows.GetDriveType(root) != windows.DRIVE_REMOTE {
+		return "", nil
+	}
+	name, err := windows.UTF16PtrFromString(path)
+	if err != nil {
+		return "", err
+	}
+	const universalNameInfoLevel = 1
+	buffer, err := callGrowing(4096, func(buf []byte, size *uint32) error {
+		if ret, _, _ := procWNetGetUniversalNameW.Call(uintptr(unsafe.Pointer(name)), universalNameInfoLevel, uintptr(unsafe.Pointer(&buf[0])), uintptr(unsafe.Pointer(size))); ret != 0 {
+			return syscall.Errno(ret)
+		}
+		return nil
+	})
+	if err != nil {
+		return "", err
+	}
+	// UNIVERSAL_NAME_INFOW is a single LPWSTR pointing into the buffer.
+	unc := windows.UTF16PtrToString(*(**uint16)(unsafe.Pointer(&buffer[0])))
+	if !strings.HasPrefix(unc, `\\`) {
+		return "", fmt.Errorf("Windows answered %q, which is not a network path", unc)
+	}
+	return unc, nil
+}
+
+// callGrowing calls a Windows function that fills a caller-sized buffer and,
+// when the buffer is too small, answers ERROR_MORE_DATA with the size it needs
+// written back through size. The buffer grows to that size and the call is
+// retried; any other error (or a size that does not grow) is returned.
+func callGrowing(size uint32, call func(buf []byte, size *uint32) error) ([]byte, error) {
+	for range 4 {
+		buf := make([]byte, max(size, 1))
+		asked := size
+		err := call(buf, &size)
+		if err == nil {
+			return buf, nil
+		}
+		if !errors.Is(err, windows.ERROR_MORE_DATA) || size <= asked {
+			return nil, err
+		}
+	}
+	return nil, windows.ERROR_MORE_DATA
 }

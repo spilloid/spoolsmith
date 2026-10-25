@@ -157,7 +157,7 @@ func (w Workflow) RunRepoint(ctx context.Context, env Environment, input io.Read
 		if runErr != nil {
 			outcome.Result = &result
 			writeCommandResults(interactive, result.Ran)
-			return failOutcome(outcome, fmt.Errorf("repoint: run %q: %w", command, runErr), ExitGeneralError)
+			return failOutcome(outcome, newStepError("repoint", len(plan.Commands), result.Ran), ExitGeneralError)
 		}
 	}
 	outcome.Result = &result
