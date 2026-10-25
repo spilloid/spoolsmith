@@ -55,10 +55,10 @@ product hardening, with additional protocols as future scope.
    (settings-only with its reason), an Explorer-made zip, and a cancelled
    `copy --all` (no set written).
 
-## Unreleased: hardening pass (October 2026)
+## v1.5.1: hardening pass (released 2026-10-25)
 
 Fixes from an adversarial pass over failure paths and untrusted input; see the
-2026-10-19 entry in [the dev log](development/dev-process.md). Not in any release yet.
+2026-10-19 entries in [the dev log](development/dev-process.md). Released in v1.5.1.
 
 - **PowerShell quoting closed for U+201E.** PowerShell treats the low double quote
   `„` as a string delimiter. A printer or driver name containing it, in a `.ssb`
