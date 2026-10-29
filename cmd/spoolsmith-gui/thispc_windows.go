@@ -347,7 +347,7 @@ func (a *app) onCopyQueue(queue install.InstalledQueue) {
 				LineEdit{AssignTo: &noteEdit, CueBanner: "For example: front desk, replaced 2026", Accessibility: name("copy-note"), ColumnSpan: 2},
 			}},
 			CheckBox{AssignTo: &includeDriver, Text: driverLabel, Checked: true},
-			Label{AssignTo: &statusLabel, Text: "The printer is checked while copying, so the other PC can confirm it is the same one."},
+			Label{AssignTo: &statusLabel, Text: "The printer is checked while copying, so the other PC can confirm it is the same model."},
 			VSpacer{},
 			Composite{Layout: row(), Children: []Widget{
 				HSpacer{},

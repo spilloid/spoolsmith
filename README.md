@@ -46,12 +46,13 @@ USB and WSD printers, driver trust, and rolling one reviewed plan out to many PC
 |---|---|
 | **Set up by address** | Let Windows set up an IPP printer and find its own driver, or pick an installed driver yourself. [Guide →](https://spilloid.github.io/spoolsmith/guide/profiles.html) |
 | **Saved setups** | Keep printers as `.ssb` files to add, update, check or remove on any PC, and move the whole library as one `.zip`. [Guide →](https://spilloid.github.io/spoolsmith/guide/profiles.html#add-update-and-remove) |
+| **Change address** | Printer moved or the subnet was renumbered? Re-point the queue; users keep the printer they already pick. [Guide →](https://spilloid.github.io/spoolsmith/guide/copy.html#when-a-printer-changes-address) |
 | **Intune packaging** | Turn a printer file into a reviewable Win32 app and `.intunewin`. Local only; it never signs in to a tenant. [Guide →](https://spilloid.github.io/spoolsmith/guide/intune.html) |
 | **Discovery** | Scan a subnet and see what each printer reports. [Guide →](https://spilloid.github.io/spoolsmith/guide/profiles.html#find-printers-on-the-network) |
 
 ## Built to be boring
 
-- **You see every step before Windows changes.** Drivers, ports, queues and trusted publishers are all listed in the plan you confirm.
+- **You see every step before Windows changes.** Drivers, ports, queues and any trusted-publisher change are all in the plan you confirm.
 - **No guessing.** A printer reporting a different identity stops setup; it never becomes an install.
 - **Downloads nothing itself, asks for no credentials.** Drivers come from the printer file, what's installed, or Windows' own driver search.
 - **Plain files.** A `.ssb` is a zip; a set is a zip of `.ssb` files. Neither contains commands.
