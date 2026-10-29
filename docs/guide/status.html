@@ -76,7 +76,7 @@
         <li>WSD identity and IPP endpoint verification, plus elevated IPP queue creation, re-apply, status and cleanup.</li>
         <li>The v1.5 native-driver step switching an IPP queue from the class driver to the printer's own (already installed) driver, and a re-apply recognizing it.</li>
         <li>The Intune endpoint lifecycle as SYSTEM: install, detection, protected state, standard-user denials, revision updates and removal.</li>
-        <li>The full desktop suite (40 of 40 at 125% scaling, on v1.5.0), including an accessibility audit of every page. v1.5.1 didn't re-run it.</li>
+        <li>The full desktop suite, including an accessibility audit of every page: 40 of 40 at 125% scaling on v1.5.0, and 39 of 40 at 150% on v1.5.2 (see the Intune export below).</li>
       </ul>
       <p>The dated <a href="https://github.com/spilloid/spoolsmith/tree/main/docs/validation">validation records</a> hold the evidence for each.</p>
 
@@ -91,7 +91,7 @@
         <li>USB driver staging on a clean PC.</li>
         <li>Other brands, Canon included. They're expected to work through their standard Windows driver, but haven't been tested.</li>
         <li>Delivery through a real Intune tenant and Company Portal.</li>
-        <li>Display scales other than 125%, Windows high contrast, and a screen reader.</li>
+        <li>The desktop Intune wizard's export at 150% scaling: under automation it never runs (<a href="https://github.com/spilloid/spoolsmith/issues/33">#33</a>), and a manual export at that scale hasn't been tried. Also 100% and 200% scaling, Windows high contrast, and a screen reader.</li>
       </ul>
       <p>These are the next validation priorities in the <a href="https://github.com/spilloid/spoolsmith/blob/main/docs/roadmap.md">roadmap</a>.</p>
 
