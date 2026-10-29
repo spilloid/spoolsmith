@@ -85,6 +85,12 @@ func recordRun(logger *actionlog.Logger, args []string, code int, duration time.
 
 func run(ctx context.Context, args []string, input io.Reader, stdout, stderr io.Writer, app application) int {
 	if len(args) == 0 {
+		// Someone typing `spoolsmith` at a prompt wants the help, not a JSON
+		// error; a script with redirected stdout still gets the JSON it parses.
+		if app.outputTerminal {
+			printUsage(stdout)
+			return int(install.ExitUsageError)
+		}
 		return usageError(stdout, stderr, "spoolsmith", errors.New("command is required"))
 	}
 
@@ -109,6 +115,15 @@ func run(ctx context.Context, args []string, input io.Reader, stdout, stderr io.
 			return usageError(stdout, stderr, "capabilities", errors.New("capabilities accepts no arguments"))
 		}
 		return encodeSuccess(stdout, stderr, "capabilities", []string{intune.EndpointCapability})
+	case "version", "--version":
+		if len(args) != 1 {
+			return usageError(stdout, stderr, "version", errors.New("version accepts no arguments"))
+		}
+		if app.outputTerminal {
+			fmt.Fprintf(stdout, "SpoolSmith %s\n", versionString())
+			return int(install.ExitSuccess)
+		}
+		return encodeSuccess(stdout, stderr, "version", versionResponse{Version: versionString()})
 	case "drivers":
 		if len(args) != 1 {
 			return usageError(stdout, stderr, "drivers", errors.New("drivers accepts no arguments"))
@@ -448,6 +463,7 @@ func encodeJSON(writer io.Writer, value any) error {
 var commandUsage = map[string]string{
 	"capabilities": "spoolsmith capabilities                    this build's intune-endpoint capability marker\n",
 	"drivers":      "spoolsmith drivers                         exact registered Windows driver names\n",
+	"version":      "spoolsmith version                         this build's version (also --version)\n",
 	"discover":     "spoolsmith discover <IPv4-CIDR>            /24 through /32\n",
 	"inspect":      "spoolsmith inspect <target>                target is an IP address, a fixture file, a printer file (.ssb) or a printer set (.zip)\n",
 	"catalog":      "spoolsmith catalog probe <ip> | catalog families\n",
@@ -494,10 +510,11 @@ const copyUsage = "spoolsmith copy [<queue>] [--out <file.ssb>] [--settings-only
 
 func init() {
 	commandUsage["clone"] = commandUsage["copy"]
+	commandUsage["--version"] = commandUsage["version"]
 }
 
 func printUsage(writer io.Writer) {
-	fmt.Fprintln(writer, "SpoolSmith: find, save, copy, and map network printers")
+	fmt.Fprintln(writer, "SpoolSmith: copy a working Windows printer to a file, and set it up on the next PC")
 	fmt.Fprintln(writer, "")
 	fmt.Fprintln(writer, "Look at this PC")
 	fmt.Fprintln(writer, "  spoolsmith printers [--copyable] [--json]   installed queues, and which can be copied")
@@ -515,22 +532,25 @@ func printUsage(writer io.Writer) {
 	fmt.Fprintln(writer, "")
 	fmt.Fprintln(writer, "Find and save a printer")
 	fmt.Fprintln(writer, "  spoolsmith discover <IPv4-CIDR>            /24 through /32")
-	fmt.Fprintln(writer, "  spoolsmith inspect <target>")
+	fmt.Fprintln(writer, "  spoolsmith inspect <target>                what an IP, fixture, .ssb or set reports")
 	fmt.Fprintln(writer, "  spoolsmith profile export-all <folder> <set.zip> [--dry-run]")
 	fmt.Fprintln(writer, "  spoolsmith profile import-all <set.zip> <folder> [--dry-run]")
 	fmt.Fprintln(writer, "  spoolsmith profile capture <target> <file> --name <queue> --driver <installed-driver-name>")
+	fmt.Fprintln(writer, "  spoolsmith profile capture <ip> <file.ssb> --name <queue> --windows-driver")
 	fmt.Fprintln(writer, "  spoolsmith profile edit <file> [--name <queue>] [--driver <name>] [--target <ip>]")
-	fmt.Fprintln(writer, "  spoolsmith profile edit <file> [--package <recipe-id> --archive <local-file> | --clear-package]")
+	fmt.Fprintln(writer, "  spoolsmith profile edit <file> [--package <recipe-id> --archive <local-file>] [--clear-package]")
 	fmt.Fprintln(writer, "")
 	fmt.Fprintln(writer, "Map, change, and remove queues")
 	fmt.Fprintln(writer, "  spoolsmith add <ip> --windows-driver --name <queue> [--dry-run] [--yes] [--json]")
-	fmt.Fprintln(writer, "  Windows automatic setup requires verified IPP support. Windows creates the queue with its class driver, then SpoolSmith asks Windows for the printer's own driver; if none is found the class driver stays and setup still succeeds.")
+	fmt.Fprintln(writer, "  For a verified IPP printer: Windows creates the queue with its class driver, then")
+	fmt.Fprintln(writer, "  SpoolSmith asks Windows for the printer's own driver. If none is found, the class")
+	fmt.Fprintln(writer, "  driver stays and setup still succeeds.")
 	fmt.Fprintln(writer, "  spoolsmith add|configure --profile <file> [--usb-queue <name>] [--offline] [--dry-run] [--yes] [--json]")
 	fmt.Fprintln(writer, "  spoolsmith repoint <queue> <new-ip> [--dry-run] [--yes] [--non-interactive] [--json]")
 	fmt.Fprintln(writer, "  spoolsmith remove --profile <file> [--dry-run] [--json]")
 	fmt.Fprintln(writer, "  spoolsmith uninstall <printer-name> [--purge-driver] [--dry-run|--what-if] [--yes] [--non-interactive] [--json]")
 	fmt.Fprintln(writer, "")
-	fmt.Fprintln(writer, "Package a validated profile for Intune (local only; never contacts a tenant)")
+	fmt.Fprintln(writer, "Package a tested printer file for Intune (local only; never contacts a tenant)")
 	fmt.Fprintln(writer, "  spoolsmith intune wizard                   interactive, one export directory at a time")
 	fmt.Fprintln(writer, "  spoolsmith intune build --profile <file> --binary <exe> [--revision <n>] [--dry-run]")
 	fmt.Fprintln(writer, "  --binary-sha256, --id, --name, --description and --output are all derived from the")
@@ -547,6 +567,7 @@ func printUsage(writer io.Writer) {
 	fmt.Fprintln(writer, "")
 	fmt.Fprintln(writer, "--dry-run/--what-if takes precedence over --yes and never prompts or mutates.")
 	fmt.Fprintln(writer, "--offline skips the live identity check; the plan says so before you confirm it.")
+	fmt.Fprintln(writer, "spoolsmith version (or --version) prints this build's version.")
 }
 
 // executableDir is the folder holding this program, where an administrator
