@@ -173,6 +173,56 @@ func TestUsageAndGeneralErrorsStillWriteJSON(t *testing.T) {
 	}
 }
 
+func TestVersionCommand(t *testing.T) {
+	defer func(saved string) { version = saved }(version)
+	version = "v9.8.7"
+	for _, name := range []string{"version", "--version"} {
+		t.Run(name+" terminal", func(t *testing.T) {
+			app := testApplication()
+			app.outputTerminal = true
+			var stdout, stderr bytes.Buffer
+			if got := run(context.Background(), []string{name}, strings.NewReader(""), &stdout, &stderr, app); got != 0 {
+				t.Fatalf("run() code = %d, stderr %q", got, stderr.String())
+			}
+			if stdout.String() != "SpoolSmith v9.8.7\n" {
+				t.Fatalf("stdout = %q", stdout.String())
+			}
+		})
+		t.Run(name+" redirected", func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			if got := run(context.Background(), []string{name}, strings.NewReader(""), &stdout, &stderr, testApplication()); got != 0 {
+				t.Fatalf("run() code = %d, stderr %q", got, stderr.String())
+			}
+			var response versionResponse
+			if err := json.Unmarshal(stdout.Bytes(), &response); err != nil || response.Version != "v9.8.7" {
+				t.Fatalf("stdout = %q, decode error %v", stdout.String(), err)
+			}
+		})
+	}
+	var stdout, stderr bytes.Buffer
+	if got := run(context.Background(), []string{"version", "extra"}, strings.NewReader(""), &stdout, &stderr, testApplication()); got != int(install.ExitUsageError) {
+		t.Fatalf("version with an argument: code = %d", got)
+	}
+}
+
+func TestBareInvocationShowsHelpInATerminal(t *testing.T) {
+	app := testApplication()
+	app.outputTerminal = true
+	var stdout, stderr bytes.Buffer
+	if got := run(context.Background(), nil, strings.NewReader(""), &stdout, &stderr, app); got != int(install.ExitUsageError) {
+		t.Fatalf("run() code = %d", got)
+	}
+	if !strings.Contains(stdout.String(), "Copy a printer from one PC to another") || strings.Contains(stdout.String(), `"status"`) {
+		t.Fatalf("terminal stdout should be the help, not JSON: %q", stdout.String())
+	}
+	// Redirected, it stays the JSON error scripts already parse.
+	stdout.Reset()
+	if got := run(context.Background(), nil, strings.NewReader(""), &stdout, &stderr, testApplication()); got != int(install.ExitUsageError) {
+		t.Fatalf("redirected run() code = %d", got)
+	}
+	assertValidJSON(t, stdout.Bytes())
+}
+
 func TestIntuneIsDispatchedNotUnknown(t *testing.T) {
 	// intune.go's logic is covered directly in internal/intune; this only guards
 	// against main's command switch losing the case again and the command

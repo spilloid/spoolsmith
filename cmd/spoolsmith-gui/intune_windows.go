@@ -215,7 +215,7 @@ func (a *app) onIntuneWizard() {
 		}()
 	}
 	err := (Dialog{AssignTo: &dialog, Title: "Build an Intune printer app", MinSize: Size{Width: 760, Height: 520}, Size: Size{Width: 880, Height: 600}, Background: SolidColorBrush{Color: colorPage}, Layout: dialogLayout(), Children: dialogFrame("Build an Intune printer app",
-		Label{Text: "Package one prevalidated printer for Required or Company Portal deployment."},
+		Label{Text: "Package one printer you've already tested, for Required or Company Portal deployment."},
 		Composite{Layout: row(), Children: []Widget{
 			Label{AssignTo: &stepOne, Text: "1  Package settings", Font: stepFont, TextColor: colorBrand},
 			Label{Text: "›", Font: stepFont, TextColor: colorHint},

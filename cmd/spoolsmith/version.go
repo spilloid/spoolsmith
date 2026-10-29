@@ -7,6 +7,12 @@ import "strings"
 // claiming a release number it may not be.
 var version = ""
 
+// versionResponse is `spoolsmith version`'s JSON shape when stdout is
+// redirected.
+type versionResponse struct {
+	Version string `json:"version"`
+}
+
 func versionString() string {
 	if strings.TrimSpace(version) == "" {
 		return "(development build)"

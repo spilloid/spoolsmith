@@ -262,7 +262,7 @@ func (a *app) showMoreMenu() {
 	case moreAssociation:
 		a.toggleAssociation()
 	case moreAbout:
-		walk.MsgBox(a.mw, "About SpoolSmith", fmt.Sprintf("SpoolSmith %s\r\n\r\nCopy network printers between Windows PCs. Every change is shown and confirmed before it happens.", versionString()), walk.MsgBoxIconInformation)
+		walk.MsgBox(a.mw, "About SpoolSmith", fmt.Sprintf("SpoolSmith %s\r\n\r\nCopy printers between Windows PCs. Every change is shown and confirmed before it happens.", versionString()), walk.MsgBoxIconInformation)
 	}
 }
 

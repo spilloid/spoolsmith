@@ -49,6 +49,8 @@
         <p>Lists the exact registered Windows driver names, for <code>--driver</code>.</p></div>
       <div class="cmd"><h3 id="spoolsmith-status-profile-json">spoolsmith status --profile &lt;file&gt; [--json]<a class="heading-anchor" href="#spoolsmith-status-profile-json" aria-label="Link to this section">#</a></h3>
         <p>Compares the local queue, driver and port with a printer file, without contacting the printer. Exit codes: <code>0</code> matches, <code>3</code> mismatch, <code>2</code> invalid input, <code>1</code> inventory failure.</p></div>
+      <div class="cmd"><h3 id="spoolsmith-version">spoolsmith version<a class="heading-anchor" href="#spoolsmith-version" aria-label="Link to this section">#</a></h3>
+        <p>Prints this build's version, such as <code>SpoolSmith v1.5.2</code>, or <code>{"version": "v1.5.2"}</code> when stdout is redirected. <code>--version</code> is an alias. A build from source without a release stamp says <code>(development build)</code>.</p></div>
       <div class="cmd"><h3 id="spoolsmith-capabilities">spoolsmith capabilities<a class="heading-anchor" href="#spoolsmith-capabilities" aria-label="Link to this section">#</a></h3>
         <p>Prints this build's capability markers. Intune packaging requires <code>SpoolSmith:intune-endpoint-v2:ssb,offline,status</code>.</p></div>
 
@@ -80,7 +82,7 @@
       <div class="cmd"><h3 id="spoolsmith-discover">spoolsmith discover &lt;IPv4-CIDR&gt;<a class="heading-anchor" href="#spoolsmith-discover" aria-label="Link to this section">#</a></h3>
         <p>Scans <code>/24</code> through <code>/32</code> for printer candidates.</p></div>
       <div class="cmd"><h3 id="spoolsmith-inspect">spoolsmith inspect &lt;target&gt;<a class="heading-anchor" href="#spoolsmith-inspect" aria-label="Link to this section">#</a></h3>
-        <p>Shows what an IP address, fixture file or <code>.ssb</code> reports, and where each piece of evidence came from.</p></div>
+        <p>Shows what an IP address or fixture file reports, and where each piece of evidence came from. Given a <code>.ssb</code> or <code>.zip</code> set, it does what <code>bundle inspect</code> does.</p></div>
       <div class="cmd"><h3 id="spoolsmith-profile-capture-name-driver">spoolsmith profile capture &lt;target&gt; &lt;file&gt; --name &lt;queue&gt; --driver &lt;name&gt;<a class="heading-anchor" href="#spoolsmith-profile-capture-name-driver" aria-label="Link to this section">#</a></h3>
         <p>Probes the printer and writes a printer file with the queue name and exact registered driver you give it. Use <code>--windows-driver</code> instead of <code>--driver</code> for Windows automatic IPP setup. Never overwrites a file.</p></div>
       <div class="cmd"><h3 id="spoolsmith-profile-edit-options">spoolsmith profile edit &lt;file&gt; [options]<a class="heading-anchor" href="#spoolsmith-profile-edit-options" aria-label="Link to this section">#</a></h3>

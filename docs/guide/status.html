@@ -45,7 +45,7 @@
       <table>
         <thead><tr><th>Driver source</th><th>What's checked</th></tr></thead>
         <tbody>
-          <tr><td>Carried in a printer file</td><td>Every file's SHA-256 against the manifest, then Windows' catalog-signature check when <code>pnputil</code> stages it. If the signature is valid but the publisher isn't trusted yet, that exact signer is added to <code>LocalMachine\TrustedPublisher</code>, as a step in the plan. Never the Root store, and never a certificate taken from the file itself.</td></tr>
+          <tr><td>Carried in a printer file</td><td>Every file's SHA-256 against the manifest, then Windows' catalog-signature check when <code>pnputil</code> stages it. If the signature is valid but the publisher isn't trusted yet, that exact signer is added to <code>LocalMachine\TrustedPublisher</code>. The plan shows this step as a rule, not the signer's name. Never the Root store, and never a certificate taken from the file itself.</td></tr>
           <tr><td>Already registered</td><td>Used as-is. You confirm compatibility; a test print proves it.</td></tr>
           <tr><td>Windows automatic (IPP)</td><td>Windows chooses and installs the driver. SpoolSmith verifies the endpoint before and after switching, and puts the class driver back if the check fails.</td></tr>
           <tr><td>Local Brother archive</td><td>Pinned archive hash, vendor Authenticode signature, extraction without running the EXE, then the driver catalog signature.</td></tr>
@@ -76,7 +76,7 @@
         <li>WSD identity and IPP endpoint verification, plus elevated IPP queue creation, re-apply, status and cleanup.</li>
         <li>The v1.5 native-driver step switching an IPP queue from the class driver to the printer's own (already installed) driver, and a re-apply recognizing it.</li>
         <li>The Intune endpoint lifecycle as SYSTEM: install, detection, protected state, standard-user denials, revision updates and removal.</li>
-        <li>The full desktop suite (40 of 40 at 125% scaling), including an accessibility audit of every page.</li>
+        <li>The full desktop suite (40 of 40 at 125% scaling, on v1.5.0), including an accessibility audit of every page. v1.5.1 didn't re-run it.</li>
       </ul>
       <p>The dated <a href="https://github.com/spilloid/spoolsmith/tree/main/docs/validation">validation records</a> hold the evidence for each.</p>
 
@@ -102,6 +102,10 @@
         <li><strong>Where to look after a failure.</strong> Every CLI run and desktop action appends one JSON line to <code>%TEMP%\spoolsmith\actions.log</code> (for an elevated session that is the signed-in user's temp folder; under Intune's SYSTEM context, <code>C:\Windows\Temp\spoolsmith\actions.log</code>) with the command, its arguments, the exit code and the error text. The command's own output (or <code>--json</code>) has the full plan and every command's output.</li>
         <li><strong>A broken Windows print provider blocks changes.</strong> Inventory errors stop the operation instead of being read as "no printer present". The error quotes Windows' reason, for example "The spooler service is not reachable".</li>
         <li><strong>Desktop accessible names are internal IDs</strong>, not readable labels. Every control is reachable by keyboard, but a screen reader will announce IDs.</li>
+        <li><strong>The plan doesn't name the publisher it may trust.</strong> Any signer Windows reports as Valid for the driver's own catalog can be added to <code>TrustedPublisher</code>; the plan states that rule rather than the certificate. Use <code>--settings-only</code> if your site manages driver trust itself.</li>
+        <li><strong>Driver files are staged in a predictable folder</strong>, <code>%TEMP%\SpoolSmith-bundle-&lt;digest&gt;</code>. Under Intune's SYSTEM context that is <code>C:\Windows\Temp</code>, where a standard user may be able to create files first.</li>
+        <li><strong>Spooler calls have no timeout</strong> outside the Intune wrapper, so a hung spooler can hang a run.</li>
+        <li><strong>Exit code <code>1</code> doesn't say whether anything changed.</strong> Read the error text or <code>--json</code>, which list the steps already done.</li>
       </ul>
 
       <h2 id="under-the-hood">Under the hood<a class="heading-anchor" href="#under-the-hood" aria-label="Link to this section">#</a></h2>

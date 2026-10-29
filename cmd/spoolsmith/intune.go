@@ -153,7 +153,7 @@ func runIntune(ctx context.Context, args []string, input io.Reader, stdout, stde
 	}
 	flags := flag.NewFlagSet("intune build", flag.ContinueOnError)
 	flags.SetOutput(stderr)
-	flags.StringVar(&opts.ProfilePath, "profile", "", "administrator-prevalidated profile (.json) or bundle (.ssb)")
+	flags.StringVar(&opts.ProfilePath, "profile", "", "printer file (.ssb) an administrator has already tested")
 	flags.StringVar(&opts.BinaryPath, "binary", "", "Windows x64 CLI binary containing offline/status commands")
 	flags.StringVar(&opts.BinarySHA256, "binary-sha256", "", "optional approved binary SHA-256 (default: calculate from selected CLI)")
 	flags.StringVar(&opts.ID, "id", "", "stable deployment ID (default: derived from profile queue name)")
