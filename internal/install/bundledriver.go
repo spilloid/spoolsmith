@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"regexp"
 	"strings"
 )
 
@@ -26,7 +27,20 @@ type BundleDriver struct {
 	FileCount     int    `json:"file_count"`
 	TotalBytes    int64  `json:"total_bytes"`
 	PayloadDigest string `json:"payload_digest"`
+	// Signers are the signer certificates of the catalogs the INF names, read
+	// from the catalogs themselves. Staging adds a signer to TrustedPublisher
+	// only if it is named here.
+	Signers []BundleSigner `json:"signers,omitempty"`
 }
+
+// BundleSigner is one catalog signer a plan may add to TrustedPublisher.
+type BundleSigner struct {
+	Catalog    string `json:"catalog"`
+	Subject    string `json:"subject"`
+	Thumbprint string `json:"thumbprint"`
+}
+
+var thumbprintPattern = regexp.MustCompile(`^[0-9A-F]{40}$`)
 
 // Validate checks the fields that end up inside generated PowerShell.
 func (b BundleDriver) Validate() error {
@@ -57,7 +71,29 @@ func (b BundleDriver) Validate() error {
 	if !strings.EqualFold(filepath.Ext(b.INF), ".inf") {
 		return fmt.Errorf("install: bundle INF path %q is not an .inf file", b.INF)
 	}
+	for _, signer := range b.Signers {
+		if !thumbprintPattern.MatchString(signer.Thumbprint) {
+			return fmt.Errorf("install: bundle signer thumbprint %q is not 40 uppercase hex digits", signer.Thumbprint)
+		}
+		for _, item := range []struct{ field, value string }{
+			{"bundle signer catalog", signer.Catalog},
+			{"bundle signer subject", signer.Subject},
+		} {
+			if err := validatePlanValue(item.field, item.value); err != nil {
+				return err
+			}
+		}
+	}
 	return nil
+}
+
+// signerThumbprints renders the named thumbprints as a PowerShell array.
+func (b BundleDriver) signerThumbprints() string {
+	quoted := make([]string, 0, len(b.Signers))
+	for _, signer := range b.Signers {
+		quoted = append(quoted, powerShellString(signer.Thumbprint))
+	}
+	return "@(" + strings.Join(quoted, ", ") + ")"
 }
 
 // PublisherTrust is the plan's statement of the one trust-store change a
@@ -74,14 +110,21 @@ type PublisherTrust struct {
 	Store               string `json:"store"`
 	OnlyIfMissing       bool   `json:"only_if_missing"`
 	RequireValidCatalog bool   `json:"require_valid_catalog"`
+	// Signers are the only certificates this plan may add. Unlike whether one
+	// is already trusted, who signed a catalog is bundle content, so naming
+	// them keeps the plan identical across a fleet.
+	Signers []BundleSigner `json:"signers"`
+	// RemovedByUninstall is false: uninstall leaves publisher trust in place.
+	RemovedByUninstall bool `json:"removed_by_uninstall"`
 }
 
-func bundlePublisherTrust() *PublisherTrust {
+func bundlePublisherTrust(payload BundleDriver) *PublisherTrust {
 	return &PublisherTrust{
-		Source:              "signer certificate of each catalog the driver INF names, only when Windows reports its signature Valid",
+		Source:              "signer certificate of each catalog the driver INF names, only when the plan names it and Windows reports its signature Valid",
 		Store:               `LocalMachine\TrustedPublisher`,
 		OnlyIfMissing:       true,
 		RequireValidCatalog: true,
+		Signers:             append([]BundleSigner{}, payload.Signers...),
 	}
 }
 
@@ -114,6 +157,10 @@ func bundlePublisherTrust() *PublisherTrust {
 //     to a root this PC already trusts, which a bundle cannot fake.
 //   - Matching is by exact thumbprint. Another certificate with the same
 //     subject does not count as trusted.
+//   - Only a signer the plan names (BundleDriver.Signers, read from the
+//     catalogs before the plan was shown) is ever added, so a confirmation
+//     approves a specific publisher, not a rule. Uninstall does not remove it;
+//     the output says how.
 //   - A missing entry is added directly through X509Store, with no .cer file
 //     written, and re-checked before pnputil runs.
 //   - Nothing is ever added to the Root store, so a self-signed or privately
@@ -151,16 +198,17 @@ if ($drivers.Count -gt 0) { 'Unchanged driver' } else {
   Write-Output ('Catalog ' + $leaf + ' signed by: ' + $signer.Subject);
   $signers[([string]$signer.Thumbprint).ToUpperInvariant()] = $signer
  };
- $nl = [Environment]::NewLine;
+ $nl = [Environment]::NewLine; $named = %[4]s;
  foreach ($thumbprint in @($signers.Keys | Sort-Object)) {
   $signer = $signers[$thumbprint];
   $trustPath = 'Cert:\LocalMachine\TrustedPublisher\' + $thumbprint;
-  if (Test-Path -LiteralPath $trustPath) { Write-Output ('Driver publisher already trusted: ' + $signer.Subject + ' (' + $thumbprint + ')') } else {
+  if (Test-Path -LiteralPath $trustPath) { Write-Output ('Driver publisher already trusted: ' + $signer.Subject + ' (' + $thumbprint + ')') } elseif ($named -notcontains $thumbprint) { Write-Output ('Catalog signer ' + $signer.Subject + ' (' + $thumbprint + ') is not one this plan names. SpoolSmith is not changing publisher trust for it; Windows decides whether it accepts this driver package.') } else {
    $failure = 'SpoolSmith could not establish publisher trust for:' + $nl + '  Subject: ' + $signer.Subject + $nl + '  Thumbprint: ' + $thumbprint + $nl + 'The catalog signature is valid, but Windows does not trust this publisher for driver installation.';
    $store = New-Object -TypeName System.Security.Cryptography.X509Certificates.X509Store -ArgumentList 'TrustedPublisher', 'LocalMachine';
    try { $store.Open('ReadWrite'); $store.Add($signer) } catch { throw ($failure + $nl + $_.Exception.Message) } finally { $store.Close() };
    if (-not (Test-Path -LiteralPath $trustPath)) { throw $failure };
-   Write-Output ('Trusted driver publisher: ' + $signer.Subject + ' (' + $thumbprint + ')')
+   Write-Output ('Trusted driver publisher: ' + $signer.Subject + ' (' + $thumbprint + ')');
+   Write-Output ('Uninstall does not remove this trust. To remove it: certutil -delstore TrustedPublisher ' + $thumbprint)
   }
  };
  $staging = @(& pnputil.exe /add-driver $inf); $code = $LASTEXITCODE;
@@ -175,6 +223,6 @@ if ($drivers.Count -gt 0) { 'Unchanged driver' } else {
  $drivers = @(Get-PrinterDriver -ErrorAction Stop | Where-Object { $_.Name -eq %[1]s });
  if ($drivers.Count -eq 0) { throw 'Driver registration could not be verified' };
  'Registered driver from bundle'
-}`, powerShellString(b.WindowsDriverName), powerShellString(b.StageDirName), powerShellString(infRelative))
+}`, powerShellString(b.WindowsDriverName), powerShellString(b.StageDirName), powerShellString(infRelative), b.signerThumbprints())
 	return powerShellCommand(script), nil
 }

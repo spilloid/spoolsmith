@@ -79,11 +79,14 @@ func utf16INF(text string) []byte {
 const hpINF = "; HP Universal Printing\r\n[Version]\r\nSignature=\"$Windows NT$\"\r\nClass=Printer\r\nCatalogFile.NTamd64 = hpcu360u.cat ; x64 catalog\r\n\r\n[Manufacturer]\r\n\"HP\"=HP,NTamd64\r\n; CatalogFile=not-in-version.cat must be ignored outside [Version]\r\n[Strings]\r\nCatalogFile=decoy.cat\r\n"
 
 type bundleTrustCase struct {
-	name   string
-	inf    []byte
-	files  []string
-	setup  string
-	wantOK bool
+	name  string
+	inf   []byte
+	files []string
+	setup string
+	// unnamed builds a plan that names no signer; alsoNamed adds more.
+	alsoNamed []string
+	unnamed   bool
+	wantOK    bool
 	// wantEvents is the exact ordered EVENT sequence the run must produce.
 	wantEvents []string
 	wantOutput []string
@@ -93,6 +96,12 @@ func runBundleTrustCase(t *testing.T, c bundleTrustCase, repeat bool) string {
 	t.Helper()
 	sandbox := t.TempDir()
 	payload := BundleDriver{WindowsDriverName: "HP Universal Printing PCL 6", INF: "driver/hpcu360u.inf", StageDirName: "SpoolSmith-bundle-test", PayloadDigest: "38d8dd0d5fee6659cb353013ab40e936"}
+	if !c.unnamed {
+		payload.Signers = []BundleSigner{{Catalog: "hpcu360u.cat", Subject: "CN=HP Inc.", Thumbprint: hpThumbprint}}
+		for _, thumbprint := range c.alsoNamed {
+			payload.Signers = append(payload.Signers, BundleSigner{Catalog: "b.cat", Subject: "CN=Other", Thumbprint: thumbprint})
+		}
+	}
 	dir := filepath.Join(sandbox, payload.StageDirName, "driver")
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		t.Fatal(err)
@@ -150,6 +159,16 @@ func TestBundleDriverPublisherTrust(t *testing.T) {
 			wantOK:     true,
 			wantEvents: []string{"sig:hpcu360u.cat", "trust:" + hpThumbprint, "pnputil", "register"},
 			wantOutput: []string{"Catalog hpcu360u.cat signed by: CN=HP Inc.", "Trusted driver publisher: CN=HP Inc. (" + hpThumbprint + ")", "Driver package staged", "Registered driver from bundle"},
+		},
+		{
+			// The confirmation approved named publishers, not a rule: a Valid
+			// signer the plan didn't name must not be added.
+			name:       "valid signer the plan does not name is never trusted",
+			files:      []string{"hpcu360u.cat"},
+			setup:      hpSig,
+			unnamed:    true,
+			wantEvents: []string{"sig:hpcu360u.cat", "pnputil"},
+			wantOutput: []string{"is not one this plan names"},
 		},
 		{
 			name:       "already trusted signer adds nothing",
@@ -226,6 +245,7 @@ func TestBundleDriverPublisherTrust(t *testing.T) {
 			name:       "every valid signer the INF names is trusted",
 			inf:        []byte("[Version]\r\nCatalogFile = a.cat\r\nCatalogFile.NTamd64 = \"b.cat\"\r\n"),
 			files:      []string{"a.cat", "b.cat"},
+			alsoNamed:  []string{otherThumbprint},
 			setup:      hpSig + "$global:sigs['a.cat'] = " + validSignature("CN=HP Inc.", hpThumbprint) + "; $global:sigs['b.cat'] = " + validSignature("CN=Other", otherThumbprint) + ";",
 			wantOK:     true,
 			wantEvents: []string{"sig:a.cat", "sig:b.cat", "trust:" + hpThumbprint, "trust:" + otherThumbprint, "pnputil", "register"},
