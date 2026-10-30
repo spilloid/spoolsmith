@@ -75,28 +75,59 @@ func openTestBundle(t *testing.T) *Bundle {
 	return opened
 }
 
-// A standard user can create folders in C:\Windows\Temp, so a pre-created
-// stage path must be refused, and left alone rather than deleted.
-func TestEnsureExtractedRefusesAStageAStandardUserCouldWrite(t *testing.T) {
-	opened := openTestBundle(t)
-	dest := filepath.Join(t.TempDir(), "stage")
+// plantStage makes dest the way a standard user could: a directory the Users
+// group may modify, holding a file with the payload's INF name.
+func plantStage(t *testing.T, dest string) string {
+	t.Helper()
 	if err := os.Mkdir(dest, 0700); err != nil {
 		t.Fatal(err)
+	}
+	if out, err := exec.Command("icacls", dest, "/grant", "*S-1-5-32-545:(OI)(CI)M").CombinedOutput(); err != nil {
+		t.Fatalf("icacls: %v %s", err, out)
 	}
 	planted := filepath.Join(dest, "brhl2315a.inf")
 	if err := os.WriteFile(planted, []byte("planted"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	err := opened.EnsureExtracted(dest)
-	if err == nil || !strings.Contains(err.Error(), "was not created by an administrator") {
-		t.Fatalf("EnsureExtracted() over a user-created directory = %v, want a refusal", err)
+	return planted
+}
+
+func asideCopies(t *testing.T, dest string) []string {
+	t.Helper()
+	matches, err := filepath.Glob(dest + ".untrusted-*")
+	if err != nil {
+		t.Fatal(err)
 	}
-	if _, statErr := os.Stat(planted); statErr != nil {
-		t.Fatalf("the refused directory was modified: %v", statErr)
+	return matches
+}
+
+// A standard user can create folders in C:\Windows\Temp, and v1.5.2 left
+// user-owned stage folders behind after an unelevated preview. Such a folder
+// is moved aside, untouched, and the payload is staged fresh.
+func TestEnsureExtractedMovesAsideAStageAStandardUserCouldWrite(t *testing.T) {
+	trustCurrentUserForTest(t)
+	opened := openTestBundle(t)
+	dest := filepath.Join(t.TempDir(), "stage")
+	plantStage(t, dest)
+	if err := opened.EnsureExtracted(dest); err != nil {
+		t.Fatalf("EnsureExtracted() over a user-writable directory = %v, want it moved aside", err)
+	}
+	if data, _ := os.ReadFile(filepath.Join(dest, "brhl2315a.inf")); string(data) == "planted" {
+		t.Fatal("the planted file was used")
+	}
+	if err := checkStageDir(dest); err != nil {
+		t.Fatalf("fresh stage is not administrators-only: %v", err)
+	}
+	aside := asideCopies(t, dest)
+	if len(aside) != 1 {
+		t.Fatalf("aside copies = %v, want exactly one", aside)
+	}
+	if data, err := os.ReadFile(filepath.Join(aside[0], "brhl2315a.inf")); err != nil || string(data) != "planted" {
+		t.Fatalf("the untrusted copy was modified: %q, %v", data, err)
 	}
 }
 
-func TestEnsureExtractedRefusesAJunction(t *testing.T) {
+func TestEnsureExtractedMovesAsideAJunctionWithoutTouchingItsTarget(t *testing.T) {
 	trustCurrentUserForTest(t)
 	opened := openTestBundle(t)
 	root := t.TempDir()
@@ -104,13 +135,46 @@ func TestEnsureExtractedRefusesAJunction(t *testing.T) {
 	if err := os.Mkdir(target, 0700); err != nil {
 		t.Fatal(err)
 	}
+	kept := filepath.Join(target, "keep.txt")
+	if err := os.WriteFile(kept, []byte("keep"), 0600); err != nil {
+		t.Fatal(err)
+	}
 	dest := filepath.Join(root, "stage")
 	if out, err := exec.Command("cmd", "/c", "mklink", "/J", dest, target).CombinedOutput(); err != nil {
 		t.Skipf("cannot create a junction here: %v %s", err, out)
 	}
-	err := opened.EnsureExtracted(dest)
-	if err == nil || !strings.Contains(err.Error(), "reparse point") {
-		t.Fatalf("EnsureExtracted() through a junction = %v, want a refusal", err)
+	if err := opened.EnsureExtracted(dest); err != nil {
+		t.Fatalf("EnsureExtracted() over a junction = %v, want it moved aside", err)
+	}
+	if err := checkStageDir(dest); err != nil {
+		t.Fatalf("fresh stage: %v", err)
+	}
+	if entries, _ := os.ReadDir(target); len(entries) != 1 {
+		t.Fatalf("junction target was written: %v", entries)
+	}
+	if len(asideCopies(t, dest)) != 1 {
+		t.Fatal("the junction was not moved aside")
+	}
+}
+
+// If the untrusted folder can't be moved (a file inside is held open), it is
+// refused and left exactly as it was.
+func TestEnsureExtractedRefusesAnUntrustedStageItCannotMove(t *testing.T) {
+	trustCurrentUserForTest(t)
+	opened := openTestBundle(t)
+	dest := filepath.Join(t.TempDir(), "stage")
+	planted := plantStage(t, dest)
+	held, err := os.Open(planted) // Go opens without FILE_SHARE_DELETE
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer held.Close()
+	err = opened.EnsureExtracted(dest)
+	if err == nil || !strings.Contains(err.Error(), "could not move it aside") {
+		t.Fatalf("EnsureExtracted() with a held file = %v, want a refusal", err)
+	}
+	if data, _ := os.ReadFile(planted); string(data) != "planted" {
+		t.Fatal("the refused directory was modified")
 	}
 }
 

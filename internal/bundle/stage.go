@@ -9,6 +9,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/spilloid/spoolsmith/internal/install"
 )
@@ -56,31 +57,38 @@ func (b *Bundle) StageDir() string {
 // hash checked into it. If something already exists at dir â€” the normal case
 // when the same bundle is applied twice â€” it is reused only if checkStageDir
 // shows no one outside SYSTEM and Administrators could have changed it, and
-// its contents still match the manifest. Anything else is an error the
-// operator resolves, never something to overwrite: this runs inside a
-// privileged operation, and recursively deleting a path someone else may have
-// planted is not a risk worth taking to save a manual step.
+// its contents still match the manifest. A directory that fails that check is
+// moved aside to <dir>.untrusted-<n> and the payload is staged fresh; one that
+// matches the check but not the manifest is an error the operator resolves.
+// Nothing is ever deleted or overwritten: this runs inside a privileged
+// operation, and recursively deleting a path someone else may have planted is
+// not a risk worth taking to save a manual step.
 func (b *Bundle) EnsureExtracted(dir string) error {
 	if b.Manifest.Driver == nil {
 		return fmt.Errorf("bundle: this bundle carries no driver payload")
 	}
-	err := createStageDir(dir)
-	if err == nil {
-		if err := checkStageDir(dir); err != nil {
-			os.Remove(dir)
-			return fmt.Errorf("bundle: the staging directory %q SpoolSmith just created is not administrators-only (%v)", dir, err)
-		}
-		if err := b.extractInto(dir); err != nil {
-			os.RemoveAll(dir)
-			return err
-		}
-		return nil
-	}
+	err := b.stageFresh(dir)
 	if !errors.Is(err, fs.ErrExist) {
 		return err
 	}
 	if err := checkStageDir(dir); err != nil {
-		return fmt.Errorf("bundle: staging path %q already exists and was not created by an administrator: %v. SpoolSmith will not use or delete it; check where it came from, remove it as an administrator, and retry", dir, err)
+		// Not provably administrators-only: left by an unelevated preview in
+		// v1.5.2 or earlier, or planted. Never reuse or delete it. Move it aside
+		// under a new name and stage fresh. Locking it down in place would not
+		// be enough: a handle opened before the lock-down keeps its write
+		// access. A rename moves a junction itself, never its target, and fails
+		// while a file inside is held open.
+		aside := fmt.Sprintf("%s.untrusted-%d", dir, time.Now().UnixNano())
+		if renameErr := os.Rename(dir, aside); renameErr != nil {
+			return fmt.Errorf("bundle: staging path %q already exists and was not created by an administrator: %v. SpoolSmith could not move it aside (%v) and will not use or delete it; check where it came from, remove it as an administrator, and retry", dir, err, renameErr)
+		}
+		if err := b.stageFresh(dir); err != nil {
+			if errors.Is(err, fs.ErrExist) {
+				return fmt.Errorf("bundle: staging path %q reappeared after SpoolSmith moved an untrusted copy to %q; check what is creating it", dir, aside)
+			}
+			return err
+		}
+		return nil
 	}
 	for _, file := range b.Manifest.Driver.Files {
 		target := filepath.Join(dir, filepath.FromSlash(file.Path))
@@ -114,4 +122,21 @@ func (b *Bundle) verifyPayload() ([]install.BundleSigner, error) {
 		return nil, err
 	}
 	return catalogSigners(payload, b.Manifest.Driver.INF)
+}
+
+// stageFresh creates dir administrators-only and extracts the payload into it.
+// It returns an fs.ErrExist error, touching nothing, if dir already exists.
+func (b *Bundle) stageFresh(dir string) error {
+	if err := createStageDir(dir); err != nil {
+		return err
+	}
+	if err := checkStageDir(dir); err != nil {
+		os.Remove(dir)
+		return fmt.Errorf("bundle: the staging directory %q SpoolSmith just created is not administrators-only (%v)", dir, err)
+	}
+	if err := b.extractInto(dir); err != nil {
+		os.RemoveAll(dir)
+		return err
+	}
+	return nil
 }
