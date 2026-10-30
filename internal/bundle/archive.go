@@ -339,6 +339,12 @@ func (b *Bundle) Extract(destDir string) (err error) {
 			os.RemoveAll(destDir)
 		}
 	}()
+	return b.extractInto(destDir)
+}
+
+// extractInto writes and hash checks the driver payload into destDir, which
+// must already exist and be empty.
+func (b *Bundle) extractInto(destDir string) error {
 	root, err := filepath.Abs(destDir)
 	if err != nil {
 		return err
