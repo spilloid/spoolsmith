@@ -377,15 +377,21 @@ func (b *Bundle) PrepareDriver() (*install.BundleDriver, string, error) {
 		return nil, "", nil
 	}
 	stageDir := b.StageDir()
+	var signers []install.BundleSigner
 	if processElevated() {
 		if err := b.EnsureExtracted(stageDir); err != nil {
+			return nil, stageDir, err
+		}
+		var err error
+		if signers, err = catalogSigners(stageDir, b.Manifest.Driver.INF); err != nil {
 			return nil, stageDir, err
 		}
 	} else {
 		// Only an elevated run hands the payload to pnputil. An unelevated
 		// preview verifies it in a private throwaway directory instead, so it
 		// never leaves a user-owned folder under TEMP for that run to trust.
-		if err := b.verifyPayload(); err != nil {
+		var err error
+		if signers, err = b.verifyPayload(); err != nil {
 			return nil, "", err
 		}
 		stageDir = ""
@@ -399,5 +405,6 @@ func (b *Bundle) PrepareDriver() (*install.BundleDriver, string, error) {
 		FileCount:         len(b.Manifest.Driver.Files),
 		TotalBytes:        b.Manifest.TotalPayloadBytes(),
 		PayloadDigest:     b.PayloadDigest(),
+		Signers:           signers,
 	}, stageDir, nil
 }

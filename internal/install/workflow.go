@@ -376,7 +376,7 @@ func (w Workflow) RunInstall(ctx context.Context, env Environment, input io.Read
 			return failOutcome(outcome, fmt.Errorf("install: bundle payload provides driver %q but the profile maps %q", payload.WindowsDriverName, plan.DriverName), ExitUsageError)
 		}
 		plan.BundleDriver = &payload
-		plan.PublisherTrust = bundlePublisherTrust()
+		plan.PublisherTrust = bundlePublisherTrust(payload)
 		plan.Driver.Strategy = "bundle-payload-if-missing"
 		plan.Driver.Source = bundleDriverSource(payload)
 		command, bundleErr := bundleDriverCommand(payload)
@@ -725,8 +725,15 @@ func writeInstallPlan(writer io.Writer, plan Plan, compact bool) {
 		fmt.Fprintln(writer, "  Payload bytes were verified against the bundle manifest. Windows enforces driver signing when pnputil stages the INF. This is not a vendor-package hash check.")
 	}
 	if plan.PublisherTrust != nil {
-		fmt.Fprintf(writer, "  Driver publisher trust: if the driver is staged, the signer of each catalog its INF names is added to %s unless that exact certificate (by thumbprint) is already there.\n", plan.PublisherTrust.Store)
-		fmt.Fprintln(writer, "  Only a signer from a catalog Windows validates is eligible, never certificate material from the bundle. Nothing is added to Root; an unsigned or untrusted-root catalog is left for Windows to accept or refuse.")
+		if len(plan.PublisherTrust.Signers) == 0 {
+			fmt.Fprintf(writer, "  Driver publisher trust: none. The driver's catalogs name no signer SpoolSmith could read, so nothing is added to %s; Windows decides whether it accepts the package.\n", plan.PublisherTrust.Store)
+		} else {
+			fmt.Fprintf(writer, "  Driver publisher trust: if the driver is staged, each signer below is added to %s unless that exact certificate is already there, and only if Windows validates its catalog:\n", plan.PublisherTrust.Store)
+			for _, signer := range plan.PublisherTrust.Signers {
+				fmt.Fprintf(writer, "    %s (thumbprint %s, signs %s)\n", signer.Subject, signer.Thumbprint, signer.Catalog)
+			}
+			fmt.Fprintln(writer, "  No other certificate is trusted and nothing is added to Root. Uninstall does not remove this trust; `certutil -delstore TrustedPublisher <thumbprint>` does.")
+		}
 	}
 	if plan.ForcedOverride {
 		fmt.Fprintln(writer, "  Warning: manually selected mapping; not an automatic high-confidence driver match.")
