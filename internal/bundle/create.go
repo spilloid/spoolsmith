@@ -367,7 +367,8 @@ func hasIdentity(result probe.Result) bool {
 // Extraction happens before any plan is shown so the plan can state what is
 // actually on disk, and so a corrupt payload fails here rather than halfway
 // through a privileged staging step. Nothing is staged into Windows until the
-// plan is confirmed.
+// plan is confirmed. Only an elevated run stages into StageDir (see
+// EnsureExtracted); an unelevated one verifies and returns no stage directory.
 //
 // Shared by both front ends for the same reason Create is: this decides what
 // bytes a privileged step will later hand to pnputil.
@@ -376,8 +377,18 @@ func (b *Bundle) PrepareDriver() (*install.BundleDriver, string, error) {
 		return nil, "", nil
 	}
 	stageDir := b.StageDir()
-	if err := b.EnsureExtracted(stageDir); err != nil {
-		return nil, stageDir, err
+	if processElevated() {
+		if err := b.EnsureExtracted(stageDir); err != nil {
+			return nil, stageDir, err
+		}
+	} else {
+		// Only an elevated run hands the payload to pnputil. An unelevated
+		// preview verifies it in a private throwaway directory instead, so it
+		// never leaves a user-owned folder under TEMP for that run to trust.
+		if err := b.verifyPayload(); err != nil {
+			return nil, "", err
+		}
+		stageDir = ""
 	}
 	return &install.BundleDriver{
 		WindowsDriverName: b.Manifest.Driver.WindowsDriverName,

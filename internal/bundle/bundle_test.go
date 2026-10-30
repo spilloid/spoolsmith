@@ -250,6 +250,7 @@ func TestManifestValidationRejectsUnsafeAndInconsistentDocuments(t *testing.T) {
 }
 
 func TestEnsureExtractedReusesAndRefusesMismatch(t *testing.T) {
+	trustCurrentUserForTest(t)
 	path := writeBundle(t, true)
 	opened, err := Open(path)
 	if err != nil {

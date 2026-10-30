@@ -312,7 +312,11 @@ func applyBundleFile(ctx context.Context, path string, options install.InstallOp
 	}
 	if driver != nil {
 		options.BundleDriver = driver
-		fmt.Fprintf(stderr, "Verified %d driver files from the printer file into %s\n", driver.FileCount, stageDir)
+		if stageDir != "" {
+			fmt.Fprintf(stderr, "Verified %d driver files from the printer file into %s\n", driver.FileCount, stageDir)
+		} else {
+			fmt.Fprintf(stderr, "Verified %d driver files from the printer file (staged only when run as administrator)\n", driver.FileCount)
+		}
 	}
 
 	outcome, code := app.workflow.RunInstall(ctx, app.environment, input, stderr, app.inputTerminal, options)
