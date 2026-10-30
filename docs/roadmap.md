@@ -1,6 +1,6 @@
 # Remaining work for SpoolSmith
 
-Updated October 29, 2026, for v1.5.2. What has shipped is in [`releases/`](../releases/);
+Updated October 30, 2026, for v1.5.3. What has shipped is in [`releases/`](../releases/);
 the CLI/desktop split is in [gui-parity.md](gui-parity.md). What's left is mostly
 validation on real hardware and hardening, then the future scope at the end.
 
@@ -82,11 +82,11 @@ validation on real hardware and hardening, then the future scope at the end.
   adding the same printer again reuses what exists; a native-driver switch that could not be restored is drawn
   as a failure with the queue's state, not a quiet skip. Nothing is rolled back
   automatically.
-- **Still open from the v1.5.1 review.** The plan states the publisher-trust rule but not
-  the signer it may add; driver files stage in a predictable
-  `%TEMP%\SpoolSmith-bundle-<digest>` folder (`C:\Windows\Temp` under SYSTEM); spooler
-  calls have no timeout outside the Intune wrapper; and exit code 1 doesn't distinguish
-  "nothing changed" from "partly changed".
+- **Still open from the v1.5.1 review.** Spooler calls have no timeout outside the Intune
+  wrapper, and exit code 1 doesn't distinguish "nothing changed" from "partly changed".
+  *(v1.5.3 closed the other two: the plan now names every TrustedPublisher signer it may
+  add, and driver files stage only in an administrators-only folder. Uninstall still leaves
+  that publisher trust in place.)*
 - **Update delivery.** Releases ship a portable ZIP and a signed, machine-wide MSI
   (from v1.3.0; see `installer/README.md`) with checksums and Authenticode-signed
   executables. A newer MSI upgrades an older one when it is installed, but nothing
