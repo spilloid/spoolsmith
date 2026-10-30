@@ -134,7 +134,9 @@ func TestCloneThenApplyAcrossMachines(t *testing.T) {
 	if code = run(context.Background(), []string{"apply", bundlePath, "--dry-run"}, strings.NewReader(""), &stdout, &stderr, app); code != 0 {
 		t.Fatalf("apply --dry-run code=%d\n%s\n%s", code, stdout.String(), stderr.String())
 	}
-	for _, want := range []string{`Driver publisher trust:`, `LocalMachine\TrustedPublisher`, "by thumbprint", "Only a signer from a catalog Windows validates is eligible"} {
+	// The fixture catalog is not a real signature, so the plan names no signer
+	// and says nothing will be trusted.
+	for _, want := range []string{`Driver publisher trust: none`, `LocalMachine\TrustedPublisher`, "Windows decides whether it accepts the package"} {
 		if !strings.Contains(stdout.String()+stderr.String(), want) {
 			t.Fatalf("human-readable plan is missing %q:\n%s\n%s", want, stdout.String(), stderr.String())
 		}

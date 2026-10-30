@@ -9,6 +9,8 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+
+	"github.com/spilloid/spoolsmith/internal/install"
 )
 
 // StageDirName is the extraction directory's base name, derived only from the
@@ -51,8 +53,8 @@ func (b *Bundle) StageDir() string {
 // again, and under SYSTEM it lives in C:\Windows\Temp, where standard users can
 // create folders. So the directory is created in one call with an
 // administrators-only DACL (createStageDir), and every file is extracted and
-// hash checked into it. If something already exists at dir — the normal case
-// when the same bundle is applied twice — it is reused only if checkStageDir
+// hash checked into it. If something already exists at dir â€” the normal case
+// when the same bundle is applied twice â€” it is reused only if checkStageDir
 // shows no one outside SYSTEM and Administrators could have changed it, and
 // its contents still match the manifest. Anything else is an error the
 // operator resolves, never something to overwrite: this runs inside a
@@ -100,12 +102,16 @@ func (b *Bundle) EnsureExtracted(dir string) error {
 }
 
 // verifyPayload extracts and hash checks the driver payload into a private
-// temporary directory, then removes it.
-func (b *Bundle) verifyPayload() error {
+// temporary directory, reads its catalog signers, then removes it.
+func (b *Bundle) verifyPayload() ([]install.BundleSigner, error) {
 	work, err := os.MkdirTemp("", "spoolsmith-verify-")
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer os.RemoveAll(work)
-	return b.Extract(filepath.Join(work, "payload"))
+	payload := filepath.Join(work, "payload")
+	if err := b.Extract(payload); err != nil {
+		return nil, err
+	}
+	return catalogSigners(payload, b.Manifest.Driver.INF)
 }

@@ -94,7 +94,7 @@ func (w Workflow) runUSBInstall(ctx context.Context, env Environment, input io.R
 			return failOutcome(outcome, errors.New("install: USB bundle driver differs from saved printer driver"), ExitUsageError)
 		}
 		plan.BundleDriver = &payload
-		plan.PublisherTrust = bundlePublisherTrust()
+		plan.PublisherTrust = bundlePublisherTrust(payload)
 		plan.Driver.Strategy = "bundle-payload-if-missing"
 		plan.Driver.Source = bundleDriverSource(payload)
 		stage, err := bundleDriverCommand(payload)
