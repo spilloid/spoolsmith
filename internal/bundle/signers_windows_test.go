@@ -19,7 +19,7 @@ func TestCatalogSignerMatchesGetAuthenticodeSignature(t *testing.T) {
 	if len(catalogs) == 0 {
 		t.Skip("no system catalogs to compare against")
 	}
-	if len(catalogs) > 8 {
+	if len(catalogs) > 16 {
 		catalogs = catalogs[:16]
 	}
 	checked := 0
