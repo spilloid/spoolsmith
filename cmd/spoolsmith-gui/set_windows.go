@@ -190,6 +190,10 @@ func (a *app) reviewPrinterSet(op operation) {
 		phase = setPreviewing
 		opts := options()
 		for i := range model.rows {
+			if model.rows[i].Path == "" {
+				// Unreadable in the set itself; nothing to preview.
+				continue
+			}
 			model.rows[i].State, model.rows[i].Detail = rowChecking, ""
 			model.rows[i].Preview, model.rows[i].Result, model.rows[i].Transcript = nil, nil, ""
 		}
@@ -208,6 +212,9 @@ func (a *app) reviewPrinterSet(op operation) {
 			for i, r := range rows {
 				if ctx.Err() != nil {
 					return
+				}
+				if r.Path == "" {
+					continue
 				}
 				start := time.Now()
 				member := operation{Kind: opApply, BundlePath: r.Path, UpdateExisting: opts.UpdateExisting, Offline: opts.Offline}.normalized()
@@ -501,11 +508,15 @@ func extractSet(path string) ([]setRow, string, string, error) {
 	for _, name := range set.Members {
 		extracted, err := set.Extract(name, dir)
 		if err != nil {
-			return nil, dir, "", fmt.Errorf("%s: %w", name, err)
+			// One damaged printer file doesn't sink the set, as on the CLI: it
+			// is listed as one that can't be set up, and the rest go ahead.
+			rows = append(rows, setRow{Member: name, Name: name, State: rowBlocked, Detail: err.Error()})
+			continue
 		}
 		opened, err := bundle.Open(extracted)
 		if err != nil {
-			return nil, dir, "", fmt.Errorf("%s: %w", name, err)
+			rows = append(rows, setRow{Member: name, Name: name, State: rowBlocked, Detail: fmt.Sprintf("%s: %v", name, err)})
+			continue
 		}
 		profile := opened.Manifest.Profile
 		driver := "settings only"
