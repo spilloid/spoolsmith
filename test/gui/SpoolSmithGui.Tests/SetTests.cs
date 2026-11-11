@@ -31,6 +31,9 @@ public sealed class SetTests : IDisposable
         {
             zip.CreateEntryFromFile(example, "accounting.ssb");
             zip.CreateEntryFromFile(example, "accounting-2.ssb");
+            // One damaged printer file must not sink the rest of the set.
+            using var broken = new StreamWriter(zip.CreateEntry("broken.ssb").Open());
+            broken.Write("not a printer file");
         }
         _fixture = new AppFixture(profilesDirectory: null, args: set);
     }
@@ -52,8 +55,9 @@ public sealed class SetTests : IDisposable
         string status = "";
         FunctionalTests.WaitUntil(() => (status = dialog!.FindAllDescendants(cf => cf.ByControlType(ControlType.Text))
             .Select(t => t.Name).FirstOrDefault(n => n.Contains("Nothing has changed yet")) ?? "") != "",
-            "The set never finished its preview.", 120_000);
+            "The set never finished its preview. It showed: " + string.Join(" | ", dialog!.FindAllDescendants(cf => cf.ByControlType(ControlType.Text)).Select(t => t.Name)), 120_000);
         Assert.Contains("2 printers ready to set up", status);
+        Assert.Contains("1 can't be set up", status);
 
         var table = FunctionalTests.Find(dialog!, "set-members");
         // walk's table exposes its cells, not ListItem rows, to UIA.
@@ -95,8 +99,9 @@ public sealed class SetTests : IDisposable
         var box = details!.FindFirstDescendant(cf => cf.ByControlType(ControlType.Edit).Or(cf.ByControlType(ControlType.Document)));
         Assert.NotNull(box);
         var text = box!.Patterns.Text.IsSupported ? box.Patterns.Text.Pattern.DocumentRange.GetText(-1) : box.AsTextBox().Text;
-        Assert.Contains("1 of 2  Example — Accounting Copier", text);
-        Assert.Contains("2 of 2  Example — Accounting Copier", text);
+        Assert.Contains("1 of 3  Example — Accounting Copier", text);
+        Assert.Contains("2 of 3  Example — Accounting Copier", text);
+        Assert.Contains("3 of 3  broken.ssb", text);
         Assert.Contains("Full plan:", text);
         Assert.Contains("RAW9100-192.0.2.40", text);
         FunctionalTests.FindButton(details!, "Close").Invoke();
