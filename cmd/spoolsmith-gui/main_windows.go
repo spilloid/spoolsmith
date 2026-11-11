@@ -121,6 +121,8 @@ func main() {
 		switch {
 		case requestErr != nil:
 			showErr(a.mw, "SpoolSmith", requestErr)
+		case request.Review != nil && request.Review.Kind == opApplySet:
+			a.reviewPrinterSet(*request.Review)
 		case request.Review != nil:
 			a.startOperation(*request.Review)
 		case len(request.Files) > 0:
@@ -159,7 +161,11 @@ func applyStyle(a *app) {
 	}
 }
 
-func (a *app) showDetails(title, text string) {
+func (a *app) showDetails(title, text string) { a.showDetailsOn(a.mw, title, text) }
+
+// showDetailsOn opens the details window over owner, which may itself be a
+// dialog.
+func (a *app) showDetailsOn(owner walk.Form, title, text string) {
 	var dialog *walk.Dialog
 	var closeButton, copyButton *walk.PushButton
 	err := (Dialog{
@@ -179,9 +185,9 @@ func (a *app) showDetails(title, text string) {
 				HSpacer{}, PushButton{AssignTo: &closeButton, Text: "Close", OnClicked: func() { dialog.Accept() }},
 			}},
 		),
-	}).Create(a.mw)
+	}).Create(owner)
 	if err != nil {
-		showErr(a.mw, title, err)
+		showErr(owner, title, err)
 		return
 	}
 	a.runDialog(dialog)

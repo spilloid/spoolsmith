@@ -74,7 +74,8 @@
       <div class="code-block"><button class="copy" type="button" aria-label="Copy commands">Copy</button><pre><code>.\spoolsmith.exe bundle inspect printers.zip
 .\spoolsmith.exe apply printers.zip
 .\spoolsmith.exe apply printers.zip --member Accounting</code></pre></div>
-      <p>Every printer in a set gets <strong>its own plan and its own confirmation</strong>, exactly as if its <code>.ssb</code> were applied alone. One confirmation never covers several printers. <code>--member</code> picks one by file name. In the desktop, opening a set shows its printers so you can pick them one at a time.</p>
+      <p>On the command line, every printer in a set gets <strong>its own plan and its own confirmation</strong>, exactly as if its <code>.ssb</code> were applied alone. <code>--member</code> picks one by file name.</p>
+      <p>In the desktop, drop a set on the window (or double-click it) to review it as a whole. SpoolSmith checks every printer against this PC first and lists each one with its plan and a tick box. Printers that can't be set up, or have nothing to change, are left unticked. <strong>Set up N printers</strong> asks you to confirm that list once. Each printer then runs exactly the steps shown for it, and a printer whose steps changed since the review is not set up. The list then shows each printer's result, and <strong>Copy summary for the ticket</strong> copies them as text. <strong>Review only this printer...</strong> opens one printer on its own sheet.</p>
 
       <h2 id="what-apply-checks">What apply checks<a class="heading-anchor" href="#what-apply-checks" aria-label="Link to this section">#</a></h2>
       <p>Before showing the plan, <code>apply</code> probes the printer and compares the model it reports with what was captured. Three outcomes are possible:</p>

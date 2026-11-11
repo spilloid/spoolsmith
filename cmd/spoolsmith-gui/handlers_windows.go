@@ -149,7 +149,11 @@ func (a *app) onInspect() {
 	start := time.Now()
 	go func() {
 		if strings.EqualFold(filepath.Ext(target), bundle.SetExt) {
-			entries, note, err := extractSet(target)
+			entries, dir, note, err := extractSet(target)
+			if dir != "" {
+				// Inspect only reads the files; nothing is opened from them later.
+				defer os.RemoveAll(dir)
+			}
 			var text string
 			if err != nil {
 				text = "Error: " + err.Error()
@@ -160,9 +164,9 @@ func (a *app) onInspect() {
 					fmt.Fprintf(&b, "Note: %s\r\n", note)
 				}
 				for _, entry := range entries {
-					fmt.Fprintf(&b, "\r\n%s\r\n  %s", filepath.Base(entry.path), entry.label)
+					fmt.Fprintf(&b, "\r\n%s\r\n  %s  ·  %s  ·  %s", entry.Member, entry.Name, entry.Target, entry.Driver)
 				}
-				b.WriteString("\r\n\r\nThis checks each printer file, not the printers. Open the set from Add a printer to review one.")
+				b.WriteString("\r\n\r\nThis checks each printer file, not the printers. Open the set from Add a printer to review and set them up.")
 				text = b.String()
 			}
 			a.log("gui", "bundle inspect", []string{target}, statusOf(err), err, start)
