@@ -20,7 +20,7 @@ Remove / Change address on This PC.
 | Copy one queue, driver where possible | `copy`, `clone` (driver included when possible; `--settings-only` opts out) | This PC → select → Copy 1 printer... (driver checkbox on by default; settings only, with the reason, when it can't be exported); or Ctrl+C to put the .ssb on the clipboard |
 | Copy several queues into one printer set | `copy --all [<printers.zip>] [--settings-only]` (every copyable queue) | This PC → select several (Ctrl+A for all) → Copy N printers...: one set (.zip), progress, stop, per-printer results and Copy results; or Ctrl+C for individual .ssb files on the clipboard |
 | Apply a copied printer | `apply <file.ssb>` | Double-click the .ssb (once the association is set up), drop or paste it on the window, `spoolsmith-gui.exe <file.ssb>`, or Add a printer → Open a printer file... |
-| Apply a printer set | `apply <set.zip>` (each printer its own plan and confirmation; `--member` picks one) | Open, drop or paste the set → printer list → review each printer on its own sheet |
+| Apply a printer set | `apply <set.zip>` (each printer its own plan and confirmation; `--member` picks one) | Open, drop or paste the set → one review: every printer previewed and listed with its plan and a tick box → **Set up N printers** confirms the ticked list once (Review only this printer... for one) |
 | Update from a bundle | `apply --update` | Sheet → More options → Update an existing queue |
 | Inspect bundle integrity and manifest | `bundle inspect <file.ssb\|set.zip>` (lists a set's printers) | More → Inspect takes an IP, a `.ssb` or a set `.zip` (lists the set's printers) |
 | Add / update / remove a saved setup | `add`, `configure`, `remove --profile` | More → Saved setups → Set up / Update to match / Remove |
@@ -58,9 +58,10 @@ writes the `requested`, `written`, `skipped`, `failed` and per-queue JSON result
 stdout; the desktop's **Copy results** copies a plain-text report of the same outcome.
 For compatibility, the CLI exits successfully if at least one printer was saved, even
 when other queues failed; inspect the counters for partial success. Cancellation saves
-no set on either surface. Applying a set never batches confirmations: the CLI walks
-its printers one plan and one confirmation at a time, and the desktop lists them so
-you review and confirm each one.
+no set on either surface. Applying a set differs by surface (operator decision, 2026-11-10). The CLI walks its
+printers one plan and one confirmation at a time, or takes `--yes`. The desktop previews
+every printer, lists each with its plan, and confirms the ticked list once; each printer
+still runs its own previewed plan, and one whose plan changed is not set up.
 
 The blue header, lighter surfaces, Segoe UI type and revised spacing use the existing
 native Windows toolkit and OS visual styles. A sidebar replaces the former top tab
