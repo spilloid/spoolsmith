@@ -17,6 +17,10 @@ const (
 	opRemove    operationKind = "remove"
 	opApply     operationKind = "apply"
 	opRepoint   operationKind = "repoint"
+	// opApplySet reviews every printer in a set (.zip) together. It only
+	// ever opens the set review, which previews each printer again and asks
+	// for one confirmation of the list it shows.
+	opApplySet operationKind = "apply-set"
 )
 
 // operation is one reviewable intention, assembled by whichever screen the
@@ -54,6 +58,9 @@ type operation struct {
 	ForceFamily string
 	// IncludeDriver applies when copying a queue out to a bundle.
 	IncludeDriver bool
+	// Members are the printer files ticked in a set review, carried into an
+	// elevated relaunch so the same printers are ticked there.
+	Members []string `json:",omitempty"`
 }
 
 // Title is the operation's name, used for buttons and dialog captions.
@@ -69,6 +76,8 @@ func (o operation) Title() string {
 		return "Add printer from file"
 	case opRepoint:
 		return "Change address"
+	case opApplySet:
+		return "Set up printers from set"
 	}
 	return "Review"
 }
@@ -96,10 +105,12 @@ func (o operation) Summary() string {
 		text = fmt.Sprintf("Set up printer %s on this PC from %s.", shownOr(name, "the printer in this file"), shownOr(o.BundlePath, "the chosen file"))
 	case opRepoint:
 		text = fmt.Sprintf("Point printer %s at %s instead. Its name and driver stay the same.", shownOr(name, "the selected printer"), shownOr(o.NewAddress, "a new address"))
+	case opApplySet:
+		text = fmt.Sprintf("Set up the printers in %s on this PC.", shownOr(o.BundlePath, "the chosen set"))
 	default:
 		return ""
 	}
-	if o.Kind == opApply && o.UpdateExisting {
+	if (o.Kind == opApply || o.Kind == opApplySet) && o.UpdateExisting {
 		text += " An existing queue will be updated to match the file."
 	}
 	if o.USBQueue != "" {
@@ -130,6 +141,10 @@ func (o operation) Validate() error {
 	case opApply:
 		if strings.TrimSpace(o.BundlePath) == "" {
 			return fmt.Errorf("choose the printer file to set up from first")
+		}
+	case opApplySet:
+		if strings.TrimSpace(o.BundlePath) == "" {
+			return fmt.Errorf("choose the printer set to set up from first")
 		}
 	case opRepoint:
 		if strings.TrimSpace(o.PrinterName) == "" {
@@ -163,9 +178,12 @@ func (o operation) normalized() operation {
 	if o.Kind != opRepoint {
 		o.NewAddress = ""
 	}
-	if o.Kind != opApply {
+	if o.Kind != opApply && o.Kind != opApplySet {
 		o.UpdateExisting = false
 		o.BundlePath = ""
+	}
+	if o.Kind != opApplySet {
+		o.Members = nil
 	}
 	if o.Kind != opApply && o.Kind != opInstall && o.Kind != opConfigure {
 		o.USBQueue = ""

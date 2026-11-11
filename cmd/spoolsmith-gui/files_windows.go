@@ -353,23 +353,37 @@ func lastError(what string) error {
 // confirmation of the plan it shows -- nothing reviewed here is carried over
 // as approved.
 func (a *app) relaunchElevated(op operation) {
+	started, cancelled := a.startElevated(a.mw, op)
+	switch {
+	case cancelled:
+		a.setHint("Administrator permission wasn't given, so nothing changed. Use the shield button to try again.")
+	case started:
+		a.mw.Close()
+	}
+}
+
+// startElevated starts an elevated copy of SpoolSmith with op to review. It
+// reports whether that copy started, or whether the operator declined the
+// consent prompt; other failures are shown over owner. The caller closes this
+// window once the elevated copy has started.
+func (a *app) startElevated(owner walk.Form, op operation) (started, cancelled bool) {
 	exe, err := os.Executable()
 	if err != nil {
-		showErr(a.mw, "Continue as administrator", err)
-		return
+		showErr(owner, "Continue as administrator", err)
+		return false, false
 	}
 	op, err = handOverPaths(op, universalName)
 	if err != nil {
 		msg := err.Error() + "\r\n\r\nThe administrator copy of SpoolSmith may not see this drive letter, and would then report the file as not found. " +
 			`To be sure, copy the file to a local folder, or open it by its \\server\share path, and try again.` + "\r\n\r\nContinue anyway?"
-		if walk.MsgBox(a.mw, "Continue as administrator", msg, walk.MsgBoxYesNo|walk.MsgBoxDefButton2|walk.MsgBoxIconWarning) != walk.DlgCmdYes {
-			return
+		if walk.MsgBox(owner, "Continue as administrator", msg, walk.MsgBoxYesNo|walk.MsgBoxDefButton2|walk.MsgBoxIconWarning) != walk.DlgCmdYes {
+			return false, false
 		}
 	}
 	arg, err := encodeReview(op)
 	if err != nil {
-		showErr(a.mw, "Continue as administrator", err)
-		return
+		showErr(owner, "Continue as administrator", err)
+		return false, false
 	}
 	verb, _ := windows.UTF16PtrFromString("runas")
 	file, _ := windows.UTF16PtrFromString(exe)
@@ -377,16 +391,15 @@ func (a *app) relaunchElevated(op operation) {
 	dir, _ := windows.UTF16PtrFromString(filepath.Dir(exe))
 	// ShellExecute with "runas" returns once the consent prompt is answered and
 	// the elevated process has started.
-	if err := windows.ShellExecute(windows.Handle(a.mw.Handle()), verb, file, params, dir, windows.SW_SHOWNORMAL); err != nil {
+	if err := windows.ShellExecute(windows.Handle(owner.Handle()), verb, file, params, dir, windows.SW_SHOWNORMAL); err != nil {
 		if errors.Is(err, windows.ERROR_CANCELLED) {
-			a.setHint("Administrator permission wasn't given, so nothing changed. Use the shield button to try again.")
-			return
+			return false, true
 		}
-		showErr(a.mw, "Continue as administrator", err)
-		return
+		showErr(owner, "Continue as administrator", err)
+		return false, false
 	}
-	a.log("gui", "relaunch elevated", []string{string(op.Kind), op.PrinterName}, "success", nil, time.Now())
-	a.mw.Close()
+	a.log("gui", "relaunch elevated", []string{string(op.Kind), shownOr(op.PrinterName, op.BundlePath)}, "success", nil, time.Now())
+	return true, false
 }
 
 // --- One window --------------------------------------------------------------

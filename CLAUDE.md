@@ -2,6 +2,21 @@
 
 ## Project Mission
 
+**Operator update, 2026-11-10 (v1.6 desktop set review):** the operator asked for GUI parity
+with `apply set.zip`: drop a set on the window and set up all its printers in one tidy pass.
+Asked to choose, they picked **one combined review** over walking each printer's sheet in turn.
+What changed in the rules, for the desktop only:
+- A set opens one review (`reviewPrinterSet`, `cmd/spoolsmith-gui/set_windows.go`). Every member
+  is dry-run against this PC and listed with its plan and a tick box; only members with a
+  complete plan can be ticked. **One confirmation of that listed set** (every ticked printer
+  named with its step count) covers the ticked printers. This supersedes "a set never widens
+  one confirmation to cover several printers" for the desktop.
+- Unchanged: nothing mutates before that confirmation; each member runs its own previewed plan,
+  bound with `ExpectedPlan`, so a member whose plan changed fails rather than running something
+  unreviewed; elevation is still only the shield button, and the elevated copy (`apply-set`
+  hand-over carrying the set path, options and ticked member names, never plans) previews every
+  member again before asking. The CLI is unchanged: per-member confirmation, or `--yes`.
+
 **Operator update, 2026-10-02 (v1.5 native driver, unreleased):** the operator wants one
 place to type a printer IP and get a working mapping with the best driver *Windows* can
 supply, with no vendor OEM installer, and directed the lookup to be **silent** (part of the
