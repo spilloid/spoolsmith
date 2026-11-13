@@ -17,8 +17,7 @@ func driverPresenceCommand(driverName string) (string, error) {
 	if strings.TrimSpace(driverName) == "" {
 		return "", fmt.Errorf("install: Windows driver name is empty")
 	}
-	query := "$driver = @(Get-PrinterDriver -ErrorAction Stop | Where-Object { $_.Name -eq " + powerShellString(driverName) + " }); " +
-		"if ($driver.Count -gt 0) { 'True' } else { 'False' }"
+	query := driverHealthFunctions + "if ($null -ne (Get-SpoolSmithUsableDriver " + powerShellString(driverName) + ")) { 'True' } else { 'False' }"
 	return powerShellCommand(query), nil
 }
 

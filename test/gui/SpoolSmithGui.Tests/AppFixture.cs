@@ -1,7 +1,9 @@
 using System;
 using System.Diagnostics;
 using System.IO;
+using System.IO.Compression;
 using System.Linq;
+using System.Text.Json.Nodes;
 using FlaUI.Core;
 using FlaUI.Core.AutomationElements;
 using FlaUI.UIA2;
@@ -309,6 +311,28 @@ public sealed class AppFixture : IDisposable
     /// <summary>Absolute path to a file under the repo's fixtures/ directory.</summary>
     public string FixturePath(string name) => Path.Combine(RepoRoot, "fixtures", name);
 
+    // Use the hosted runner's already-installed inbox demo driver when supplied.
+    // The placeholder in the public example is deliberately not a real driver.
+    // These files are only previewed; tests never confirm printer installation.
+    internal static void WriteExampleBundle(Stream destination, string? name = null, string? ip = null, string? driverName = null)
+    {
+        using var source = ZipFile.OpenRead(Path.Combine(FindRepoRoot(), "examples", "intune", "accounting.ssb"));
+        using var reader = new StreamReader(source.GetEntry("manifest.json")!.Open());
+        var manifest = JsonNode.Parse(reader.ReadToEnd())!;
+        var profile = manifest["profile"]!;
+        var driver = driverName ?? Environment.GetEnvironmentVariable("SPOOLSMITH_GUI_TEST_DRIVER");
+        if (!string.IsNullOrWhiteSpace(driver)) profile["driver_name"] = driver;
+        if (name != null) profile["printer_name"] = name;
+        if (ip != null)
+        {
+            profile["target"] = ip;
+            profile["evidence"]!["ip"] = ip;
+        }
+        using var bundle = new ZipArchive(destination, ZipArchiveMode.Create, leaveOpen: true);
+        using var writer = new StreamWriter(bundle.CreateEntry("manifest.json").Open());
+        writer.Write(manifest.ToJsonString());
+    }
+
     internal static string FindRepoRoot()
     {
         var dir = new DirectoryInfo(AppContext.BaseDirectory);
@@ -334,6 +358,9 @@ public sealed class AppFixture : IDisposable
         {
             // Best-effort: the app may already be gone if a test crashed it.
         }
+        // A failed assertion can leave a modal dialog blocking CloseMainWindow.
+        // Do not let this test's process intercept the next test's file launch.
+        try { if (!App.HasExited) App.Kill(); } catch { }
         Automation.Dispose();
         App.Dispose();
     }

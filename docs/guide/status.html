@@ -46,7 +46,7 @@
         <thead><tr><th>Driver source</th><th>What's checked</th></tr></thead>
         <tbody>
           <tr><td>Carried in a printer file</td><td>Every file's SHA-256 against the manifest, then Windows' catalog-signature check when <code>pnputil</code> stages it. If the signature is valid but the publisher isn't trusted yet, that exact signer is added to <code>LocalMachine\TrustedPublisher</code>. The plan names each signer it may add, by subject and thumbprint, and nothing else is trusted. Uninstall leaves the trust in place. Never the Root store, and never a certificate taken from the file itself.</td></tr>
-          <tr><td>Already registered</td><td>Used as-is. You confirm compatibility; a test print proves it.</td></tr>
+          <tr><td>Already registered</td><td>The native Windows driver environment and required driver, data, configuration and dependency files must match and exist. An incomplete registration triggers installation from a carried driver when available, and the same checks run afterward. File presence does not prove that the driver UI loads; confirm compatibility with a test print.</td></tr>
           <tr><td>Windows automatic (IPP)</td><td>Windows chooses and installs the driver. SpoolSmith verifies the endpoint before and after switching, and puts the class driver back if the check fails.</td></tr>
           <tr><td>Local Brother archive</td><td>Pinned archive hash, vendor Authenticode signature, extraction without running the EXE, then the driver catalog signature.</td></tr>
         </tbody>
@@ -82,6 +82,7 @@
 
       <h2 id="not-verified-yet">Not verified yet<a class="heading-anchor" href="#not-verified-yet" aria-label="Link to this section">#</a></h2>
       <ul class="checklist">
+        <li>The reported Windows driver-install wizard when opening printer properties after applying a set. v1.6.1 checks architecture and required files, but the affected PC's repair has not been reproduced.</li>
         <li>Copying between two separate PCs. The "missing driver" destination was simulated on one PC.</li>
         <li>Physical printing through a driver staged from a printer file.</li>
         <li>A live <code>repoint</code>. Only its preview has run against hardware.</li>

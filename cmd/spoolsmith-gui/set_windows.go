@@ -17,6 +17,7 @@ import (
 	"github.com/spilloid/spoolsmith/internal/install"
 	"github.com/tailscale/walk"
 	. "github.com/tailscale/walk/declarative"
+	"github.com/tailscale/win"
 )
 
 // One printer is a .ssb file; several printers are a .zip of .ssb files.
@@ -140,7 +141,13 @@ func (a *app) reviewPrinterSet(op operation) {
 		// The selected printer's plan, in the same words as the sheet.
 		if i >= 0 && i < len(model.rows) {
 			r := model.rows[i]
-			stepsTitle.SetText(r.Name + "  —  " + r.StatusText())
+			title := r.StatusText()
+			if r.State == rowBlocked {
+				title = "Can't set up"
+			} else if r.State == rowFailed {
+				title = "Failed"
+			}
+			stepsTitle.SetText(wrapText(r.Name+"  —  "+title, 80))
 			stepsLabel.SetText(shownOr(wrapText(rowSteps(r, "\r\n"), sheetWrap), " "))
 		} else {
 			stepsTitle.SetText("Select a printer to see its steps.")
@@ -244,7 +251,7 @@ func (a *app) reviewPrinterSet(op operation) {
 				phase = setReviewed
 				// The hand-over's ticks apply to the first preview only.
 				op.Members = nil
-				status.SetText(previewStatus())
+				status.SetText(wrapText(previewStatus(), sheetWrap))
 				refresh()
 				if primaryBtn.Enabled() {
 					primaryBtn.SetFocus()
@@ -359,47 +366,49 @@ func (a *app) reviewPrinterSet(op operation) {
 
 	err := (Dialog{
 		AssignTo: &dialog, Title: "Printer set",
-		MinSize: Size{Width: 760, Height: 560}, Size: Size{Width: 940, Height: 700},
+		MinSize: Size{Width: 680, Height: 420}, Size: Size{Width: 940, Height: 700},
 		Background: SolidColorBrush{Color: colorPage}, Layout: dialogLayout(),
 		DefaultButton: &primaryBtn, CancelButton: &closeBtn,
 		Children: dialogFrame("Set up printers from a set",
-			Label{Text: file, Font: Font{Family: "Segoe UI", PointSize: 11, Bold: true}},
-			hint("Every printer below is checked against this PC first, and you confirm the ticked ones once. Each printer runs exactly the steps shown for it."),
-			TableView{
-				AssignTo: &table, Model: model, CheckBoxes: true,
-				AlternatingRowBG: false, LastColumnStretched: true, NotSortableByHeaderClick: true,
-				MinSize: Size{Height: 200}, Accessibility: name("set-members"),
-				Columns: []TableViewColumn{
-					{Title: "Printer", Width: 220},
-					{Title: "Address", Width: 130},
-					{Title: "Driver", Width: 120},
-					{Title: "Plan", Width: 300},
-				},
-				StyleCell: func(style *walk.CellStyle) {
-					if row := style.Row(); row >= 0 && row < len(model.rows) {
-						switch model.rows[row].State {
-						case rowBlocked, rowFailed:
-							style.TextColor = colorWarning
-						case rowNothing, rowSkipped:
-							style.TextColor = colorHint
+			ScrollView{StretchFactor: 1, MinSize: Size{Height: 160}, Layout: VBox{MarginsZero: true, Spacing: 8}, Children: []Widget{
+				Label{Text: wrapText(file, 80), Font: Font{Family: "Segoe UI", PointSize: 11, Bold: true}},
+				hint(wrapText("Every printer below is checked against this PC first, and you confirm the ticked ones once. Each printer runs exactly the steps shown for it.", sheetWrap)),
+				TableView{
+					AssignTo: &table, Model: model, CheckBoxes: true,
+					AlternatingRowBG: false, LastColumnStretched: true, NotSortableByHeaderClick: true,
+					MinSize: Size{Height: 200}, Accessibility: name("set-members"),
+					Columns: []TableViewColumn{
+						{Title: "Printer", Width: 220},
+						{Title: "Address", Width: 130},
+						{Title: "Driver", Width: 120},
+						{Title: "Plan", Width: 300},
+					},
+					StyleCell: func(style *walk.CellStyle) {
+						if row := style.Row(); row >= 0 && row < len(model.rows) {
+							switch model.rows[row].State {
+							case rowBlocked, rowFailed:
+								style.TextColor = colorWarning
+							case rowNothing, rowSkipped:
+								style.TextColor = colorHint
+							}
 						}
-					}
+					},
+					OnCurrentIndexChanged: func() { refresh() },
 				},
-				OnCurrentIndexChanged: func() { refresh() },
-			},
-			Composite{Background: SolidColorBrush{Color: colorSurface}, Layout: VBox{Margins: Margins{Left: 14, Top: 10, Right: 14, Bottom: 10}, Spacing: 6}, Children: []Widget{
-				Label{AssignTo: &stepsTitle, Text: "Select a printer to see its steps.", Font: Font{Family: "Segoe UI", PointSize: 10, Bold: true}, Background: SolidColorBrush{Color: colorSurface}, Accessibility: name("set-steps-title")},
-				Label{AssignTo: &stepsLabel, Text: " ", Font: Font{Family: "Segoe UI", PointSize: 10}, Background: SolidColorBrush{Color: colorSurface}, Accessibility: name("set-steps")},
-				HSpacer{},
-			}},
-			Label{AssignTo: &status, Text: "Opening the set..."},
-			Composite{Layout: row(), Children: []Widget{
-				CheckBox{AssignTo: &updateCheck, Text: "Update printers already on this PC to match their files", Enabled: false},
-				HSpacer{},
-			}},
-			Composite{Layout: row(), Children: []Widget{
-				CheckBox{AssignTo: &offlineCheck, Text: "Offline setup — the printers are not contacted or checked", Enabled: false, Checked: op.Offline},
-				HSpacer{},
+				Composite{Background: SolidColorBrush{Color: colorSurface}, Layout: VBox{Margins: Margins{Left: 14, Top: 10, Right: 14, Bottom: 10}, Spacing: 6}, Children: []Widget{
+					Label{AssignTo: &stepsTitle, Text: "Select a printer to see its steps.", Font: Font{Family: "Segoe UI", PointSize: 10, Bold: true}, Background: SolidColorBrush{Color: colorSurface}, Accessibility: name("set-steps-title")},
+					Label{AssignTo: &stepsLabel, Text: " ", Font: Font{Family: "Segoe UI", PointSize: 10}, Background: SolidColorBrush{Color: colorSurface}, Accessibility: name("set-steps")},
+					HSpacer{},
+				}},
+				Label{AssignTo: &status, Text: "Opening the set..."},
+				Composite{Layout: row(), Children: []Widget{
+					CheckBox{AssignTo: &updateCheck, Text: "Update printers already on this PC to match their files", Enabled: false},
+					HSpacer{},
+				}},
+				Composite{Layout: row(), Children: []Widget{
+					CheckBox{AssignTo: &offlineCheck, Text: "Offline setup — the printers are not contacted or checked", Enabled: false, Checked: op.Offline},
+					HSpacer{},
+				}},
 			}},
 			Composite{Layout: row(), Children: []Widget{
 				PushButton{AssignTo: &detailsBtn, Text: "Details", Enabled: false, OnClicked: func() {
@@ -431,6 +440,18 @@ func (a *app) reviewPrinterSet(op operation) {
 		),
 	}).Create(a.mw)
 	if err != nil {
+		showErr(a.mw, "Printer set", err)
+		return
+	}
+	// Keep the actions outside the scrolling content and on this monitor, even
+	// when Windows opens the review on a small desktop or an error is lengthy.
+	area := walk.Monitor(win.MonitorFromWindow(dialog.Handle(), win.MONITOR_DEFAULTTONEAREST)).WorkArea()
+	size := dialog.SizeFrom96DPI(walk.Size{Width: 940, Height: 700})
+	bounds := walk.Rectangle{Width: min(size.Width, area.Width), Height: min(size.Height, area.Height)}
+	bounds.X = area.X + (area.Width-bounds.Width)/2
+	bounds.Y = area.Y + (area.Height-bounds.Height)/2
+	if err := dialog.SetBoundsPixels(bounds); err != nil {
+		dialog.Dispose()
 		showErr(a.mw, "Printer set", err)
 		return
 	}
@@ -472,7 +493,7 @@ func (a *app) reviewPrinterSet(op operation) {
 			}
 			workDir = dir
 			if err != nil {
-				status.SetText("This set cannot be used: " + friendlyOperationError(err.Error()))
+				status.SetText(wrapText("This set cannot be used: "+friendlyOperationError(err.Error()), sheetWrap))
 				return
 			}
 			note = setNote

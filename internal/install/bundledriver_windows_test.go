@@ -27,7 +27,12 @@ const (
 // refuses the package unless the HP signer's exact thumbprint is trusted.
 const bundleTrustHarness = `
 function Write-Error { param($Message) [Console]::Error.WriteLine($Message) };
-function Get-PrinterDriver { [CmdletBinding()]param() if ($global:registered) { [PSCustomObject]@{Name='HP Universal Printing PCL 6'} } };
+function Get-PrinterDriver { [CmdletBinding()]param() if ($global:registered) {
+ $d = New-TestPrinterDriver 'HP Universal Printing PCL 6';
+ $d.PrinterEnvironment = $global:driverEnvironment;
+ if ($global:brokenDriver) { $d.ConfigFile = 'missing-ui.dll' };
+ $d
+} };
 function Get-AuthenticodeSignature { [CmdletBinding()]param($LiteralPath)
  $leaf = Split-Path -Leaf $LiteralPath;
  if (-not $global:sigs.ContainsKey($leaf)) { throw ('UNEXPECTED SIGNATURE READ ' + $leaf) };
@@ -56,10 +61,12 @@ function pnputil.exe {
  'Driver package added successfully.'; $global:LASTEXITCODE = $global:pnputilExit };
 function Add-PrinterDriver { [CmdletBinding()]param($Name)
  if ($Name -ne 'HP Universal Printing PCL 6') { throw 'Wrong driver name' };
- [Console]::Out.WriteLine('EVENT:register'); $global:registered = $true };
+ [Console]::Out.WriteLine('EVENT:register'); $global:registered = $true;
+ $global:brokenDriver = $global:leaveBroken; $global:driverEnvironment = 'Windows x64' };
 $global:registered = $false; $global:trusted = @(); $global:sigs = @{};
 $global:storeFails = $false; $global:storeDropsAdds = $false; $global:requireTrust = $true;
 $global:pnputilFails = $null; $global:pnputilExit = 0;
+$global:brokenDriver = $false; $global:leaveBroken = $false; $global:driverEnvironment = 'Windows x64';
 `
 
 func validSignature(subject, thumbprint string) string {
@@ -122,7 +129,7 @@ func runBundleTrustCase(t *testing.T, c bundleTrustCase, repeat bool) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	script := "$env:TMP = " + powerShellString(sandbox) + "; $env:TEMP = " + powerShellString(sandbox) + ";" + bundleTrustHarness + c.setup + "\n" + command
+	script := healthyDriverHarness(t) + "$env:TMP = " + powerShellString(sandbox) + "; $env:TEMP = " + powerShellString(sandbox) + ";" + bundleTrustHarness + c.setup + "\n" + command
 	if repeat {
 		script += "; " + command
 	}
@@ -150,6 +157,29 @@ func runBundleTrustCase(t *testing.T, c bundleTrustCase, repeat bool) string {
 func TestBundleDriverPublisherTrust(t *testing.T) {
 	hpSig := "$global:sigs['hpcu360u.cat'] = " + validSignature("CN=HP Inc.", hpThumbprint) + ";"
 	for _, c := range []bundleTrustCase{
+		{
+			name:       "existing driver with missing UI is installed from bundle",
+			files:      []string{"hpcu360u.cat"},
+			setup:      hpSig + "$global:registered = $true; $global:brokenDriver = $true;",
+			wantOK:     true,
+			wantEvents: []string{"sig:hpcu360u.cat", "trust:" + hpThumbprint, "pnputil", "register"},
+			wantOutput: []string{"Registered driver from bundle"},
+		},
+		{
+			name:       "wrong architecture registration does not suppress installation",
+			files:      []string{"hpcu360u.cat"},
+			setup:      hpSig + "$global:registered = $true; $global:driverEnvironment = 'Windows NT x86';",
+			wantOK:     true,
+			wantEvents: []string{"sig:hpcu360u.cat", "trust:" + hpThumbprint, "pnputil", "register"},
+			wantOutput: []string{"Registered driver from bundle"},
+		},
+		{
+			name:       "successful registration with missing UI does not report success",
+			files:      []string{"hpcu360u.cat"},
+			setup:      hpSig + "$global:leaveBroken = $true;",
+			wantEvents: []string{"sig:hpcu360u.cat", "trust:" + hpThumbprint, "pnputil", "register"},
+			wantOutput: []string{"Driver registration could not be verified", "required files are missing after installation"},
+		},
 		{
 			// The real failure: a Valid catalog whose publisher this PC has
 			// never trusted. Without trust, the pnputil double refuses it.

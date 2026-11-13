@@ -87,7 +87,7 @@ func (r CommandResult) MarshalJSON() ([]byte, error) {
 
 var (
 	ErrNotElevated      = errors.New("install: administrator privileges are required")
-	ErrDriverNotPresent = errors.New("install: driver not found — install it via Windows Update or run the vendor package manually first, then retry")
+	ErrDriverNotPresent = errors.New("install: driver not found or incomplete for this Windows environment — install it via Windows Update or repair it with the vendor package, then retry")
 	ErrNotConfirmed     = errors.New("install: operation was not confirmed")
 	ErrPrinterNotFound  = errors.New("install: printer is already absent")
 )

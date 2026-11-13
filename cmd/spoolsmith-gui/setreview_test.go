@@ -98,7 +98,7 @@ func TestSetSummaryIsOneLinePerPrinter(t *testing.T) {
 		t.Fatalf("summary line = %q", got)
 	}
 	text := setSummaryText("v1.6.0", "PC1", time.Date(2026, 11, 10, 9, 30, 0, 0, time.UTC), "office.zip", rows)
-	for _, want := range []string{"SpoolSmith v1.6.0", "office.zip on PC1, 2026-11-10 09:30", "ok  Lobby  (10.0.0.1, a.ssb): Set up", "x   Lab", "Failed: A step failed part-way", "install: step 2 failed", "Desk  (no address, c.ssb): Not ticked", "Can't set up: This driver is not installed"} {
+	for _, want := range []string{"SpoolSmith v1.6.0", "office.zip on PC1, 2026-11-10 09:30", "ok  Lobby  (10.0.0.1, a.ssb): Set up", "x   Lab", "Failed: A step failed part-way", "install: step 2 failed", "Desk  (no address, c.ssb): Not ticked", "Can't set up: The required driver is missing or incomplete"} {
 		if !strings.Contains(text, want) {
 			t.Errorf("summary lacks %q:\n%s", want, text)
 		}
@@ -153,7 +153,7 @@ func TestRowStepsExplainEachState(t *testing.T) {
 		t.Fatalf("nothing = %q", got)
 	}
 	blocked := rowSteps(setRow{State: rowBlocked, Detail: "driver not found"}, nl)
-	if !strings.HasPrefix(blocked, "This driver is not installed") {
+	if !strings.HasPrefix(blocked, "The required driver is missing or incomplete") {
 		t.Fatalf("blocked = %q", blocked)
 	}
 	ready := rowSteps(setRow{State: rowReady, Preview: planned(2)}, nl)

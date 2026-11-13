@@ -83,16 +83,10 @@ public sealed class SiteScreenshots
             foreach (var (file, name, ip) in new[] {
                 ("accounting.ssb", "Accounting Copier", "192.0.2.40"),
                 ("front-desk.ssb", "Front Desk Laser", "192.0.2.41"),
-                ("warehouse.ssb", "Warehouse Labels", "192.0.2.42") })
+                ("warehouse.ssb", "Warehouse Shipping Labels", "192.0.2.42") })
             {
                 using var member = new MemoryStream();
-                using (var ssb = new System.IO.Compression.ZipArchive(member, System.IO.Compression.ZipArchiveMode.Create, leaveOpen: true))
-                using (var writer = new StreamWriter(ssb.CreateEntry("manifest.json").Open()))
-                {
-                    writer.Write("{\"version\":1,\"created_utc\":\"2026-11-11T00:00:00Z\",\"profile\":{\"version\":1,\"target\":\"" + ip +
-                        "\",\"printer_name\":\"" + name + "\",\"driver_name\":\"Example OEM Driver (replace with registered name)\",\"evidence\":{\"ip\":\"" + ip +
-                        "\",\"http_title\":\"Example printer (illustrative placeholder, not a hardware capture)\",\"provenance\":\"captured\"}}}");
-                }
+                AppFixture.WriteExampleBundle(member, name, ip);
                 using var entry = zip.CreateEntry(file).Open();
                 member.Position = 0;
                 member.CopyTo(entry);
@@ -104,6 +98,7 @@ public sealed class SiteScreenshots
             "The set review did not open.", 30_000);
         FunctionalTests.WaitUntil(() => dialog!.FindAllDescendants().Any(e => (e.Name ?? "").Contains("Nothing has changed yet")),
             "The set never finished its preview.", 120_000);
+        dialog!.SetForeground();
         Thread.Sleep(500);
         dialog!.CaptureToFile(Path.Combine(images, "gui-set-review.png"));
         FunctionalTests.FindButton(dialog!, "Close").Invoke();

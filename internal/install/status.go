@@ -60,7 +60,7 @@ func CheckStatus(ctx context.Context, env Environment, profile Profile) (LocalSt
 			reason string
 		}{
 			{actual.QueuePresent && strings.EqualFold(actual.PrinterName, profile.PrinterName), "queue is absent or name differs"},
-			{actual.DriverPresent, "queue driver is not registered"},
+			{actual.DriverPresent, "queue driver is missing or incomplete for this Windows environment"},
 			// Windows may have upgraded the class driver to the printer's own
 			// driver; that is accepted only when the endpoint is verified.
 			{strings.EqualFold(actual.DriverName, profile.DriverName) || (actual.IPPVerified && sameDriverModel(actual.DriverName, profile.Evidence.IPPModel)), "driver differs"},
@@ -81,7 +81,7 @@ func CheckStatus(ctx context.Context, env Environment, profile Profile) (LocalSt
 		reason string
 	}{
 		{actual.QueuePresent && strings.EqualFold(actual.PrinterName, profile.PrinterName), "queue is absent or name differs"},
-		{actual.DriverPresent, "queue driver is not registered"},
+		{actual.DriverPresent, "queue driver is missing or incomplete for this Windows environment"},
 		{strings.EqualFold(actual.DriverName, profile.DriverName), "driver differs"},
 		{actual.PortPresent && strings.EqualFold(actual.PortName, managedPortPrefix+net.ParseIP(profile.Target).String()), "managed port is absent or differs"},
 		{net.ParseIP(profile.Target).Equal(net.ParseIP(actual.Address)), "target address differs"},
@@ -105,13 +105,13 @@ func readLocalConfiguration(ctx context.Context, runner powerShellRunner, name s
 	if err := validatePlanValue("printer name", name); err != nil {
 		return actual, err
 	}
-	command := powerShellCommand(ippConnectionFunctions + `$q = @(Get-Printer -ErrorAction Stop | Where-Object { $_.Name -eq ` + powerShellString(name) + ` });
+	command := powerShellCommand(driverHealthFunctions + ippConnectionFunctions + `$q = @(Get-Printer -ErrorAction Stop | Where-Object { $_.Name -eq ` + powerShellString(name) + ` });
 if ($q.Count -gt 1) { throw 'Multiple matching queues' };
 if ($q.Count -eq 0) { ConvertTo-Json -InputObject @{queue_present=$false}; exit 0 };
 $p = @(Get-PrinterPort -ErrorAction Stop | Where-Object { $_.Name -eq $q[0].PortName });
-$d = @(Get-PrinterDriver -ErrorAction Stop | Where-Object { $_.Name -eq $q[0].DriverName });
+$d = Get-SpoolSmithUsableDriver $q[0].DriverName;
 if ($p.Count -gt 1) { throw 'Multiple matching ports' };
-$state = @{queue_present=$true; printer_name=$q[0].Name; driver_name=$q[0].DriverName; driver_present=($d.Count -gt 0); port_name=$q[0].PortName; port_present=($p.Count -eq 1)};
+$state = @{queue_present=$true; printer_name=$q[0].Name; driver_name=$q[0].DriverName; driver_present=($null -ne $d); port_name=$q[0].PortName; port_present=($p.Count -eq 1)};
 if ($p.Count -eq 1) { $state.address=[string]$p[0].PrinterHostAddress; $state.port_monitor=[string]$p[0].PortMonitor; $state.protocol=[int]$p[0].Protocol; $state.port_number=[int]$p[0].PortNumber };
 if ($p.Count -eq 1 -and $p[0].PortMonitor -in @('Internet Port','IPP Port Monitor','WSD Port Monitor')) { $connection = Get-SpoolSmithIPPConnection $q[0] $p[0]; if ($connection.Verified) { $state.ipp_verified=$true; $state.address=[string]$connection.Endpoint } };
 ConvertTo-Json -InputObject $state`)
