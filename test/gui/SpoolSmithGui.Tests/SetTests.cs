@@ -114,8 +114,8 @@ public sealed class SetTests : IDisposable
         var text = box!.Patterns.Text.IsSupported ? box.Patterns.Text.Pattern.DocumentRange.GetText(-1) : box.AsTextBox().Text;
         Assert.Contains("1 of 4  Example — Accounting Copier", text);
         Assert.Contains("2 of 4  Example — Accounting Copier", text);
-        Assert.Contains("3 of 4  broken.ssb", text);
-        Assert.Contains("4 of 4  Missing driver example", text);
+        Assert.Contains("3 of 4  Missing driver example", text);
+        Assert.Contains("4 of 4  broken.ssb", text);
         Assert.Contains("Full plan:", text);
         Assert.Contains("RAW9100-192.0.2.40", text);
         FunctionalTests.FindButton(details!, "Close").Invoke();

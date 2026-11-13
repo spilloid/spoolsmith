@@ -358,6 +358,9 @@ public sealed class AppFixture : IDisposable
         {
             // Best-effort: the app may already be gone if a test crashed it.
         }
+        // A failed assertion can leave a modal dialog blocking CloseMainWindow.
+        // Do not let this test's process intercept the next test's file launch.
+        try { if (!App.HasExited) App.Kill(); } catch { }
         Automation.Dispose();
         App.Dispose();
     }

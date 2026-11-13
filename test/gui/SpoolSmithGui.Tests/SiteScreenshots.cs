@@ -83,7 +83,7 @@ public sealed class SiteScreenshots
             foreach (var (file, name, ip) in new[] {
                 ("accounting.ssb", "Accounting Copier", "192.0.2.40"),
                 ("front-desk.ssb", "Front Desk Laser", "192.0.2.41"),
-                ("warehouse.ssb", "Warehouse Labels", "192.0.2.42") })
+                ("warehouse.ssb", "Warehouse Shipping Labels", "192.0.2.42") })
             {
                 using var member = new MemoryStream();
                 AppFixture.WriteExampleBundle(member, name, ip);
@@ -98,6 +98,7 @@ public sealed class SiteScreenshots
             "The set review did not open.", 30_000);
         FunctionalTests.WaitUntil(() => dialog!.FindAllDescendants().Any(e => (e.Name ?? "").Contains("Nothing has changed yet")),
             "The set never finished its preview.", 120_000);
+        dialog!.SetForeground();
         Thread.Sleep(500);
         dialog!.CaptureToFile(Path.Combine(images, "gui-set-review.png"));
         FunctionalTests.FindButton(dialog!, "Close").Invoke();
