@@ -73,8 +73,7 @@ func packageCommand(p PackageSelection, driver string) (string, error) {
 	// self-extracting EXE that only Windows' bsdtar reads, and a developer machine
 	// with Git/MSYS on PATH resolves a bare "tar.exe" to GNU tar, which cannot read
 	// it and fails the staging path with a message blaming the archive.
-	script := fmt.Sprintf(`$drivers = @(Get-PrinterDriver -ErrorAction Stop | Where-Object { $_.Name -eq %[1]s });
-if ($drivers.Count -gt 0) { 'Unchanged driver' } else {
+	script := fmt.Sprintf(`if ($null -ne (Get-SpoolSmithUsableDriver %[1]s)) { 'Unchanged driver' } else {
  if (-not [Environment]::Is64BitProcess -or $env:PROCESSOR_ARCHITECTURE -ne 'AMD64') { throw 'Package staging currently requires Windows x64' };
  $tar = Join-Path ([Environment]::GetFolderPath('System')) 'tar.exe';
  if (-not (Test-Path -LiteralPath $tar -PathType Leaf)) { throw 'Windows tar.exe was not found in System32; cannot read the driver archive' };
@@ -95,10 +94,9 @@ if ($drivers.Count -gt 0) { 'Unchanged driver' } else {
  if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.GetNameInfo([Security.Cryptography.X509Certificates.X509NameType]::SimpleName, $false) -ne 'Microsoft Windows Hardware Compatibility Publisher') { throw 'Driver catalog signature is invalid' };
  & pnputil.exe /add-driver $inf; if ($LASTEXITCODE -ne 0) { throw 'Windows driver-store staging failed' };
  Add-PrinterDriver -Name %[1]s -ErrorAction Stop;
- $drivers = @(Get-PrinterDriver -ErrorAction Stop | Where-Object { $_.Name -eq %[1]s });
- if ($drivers.Count -eq 0) { throw 'Driver registration could not be verified' };
+ if ($null -eq (Get-SpoolSmithUsableDriver %[1]s)) { throw 'Driver registration could not be verified: the native Windows driver or its required files are missing after installation. Repair the driver before using this printer.' };
  'Registered driver'
  } finally { $archiveLock.Dispose() }
 }`, powerShellString(driver), powerShellString(archive), powerShellString(r.SHA256), powerShellString(r.INF), powerShellString(r.Catalog))
-	return powerShellCommand(script), nil
+	return powerShellCommand(driverHealthFunctions + script), nil
 }

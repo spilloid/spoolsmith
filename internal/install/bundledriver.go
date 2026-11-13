@@ -129,7 +129,7 @@ func bundlePublisherTrust(payload BundleDriver) *PublisherTrust {
 }
 
 // bundleDriverCommand stages a bundle's driver payload if, and only if, the
-// driver is not already registered.
+// driver has no usable registration for this PC's native environment.
 //
 // The trust chain here is deliberately narrower than the reviewed vendor-
 // archive path and must not be described as equivalent. There is no pinned
@@ -170,8 +170,7 @@ func bundleDriverCommand(b BundleDriver) (string, error) {
 		return "", err
 	}
 	infRelative := filepath.FromSlash(b.INF)
-	script := fmt.Sprintf(`$drivers = @(Get-PrinterDriver -ErrorAction Stop | Where-Object { $_.Name -eq %[1]s });
-if ($drivers.Count -gt 0) { 'Unchanged driver' } else {
+	script := fmt.Sprintf(`if ($null -ne (Get-SpoolSmithUsableDriver %[1]s)) { 'Unchanged driver' } else {
  $stage = Join-Path ([IO.Path]::GetTempPath()) %[2]s;
  $inf = Join-Path $stage %[3]s;
  if (-not (Test-Path -LiteralPath $inf -PathType Leaf)) { throw 'Verified driver payload is not staged where this plan expects it; re-run apply so the bundle is extracted, and check that TEMP is the same for this process' };
@@ -220,9 +219,8 @@ if ($drivers.Count -gt 0) { 'Unchanged driver' } else {
  };
  'Driver package staged';
  try { Add-PrinterDriver -Name %[1]s -ErrorAction Stop } catch { throw ('Printer driver registration failed after the package was staged: ' + $_.Exception.Message) };
- $drivers = @(Get-PrinterDriver -ErrorAction Stop | Where-Object { $_.Name -eq %[1]s });
- if ($drivers.Count -eq 0) { throw 'Driver registration could not be verified' };
+ if ($null -eq (Get-SpoolSmithUsableDriver %[1]s)) { throw 'Driver registration could not be verified: the native Windows driver or its required files are missing after installation. Repair the driver before using this printer.' };
  'Registered driver from bundle'
 }`, powerShellString(b.WindowsDriverName), powerShellString(b.StageDirName), powerShellString(infRelative), b.signerThumbprints())
-	return powerShellCommand(script), nil
+	return powerShellCommand(driverHealthFunctions + script), nil
 }

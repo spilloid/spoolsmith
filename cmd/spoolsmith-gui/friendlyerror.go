@@ -29,9 +29,9 @@ func friendlyErrorLead(message string) (string, bool) {
 	// with the "driver not found" guidance, so it must be matched first or it
 	// reads as a missing driver.
 	case strings.Contains(message, "driver presence check failed"):
-		return "Windows could not list its printer drivers, so nothing was changed. Check that the Print Spooler service is running (services.msc), then try again.", true
+		return "Windows could not verify the printer driver, so nothing was changed. Check that the Print Spooler service is running (services.msc) and that its driver files can be read, then try again.", true
 	case strings.Contains(message, "driver not found"):
-		return "This driver is not installed on this computer. Install the exact compatible Windows driver, then check again.", true
+		return "The required driver is missing or incomplete for this computer. Install or repair the exact compatible Windows driver, then check again.", true
 	case strings.Contains(message, "already exists"):
 		return "A file with that name already exists. Choose a different name or location -- nothing here is ever overwritten automatically.", true
 	case strings.Contains(message, "changed: saved"):

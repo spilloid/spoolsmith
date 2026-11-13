@@ -1,6 +1,6 @@
 # Remaining work for SpoolSmith
 
-Updated November 11, 2026, for v1.6.0. What has shipped is in [`releases/`](../releases/);
+Updated November 13, 2026, for v1.6.1. What has shipped is in [`releases/`](../releases/);
 the CLI/desktop split is in [gui-parity.md](gui-parity.md). What's left is mostly
 validation on real hardware and hardening, then the future scope at the end.
 

@@ -16,7 +16,7 @@ func TestPowerShellPackageAlreadyRegisteredNeverOpensArchive(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	harness := `function Get-PrinterDriver { [CmdletBinding()]param() [PSCustomObject]@{Name='Brother HL-L2315D series'} }; function Get-FileHash { throw 'UNEXPECTED ARCHIVE READ' }; `
+	harness := healthyDriverHarness(t) + `function Get-PrinterDriver { [CmdletBinding()]param() New-TestPrinterDriver 'Brother HL-L2315D series' }; function Get-FileHash { throw 'UNEXPECTED ARCHIVE READ' }; `
 	out, err := runPowerShell(context.Background(), harness+command)
 	if err != nil || !strings.Contains(out, "Unchanged driver") {
 		t.Fatalf("%v %s", err, out)
@@ -60,9 +60,9 @@ func TestLocalBrotherArchiveVerificationWithStagingDoubles(t *testing.T) {
 	// so setting TEMP alone leaves staging in the real user temp -- where the script
 	// retains it on purpose, so every test run leaked an extracted driver package.
 	sandbox := powerShellString(t.TempDir())
-	harness := `$env:TMP = ` + sandbox + `; $env:TEMP = ` + sandbox + `;
+	harness := healthyDriverHarness(t) + `$env:TMP = ` + sandbox + `; $env:TEMP = ` + sandbox + `;
 $global:registered = $false; $global:staged = 0;
-function Get-PrinterDriver { [CmdletBinding()]param() if ($global:registered) { [PSCustomObject]@{Name='Brother HL-L2315D series'} } };
+function Get-PrinterDriver { [CmdletBinding()]param() if ($global:registered) { New-TestPrinterDriver 'Brother HL-L2315D series' } };
 function pnputil.exe { if ($args[0] -ne '/add-driver' -or -not (Test-Path -LiteralPath $args[1])) { throw 'Wrong staging input' }; $global:staged++; $global:LASTEXITCODE=0 };
 function Add-PrinterDriver { [CmdletBinding()]param($Name) if ($Name -ne 'Brother HL-L2315D series') { throw 'Wrong driver name' }; $global:registered=$true };
 `

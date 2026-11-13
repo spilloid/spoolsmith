@@ -19,7 +19,7 @@ func TestFriendlyOperationErrorTranslatesCommonCasesAndKeepsTheDetail(t *testing
 		wantLed string
 	}{
 		{"administrator", "install: administrator privileges are required", "Administrator access is needed"},
-		{"driver not found", "install: driver not found: OEM Driver", "This driver is not installed"},
+		{"driver not found", "install: driver not found: OEM Driver", "driver is missing or incomplete"},
 		{"file exists", "copy: office.ssb already exists; retry with a different, unused bundle filename", "already exists"},
 		{"identity mismatch", `profile: HTTP title changed: saved "A", observed "B"; verify the device and recapture if appropriate`, "does not match what was saved"},
 		{"unreachable", "install: collect evidence: dial tcp: connection refused", "could not be reached"},
