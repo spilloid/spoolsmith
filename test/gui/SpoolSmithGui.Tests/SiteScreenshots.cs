@@ -86,13 +86,7 @@ public sealed class SiteScreenshots
                 ("warehouse.ssb", "Warehouse Labels", "192.0.2.42") })
             {
                 using var member = new MemoryStream();
-                using (var ssb = new System.IO.Compression.ZipArchive(member, System.IO.Compression.ZipArchiveMode.Create, leaveOpen: true))
-                using (var writer = new StreamWriter(ssb.CreateEntry("manifest.json").Open()))
-                {
-                    writer.Write("{\"version\":1,\"created_utc\":\"2026-11-11T00:00:00Z\",\"profile\":{\"version\":1,\"target\":\"" + ip +
-                        "\",\"printer_name\":\"" + name + "\",\"driver_name\":\"Example OEM Driver (replace with registered name)\",\"evidence\":{\"ip\":\"" + ip +
-                        "\",\"http_title\":\"Example printer (illustrative placeholder, not a hardware capture)\",\"provenance\":\"captured\"}}}");
-                }
+                AppFixture.WriteExampleBundle(member, name, ip);
                 using var entry = zip.CreateEntry(file).Open();
                 member.Position = 0;
                 member.CopyTo(entry);

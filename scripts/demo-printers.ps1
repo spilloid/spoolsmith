@@ -31,6 +31,10 @@ foreach ($candidate in 'Microsoft PCL6 Class Driver', 'Microsoft PS Class Driver
 }
 if (-not $driver) { throw 'No inbox printer driver could be installed.' }
 Write-Host "Using driver: $driver"
+Get-PrinterDriver -Name $driver | Select-Object Name, PrinterEnvironment, MajorVersion, DriverPath, ConfigFile, DataFile, DependentFiles | ConvertTo-Json
+if ($env:GITHUB_ENV) {
+    "SPOOLSMITH_GUI_TEST_DRIVER=$driver" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+}
 
 $printers = [ordered]@{
     'Front Desk'             = '10.20.1.21'
