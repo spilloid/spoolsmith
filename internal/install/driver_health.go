@@ -19,11 +19,11 @@ function Get-SpoolSmithUsableDriver([string]$Name) {
  if ($drivers.Count -ne 1) { return $null };
  $driver = $drivers[0];
  if ($driver.MajorVersion -notin @(3, 4)) { return $null };
- if ([string]::IsNullOrWhiteSpace($driver.DriverPath) -or -not [IO.Path]::IsPathRooted($driver.DriverPath)) { return $null };
+ if ([string]::IsNullOrWhiteSpace($driver.Path) -or -not [IO.Path]::IsPathRooted($driver.Path)) { return $null };
  if ([string]::IsNullOrWhiteSpace($driver.DataFile)) { return $null };
  if ($driver.MajorVersion -eq 3 -and [string]::IsNullOrWhiteSpace($driver.ConfigFile)) { return $null };
- $directory = Split-Path -Parent $driver.DriverPath;
- $files = @($driver.DriverPath, $driver.DataFile);
+ $directory = Split-Path -Parent $driver.Path;
+ $files = @($driver.Path, $driver.DataFile);
  if (-not [string]::IsNullOrWhiteSpace($driver.ConfigFile)) { $files += $driver.ConfigFile };
  $files += @($driver.DependentFiles);
  foreach ($file in $files) {

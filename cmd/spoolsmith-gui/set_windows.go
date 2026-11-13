@@ -370,7 +370,7 @@ func (a *app) reviewPrinterSet(op operation) {
 		Background: SolidColorBrush{Color: colorPage}, Layout: dialogLayout(),
 		DefaultButton: &primaryBtn, CancelButton: &closeBtn,
 		Children: dialogFrame("Set up printers from a set",
-			ScrollView{HorizontalFixed: true, StretchFactor: 1, MinSize: Size{Height: 160}, Layout: VBox{MarginsZero: true, Spacing: 8}, Children: []Widget{
+			ScrollView{StretchFactor: 1, MinSize: Size{Height: 160}, Layout: VBox{MarginsZero: true, Spacing: 8}, Children: []Widget{
 				Label{Text: wrapText(file, 80), Font: Font{Family: "Segoe UI", PointSize: 11, Bold: true}},
 				hint(wrapText("Every printer below is checked against this PC first, and you confirm the ticked ones once. Each printer runs exactly the steps shown for it.", sheetWrap)),
 				TableView{
@@ -446,9 +446,8 @@ func (a *app) reviewPrinterSet(op operation) {
 	// Keep the actions outside the scrolling content and on this monitor, even
 	// when Windows opens the review on a small desktop or an error is lengthy.
 	area := walk.Monitor(win.MonitorFromWindow(dialog.Handle(), win.MONITOR_DEFAULTTONEAREST)).WorkArea()
-	bounds := dialog.BoundsPixels()
-	bounds.Width = min(bounds.Width, area.Width)
-	bounds.Height = min(bounds.Height, area.Height)
+	size := dialog.SizeFrom96DPI(walk.Size{Width: 940, Height: 700})
+	bounds := walk.Rectangle{Width: min(size.Width, area.Width), Height: min(size.Height, area.Height)}
 	bounds.X = area.X + (area.Width-bounds.Width)/2
 	bounds.Y = area.Y + (area.Height-bounds.Height)/2
 	if err := dialog.SetBoundsPixels(bounds); err != nil {
